@@ -1,0 +1,22 @@
+version: '3.4'
+
+volumes:
+  infosync_media:
+
+
+networks:
+  linkaform:
+    external:
+      name: linkaform
+
+services:
+  lkf-sanic-app:
+    restart: "no"
+    container_name: lkf-sanic-app
+    image: linkaform/sanic-app:latest
+    build:    
+     context: ../
+     dockerfile: ./Dockerfile
+     target: prod
+    stdin_open: true
+    tty: true

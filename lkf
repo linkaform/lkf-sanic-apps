@@ -1,0 +1,378 @@
+#!/bin/bash
+
+set -e
+set -u
+#set -o pipefail
+
+echo "" >.env
+_usage(){
+  APP=$(basename "$0")
+      echo
+      echo "Usage: $APP [options] <action[start|stop|test|build> <enviorment[sanic|test|prod|dev>"
+
+      echo "    Special options:"
+      echo
+      echo "      -i           load an specific image"
+      echo "      -a           load local linkaform_api as volume"
+      echo "      -r           relaod, alway need to be at the end of the options"
+      echo "      -c           works on build command, it runs the build command with no-cache"
+      echo "      -p           works on build command, upload, publish and updates image after build"
+      echo "      -h           help!!!!"
+      echo
+      echo "    Acction & Enviorment"
+      echo "      $APP <start|stop> sanic     Starts the sanic development environment"
+      echo "      $APP <start|stop> test       Starts the testing environment"
+      echo "      $APP build <base|dev|local|prod|preprod>   Build container for preprod enviorment"
+      echo "      $APP restart <preprod|prod> <account_id>  [depricated] use update"
+      echo "      $APP update <preprod|prod> <account_id>  Update a given account sanic-app containers image on given environment"
+      echo "      $APP test                    Runs all tests"
+      echo
+      echo
+      exit 1
+}
+
+
+API_VOL=0
+IMAGE_NAME=0
+SHIFT=-1
+NOCACHE=0
+UPLOAD=0
+UPDATE=0
+while getopts ':iar:acr:ir:c:p:h' opt; do
+  case "$opt" in
+    a)
+      echo "Loding local API..."
+      if [ "$IMAGE_NAME" != "0" ]; then
+        SHIFT=0
+      else
+        SHIFT=-1
+      fi
+      API_VOL=1
+      ;;
+    i)
+      echo "Setting image..."
+      SHIFT=-0
+      IMAGE_NAME=$2
+      ;;
+    c)
+      echo "No-Cache build"
+      SHIFT=-1
+      NOCACHE=1
+      ;;
+    p)
+      echo "Upload image after build"
+      SHIFT=-2
+      UPLOAD=1
+      ;;
+    r)
+      echo "Relaoding..."
+      SHIFT=-1
+      if [ "$IMAGE_NAME" != "0" ]; then
+        CONTAINER_NAME=$3
+      else  
+        CONTAINER_NAME=$2
+        SHIFT=-2
+      fi
+      if [[ $CONTAINER_NAME == 'test' ]]; then
+        docker stop lkf-sanic-test && docker rm lkf-sanic-test
+      else
+        docker stop lkf-sanic-app && docker rm lkf-sanic-app
+      fi
+      ;;
+    h)
+     #help
+      echo "helpppp"
+      _usage
+      ;;
+    ?)
+      _usage
+      ;;
+  esac
+done
+
+if [ "$IMAGE_NAME" != "0" ]; then
+  if [[ $# -ge 2 ]]; then
+    shift "$(($OPTIND $SHIFT))"
+  fi
+else
+  if [ $# -ge 2 ]; then
+    shift "$(($OPTIND $SHIFT))"
+  fi
+  IMAGE_NAME="linkaform/sanic-app:develop"
+fi
+
+
+_run_sanic(){
+  echo "the command for was " $1
+  case $1 in
+    stop)
+      docker stop lkf-sanic-app && docker rm lkf-sanic-app
+    ;;
+    start)
+      containerID=$(docker ps | grep lkf-sanic-app | awk '{print $1}')
+      echo "container ID" $containerID
+      if [ -z "$containerID" ]; then
+        echo "creating new container"
+        docker stop lkf-sanic-app && docker rm lkf-sanic-app
+        if [[ $2 == 0 ]] ; then
+          echo 'arranca'
+          cd docker
+          docker compose up -d lkf-sanic-app && \
+          docker exec -it lkf-sanic-app bash
+        else
+          echo "Loading local sanic app"
+          cd docker
+          docker compose up -d lkf-sanic-app && \
+          docker exec -it lkf-sanic-app bash
+        fi
+      else
+        echo "Joinign existing"
+        docker exec -it $containerID bash ;
+      fi
+     ;;
+  esac
+
+}
+
+_start_sanic(){
+  echo "the command for was " $1
+  case $1 in
+    test)
+      cd docker
+      containerID=$(docker ps | grep lkf-sanic-test | awk '{print $1}')
+      if [ -z "$containerID" ]; then
+        echo "creating new TEST container" 
+        docker stop lkf-sanic-test && docker rm lkf-sanic-test
+        docker compose up -d lkf-sanic-test && \
+        docker exec -it lkf-sanic-test bash
+      else
+        echo "Joinign existing TEST container... "
+        echo "Happy testing ;)"
+        docker exec -it $containerID bash ;
+        fi
+    ;;
+    sanic)
+      containerID=$(docker ps | grep lkf-sanic-app | awk '{print $1}')
+      echo "container ID" $containerID
+      if [ -z "$containerID" ]; then
+        echo "creating new container"
+        docker stop lkf-sanic-app && docker rm lkf-sanic-app
+        if [[ $2 == 0 ]] ; then
+          echo 'arranca'
+          cd docker
+          docker compose up -d lkf-sanic-app && \
+          docker exec -it lkf-sanic-app bash
+        else
+          echo "Loading local sanic app"
+          cd docker
+          docker compose up -d lkf-sanic-app && \
+          docker exec -it lkf-sanic-app bash
+        fi
+      else
+        echo "Joinign existing"
+        docker exec -it $containerID bash ;
+      fi
+     ;;
+  esac
+
+}
+
+_build(){
+  echo "Environment: " $1
+
+  case $1 in
+    base)
+      echo "Building base image"
+      cd docker
+      if [ "$NOCACHE" = "1" ]; then
+        docker compose build lkf-sanic-app-base
+      else
+        docker compose build --no-cache lkf-sanic-app-base
+      fi
+     if [ "$UPLOAD" = "1" ]; then
+        docker push linkaform/sanic-app:base
+      fi  
+    ;;
+    dev)
+      cd docker
+      docker pull linkaform/sanic-app:base
+      if [ "$NOCACHE" = "1" ]; then
+        docker compose build --no-cache lkf-sanic-app
+      else
+        docker compose build lkf-sanic-app
+      fi
+     if [ "$UPLOAD" = "1" ]; then
+        docker push linkaform/sanic-app:develop
+      fi  
+    ;;
+    local)
+      cd docker
+      docker pull linkaform/sanic-app:base
+      if [ "$NOCACHE" = "1" ]; then
+        docker compose -f docker-prod.yml build --no-cache
+      else
+        docker compose -f docker-prod.yml build
+      docker tag linkaform/sanic-app:latest linkaform/sanic-app:develop
+      if [ "$UPLOAD" = "1" ]; then
+        echo 'UPLOADING IMAGE: linkaform/sanic-app:develop'
+        docker push linkaform/sanic-app:develop
+      fi  
+
+      fi
+      for CONTAINER_ID in $(docker ps | grep lkf-sanic-app | awk '{print $1}') 
+      do
+        echo 'Stopping cotainers...'
+        docker stop $CONTAINER_ID && docker rm $CONTAINER_ID
+      done
+    ;;
+    prod)
+      #docker pull linkaform/sanic-app:develop
+      git pull origin master
+      cd docker
+      if [ "$NOCACHE" != "0" ]; then
+        docker compose -f docker-prod.yml build
+      else
+        docker compose -f docker-prod.yml build --no-cache
+      fi
+      if [ "$UPLOAD" = "1" ]; then
+        docker push linkaform/sanic-app:latest
+      fi  
+    ;;
+    preprod)
+      #docker pull linkaform/sanic-app:develop
+      cd docker
+      if [ "$NOCACHE" != "0" ]; then
+        docker compose -f docker-prod.yml build
+      else
+        docker compose -f docker-prod.yml build --no-cache
+      fi
+      echo "Nameing image:  linkaform/sanic-app:develop"
+      docker tag linkaform/sanic-app:latest linkaform/sanic-app:develop
+      if [ "$UPLOAD" = "1" ]; then
+        echo "Uploading image:  linkaform/sanic-app:develop"
+        docker push linkaform/sanic-app:develop
+      fi  
+    ;;
+    test)
+      cd test/docker
+      if [ "$NOCACHE" = "1" ]; then
+        docker compose build lkf-sanic-test
+      else
+        docker compose build --no-cache lkf-sanic-test
+      fi
+     if [ "$UPLOAD" = "1" ]; then
+        docker push linkaform/lkf_sanic_test:develop
+      fi  
+    ;;
+  esac
+  Enviorment=$1
+  if [[ $# -gt 2 ]]; then
+    echo "Account_id: " $2
+    _update
+  fi
+}
+
+
+_restart(){
+  _update
+}
+
+_update(){
+  echo 'Running update...'
+  case $Enviorment in
+    prod)
+      echo '--------------', $IMAGE_NAME
+      env -i ssh -i $HOME/.ssh/keys/$Account_id _lkf_docker_remote@ansible.linkaform.com prod $IMAGE_NAME
+    ;;
+    preprod)
+      echo 'Running Account_id...' $Account_id
+      echo 'Running IMAGE_NAME...' $IMAGE_NAME
+      env -i ssh -i $HOME/.ssh/keys/${Account_id} _lkf_docker_remote@ansible.linkaform.com preprod $IMAGE_NAME
+     ;;
+  esac
+}
+
+_udpate_container(){
+  #TODO, actualizar contenedor de sanic-app corriendo en ambiente de pruebas
+  #docker cp stock_utils.py account_9908_linkaform.sanic-app..latest:/usr/local/lib/python3.7/site-packages/sanic-app/sanic-app/stock/stock_utils.py
+  
+  echo "TODO"
+}
+
+_run_tests(){
+  echo "the command for was " $1
+  cd ~/lkf/test/docker
+  docker stop lkf-do-test && docker rm lkf-do-test
+  docker compose up lkf-do-test
+}
+
+
+Acction=""
+if [[ $# -gt 0 ]]; then
+  Acction=$1
+
+fi
+
+#echo $Acction >>.env
+
+Service=0
+if [[ $# -gt 1 ]]; then
+  Service=$2
+fi
+
+Branch=""
+if [[ $# -gt 2 ]]; then
+  Branch=$3
+fi
+
+
+echo "Action", $Acction
+
+case "$Acction" in
+
+
+  sanic)
+    echo "Sanic > > > >" $API_VOL
+    _run_sanic $Service $API_VOL
+  ;;
+  start)
+    echo "Sanic" $API_VOL
+    _start_sanic $Service $API_VOL
+  ;;
+  build)
+    Account_id=$Branch
+    echo "Building Sanic image" 
+    _build $Service $Account_id
+  ;;
+  restart)
+    Enviorment=$Service
+    Account_id=$Branch
+    echo "Restarting sanic container of the account: $Account_id"
+    echo "Environment: $Enviorment "
+    echo "Image Name: $Enviorment "
+    _restart $Service
+  ;;
+  update)
+    Enviorment=$Service
+    Account_id=$Branch
+    IMAGE_NAME='sanic-app'
+    if [[ $# -gt 3 ]]; then
+      IMAGE_NAME=$4
+      Enviorment=$2
+      Account_id=$3
+    fi
+    echo 'IMAGE_NAME...' $IMAGE_NAME
+    echo 'Enviorment...' $Enviorment
+    echo 'Account_id...' $Account_id
+    echo "Restarting sanic-app container of the account: $Account_id"
+    echo "Environment: $Enviorment "
+    _restart $Service
+  ;;
+  test)
+    echo "Loding testing environment . . . . + - / * "
+    _run_tests $Service
+  ;;
+  ?)
+   _usage
+  ;;
+esac

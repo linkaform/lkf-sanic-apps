@@ -1,0 +1,90 @@
+<?xml version='1.0' encoding='utf-8'?>
+<lkf>
+    <templates>[]</templates>
+    <confirmation>{}</confirmation>
+    <description />
+    <_rev>22-625ced7e6fde8e7ab0a21a0f32c40b54</_rev>
+    <updated_at>2022-07-06T21:31:16.139130+00:00Z</updated_at>
+    <sync>
+        <element_request>{}</element_request>
+        <input_parameters>[]</input_parameters>
+    </sync>
+    <filters>
+        <greenhouse>
+            <amp_and>
+                <item>
+                    <num_62c5ff0162a70c261328845d>
+                        <amp_eq>Team GH</amp_eq>
+                    </num_62c5ff0162a70c261328845d>
+                </item>
+            </amp_and>
+        </greenhouse>
+    </filters>
+    <name>Cutters</name>
+    <edit_public_records>False</edit_public_records>
+    <created_at>2022-07-06T21:31:16.139130+00:00Z</created_at>
+    <advanced_options>{}</advanced_options>
+    <catalog_pages>
+        <item>
+            <page_fields>
+                <item>
+                    <field_type>catalog</field_type>
+                    <catalog_fields>[]</catalog_fields>
+                    <required>False</required>
+                    <field_id>{{ catalog.teams.obj_id }}</field_id>
+                    <label>Team</label>
+                    <catalog>
+                        <catalog_fields>[]</catalog_fields>
+                        <view_fields>
+                            <item>62c5ff0162a70c261328845d</item>
+                        </view_fields>
+                        <view_index>0</view_index>
+                        <couch_id>{{ catalog.teams.obj_id }}</couch_id>
+                        <catalog_field_id>None</catalog_field_id>
+                        <catalog_id>{{ catalog.teams.id }}</catalog_id>
+                        <filters>None</filters>
+                        <name>{{ catalog.teams.name }}</name>
+                    </catalog>
+                    <properties>{}</properties>
+                </item>
+                <item>
+                    <field_type>catalog-select</field_type>
+                    <properties>{}</properties>
+                    <required>False</required>
+                    <field_id>62c5ff0162a70c261328845d</field_id>
+                    <label>Team</label>
+                    <catalog>
+                        <catalog_fields>[]</catalog_fields>
+                        <last>False</last>
+                        <view_fields>[]</view_fields>
+                        <field_type>text</field_type>
+                        <view_index>1</view_index>
+                        <catalog_field_id>{{ catalog.teams.obj_id }}</catalog_field_id>
+                        <catalog_id>{{ catalog.teams.id }}</catalog_id>
+                        <filters>None</filters>
+                    </catalog>
+                    <options>[]</options>
+                </item>
+                <item>
+                    <field_type>text</field_type>
+                    <field_id>62c5ff407febce07043024dd</field_id>
+                    <required>True</required>
+                    <fav>True</fav>
+                    <label>Cutter</label>
+                    <key>True</key>
+                    <properties>
+                        <send_email>False</send_email>
+                        <custom>None</custom>
+                        <size>complete</size>
+                    </properties>
+                </item>
+            </page_fields>
+            <page_description>None</page_description>
+            <page_name>Page 1</page_name>
+        </item>
+    </catalog_pages>
+    <sync_last_update>None</sync_last_update>
+    <_id>62c5ff243c63280985580087</_id>
+    <public>False</public>
+    <catalog_id>86322</catalog_id>
+</lkf>

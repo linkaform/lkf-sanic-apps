@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<lkf>
+    <templates>[]</templates>
+    <confirmation>{}</confirmation>
+    <description />
+    <_rev>7-dee5b602dd65bccea5ad1ba5e6b28ef1</_rev>
+    <updated_at>2022-07-06T21:30:41.910481+00:00Z</updated_at>
+    <sync>
+        <element_request>{}</element_request>
+        <input_parameters>[]</input_parameters>
+    </sync>
+    <filters>{}</filters>
+    <name>Teams</name>
+    <edit_public_records>False</edit_public_records>
+    <created_at>2022-07-06T21:30:41.910481+00:00Z</created_at>
+    <advanced_options>{}</advanced_options>
+    <catalog_id>86321</catalog_id>
+    <sync_last_update>None</sync_last_update>
+    <_id>62c5ff0162a70c261328845c</_id>
+    <public>False</public>
+    <catalog_pages>
+        <item>
+            <page_fields>
+                <item>
+                    <field_type>text</field_type>
+                    <properties>
+                        <send_email>False</send_email>
+                        <size>complete</size>
+                        <custom>None</custom>
+                    </properties>
+                    <key>True</key>
+                    <catalog_fields>[]</catalog_fields>
+                    <field_id>62c5ff0162a70c261328845d</field_id>
+                    <required>False</required>
+                    <fav>True</fav>
+                    <related_catalog_key>[]</related_catalog_key>
+                    <relation_type>None</relation_type>
+                    <label>Team</label>
+                    <catalog>{}</catalog>
+                    <catalog_id>None</catalog_id>
+                    <view_fields>[]</view_fields>
+                    <options>[]</options>
+                    <related_catalog>None</related_catalog>
+                </item>
+            </page_fields>
+            <page_description>None</page_description>
+            <page_name>Page 1</page_name>
+        </item>
+    </catalog_pages>
+</lkf>

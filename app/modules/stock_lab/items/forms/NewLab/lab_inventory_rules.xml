@@ -1,0 +1,293 @@
+<?xml version='1.0' encoding='utf-8'?>
+<lkf>
+    <form_id>{{ form.lab_inventory.id }}</form_id>
+    <id>65e900076177fa6356ac516f</id>
+    <rules>
+        <item>
+            <conditions>
+                <item>
+                    <condition>is__empty=</condition>
+                    <field>
+                        <catalog_id>None</catalog_id>
+                        <field_id>620a9ee0a449b98114f61d75</field_id>
+                        <group_id>None</group_id>
+                        <id>620a9ee0a449b98114f61d75</id>
+                        <label>Planted YearWeek</label>
+                        <type>integer</type>
+                    </field>
+                    <value> </value>
+                </item>
+                <item>
+                    <condition>not__empty=</condition>
+                    <field>
+                        <catalog_id>None</catalog_id>
+                        <field_id>620a9ee0a449b98114f61d75</field_id>
+                        <group_id>None</group_id>
+                        <id>620a9ee0a449b98114f61d75</id>
+                        <label>Planted YearWeek</label>
+                        <type>integer</type>
+                    </field>
+                    <value> </value>
+                </item>
+            </conditions>
+            <element_ids>[]</element_ids>
+            <empty>False</empty>
+            <fields_ruled>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>{{ catalog.warehouse_locations.obj_id}}</field_id>
+                    <group_id>None</group_id>
+                    <id>65b414650ade76b12c6631b4</id>
+                    <label>Lab Location</label>
+                    <type>catalog</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6442e4831198daf81456f274</field_id>
+                    <group_id>None</group_id>
+                    <id>6442e4831198daf81456f274</id>
+                    <label>Warehouse Name</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>65ac6fbc070b93e656bd7fbe</field_id>
+                    <group_id>None</group_id>
+                    <id>65ac6fbc070b93e656bd7fbe</id>
+                    <label>Location</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>{{ catalog.product_recipe.obj_id}}</field_id>
+                    <group_id>None</group_id>
+                    <id>61ef32bcdf0ec2ba73dec33c</id>
+                    <label>Product Recipe</label>
+                    <type>catalog</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>61ef32bcdf0ec2ba73dec33d</field_id>
+                    <group_id>None</group_id>
+                    <id>61ef32bcdf0ec2ba73dec33d</id>
+                    <label>Product Code</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>621fca56ee94313e8d8c5e2e</field_id>
+                    <group_id>None</group_id>
+                    <id>621fca56ee94313e8d8c5e2e</id>
+                    <label>From Stage</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6205f73281bb36a6f1573358</field_id>
+                    <group_id>None</group_id>
+                    <id>6205f73281bb36a6f1573358</id>
+                    <label>Stage</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>63483f8e2c8c769718b102b1</field_id>
+                    <group_id>None</group_id>
+                    <id>63483f8e2c8c769718b102b1</id>
+                    <label>Recipe Type</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6205f73281bb36a6f1573357</field_id>
+                    <group_id>None</group_id>
+                    <id>6205f73281bb36a6f1573357</id>
+                    <label>Growth Weeks</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6209705080c17c97320e3382</field_id>
+                    <group_id>None</group_id>
+                    <id>6209705080c17c97320e3382</id>
+                    <label>Media Tray</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6205f73281bb36a6f157335b</field_id>
+                    <group_id>None</group_id>
+                    <id>6205f73281bb36a6f157335b</id>
+                    <label>Qty per Container</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620a9ee0a449b98114f61d77</field_id>
+                    <group_id>None</group_id>
+                    <id>620a9ee0a449b98114f61d77</id>
+                    <label>Lot Number</label>
+                    <type>text</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620a9ee0a449b98114f61d75</field_id>
+                    <group_id>None</group_id>
+                    <id>620a9ee0a449b98114f61d75</id>
+                    <label>Planted YearWeek</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>{{ catalog.media_lot.obj_id}}</field_id>
+                    <group_id>None</group_id>
+                    <id>65b53f562b4d969ff10d634d</id>
+                    <label>Media Lot</label>
+                    <type>catalog</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>61ef43c226fd42cc223c98f7</field_id>
+                    <group_id>None</group_id>
+                    <id>61ef43c226fd42cc223c98f7</id>
+                    <label>Meida Name</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>65b538f49d2b7d901c1671eb</field_id>
+                    <group_id>None</group_id>
+                    <id>65b538f49d2b7d901c1671eb</id>
+                    <label>Media Lot</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620a9ee0a449b98114f61d76</field_id>
+                    <group_id>None</group_id>
+                    <id>620a9ee0a449b98114f61d76</id>
+                    <label>Cut Day</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>622bb9946d0d6fef17fe0842</field_id>
+                    <group_id>None</group_id>
+                    <id>622bb9946d0d6fef17fe0842</id>
+                    <label>Cut Week</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d168</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d168</id>
+                    <label>Cycle</label>
+                    <type>text</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d167</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d167</id>
+                    <label>Group</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6271dc35e84e2577579eafeb</field_id>
+                    <group_id>None</group_id>
+                    <id>6271dc35e84e2577579eafeb</id>
+                    <label>Produced Containers</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d000</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d000</id>
+                    <label>Move In</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d17e</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d17e</id>
+                    <label>Move Out</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6442e2fbc0dd855fe856f1da</field_id>
+                    <group_id>None</group_id>
+                    <id>6442e2fbc0dd855fe856f1da</id>
+                    <label>Sell Flats</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6442e2fbc0dd855fe856fddd</field_id>
+                    <group_id>None</group_id>
+                    <id>6442e2fbc0dd855fe856fddd</id>
+                    <label>Cuarentin Flats</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d16d</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d16d</id>
+                    <label>Scrapped Flats</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>aaaaa0000000000000000000</field_id>
+                    <group_id>None</group_id>
+                    <id>aaaaa0000000000000000000</id>
+                    <label>Adjustments</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6441d33a153b3521f5b2afc9</field_id>
+                    <group_id>None</group_id>
+                    <id>6441d33a153b3521f5b2afc9</id>
+                    <label>Actual Containers on Hand</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d172</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d172</id>
+                    <label>Actual Eaches on Hand</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6441d33a153b3521f5b2afcb</field_id>
+                    <group_id>None</group_id>
+                    <id>6441d33a153b3521f5b2afcb</id>
+                    <label>Contamin Code</label>
+                    <type>select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d175</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d175</id>
+                    <label>Inventroy Status</label>
+                    <type>select</type>
+                </item>
+            </fields_ruled>
+            <group_conditions>{}</group_conditions>
+            <name>Rule 1</name>
+            <operator>or</operator>
+            <rule_id>c7625956ef2418</rule_id>
+            <rule_type>disabled</rule_type>
+            <user_conditions>{}</user_conditions>
+        </item>
+    </rules>
+</lkf>

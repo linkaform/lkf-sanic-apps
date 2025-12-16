@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='utf-8'?>
+<lkf>
+    <form_id>{{ form.scrap_multiple_locations.id }}</form_id>
+    <id>66673279bd71b93143d8bfb9</id>
+    <rules>
+        <item>
+            <conditions>
+                <item>
+                    <condition>is__empty=</condition>
+                    <field>
+                        <catalog_id>65c127265caba547eb1a33e2</catalog_id>
+                        <field_id>65bdc71b3e183f49761a33b9</field_id>
+                        <group_id>None</group_id>
+                        <id>65bdc71b3e183f49761a33b9</id>
+                        <label>Warehouse Name</label>
+                        <type>catalog-select</type>
+                    </field>
+                    <value> </value>
+                </item>
+                <item>
+                    <condition>not__empty=</condition>
+                    <field>
+                        <catalog_id>65c127265caba547eb1a33e2</catalog_id>
+                        <field_id>65bdc71b3e183f49761a33b9</field_id>
+                        <group_id>None</group_id>
+                        <id>65bdc71b3e183f49761a33b9</id>
+                        <label>Warehouse Name</label>
+                        <type>catalog-select</type>
+                    </field>
+                    <value> </value>
+                </item>
+            </conditions>
+            <element_ids>[]</element_ids>
+            <empty>False</empty>
+            <fields_ruled>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>ffff00000000000000000001</field_id>
+                    <group_id>6442e4537775ce64ef72dd69</group_id>
+                    <id>ffff00000000000000000001</id>
+                    <label>Folio Stock Destino</label>
+                    <type>text</type>
+                </item>
+            </fields_ruled>
+            <group_conditions>{}</group_conditions>
+            <name>Rule 1</name>
+            <operator>or</operator>
+            <rule_id>b21b751b002698</rule_id>
+            <rule_type>invisible</rule_type>
+            <user_conditions>{}</user_conditions>
+        </item>
+    </rules>
+</lkf>

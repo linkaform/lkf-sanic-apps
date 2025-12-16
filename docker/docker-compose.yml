@@ -1,0 +1,69 @@
+volumes:
+  infosync_media:
+
+
+networks:
+  linkaform:
+    external: true
+    #   name: linkaform
+
+services:
+  lkf-sanic-app-base:
+    restart: "no"
+    container_name: lkf-sanic-app-base
+    hostname: lkf-sanic-app-base
+    image: linkaform/sanic-app:base
+    ports:
+      - "5001:5000"
+    build:    
+     context: ../
+     dockerfile: ./Dockerfile
+     target: sanic-base
+    volumes:
+      - ../addons:/usr/local/lib/python3.12/site-packages/lkf_addons/
+      - ../addons/bin/lkfaddons.py:/usr/local/bin/lkfaddons.py
+      - ../addons/bin/download_module.py:/usr/local/bin/download_module.py
+      - ../addons/bin/json_xml.py:/usr/local/bin/json_xml.py
+      - ../addons/bin/xml_2_json.py:/usr/local/bin/xml_2_json.py
+      - ../config:/srv/lkf-sanic-app/config
+      - ../modules:/srv/lkf-sanic-app/modules
+      - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
+      - ../../lkf/infosync_scripts/:/srv/infosync_scripts
+      - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
+    command: sleep infinity
+    stdin_open: true
+    tty: true
+  
+  lkf-sanic-app:
+    restart: "no"
+    container_name: lkf-sanic-app
+    hostname: lkf-sanic-app
+    image: linkaform/sanic-app:develop
+    networks:
+     linkaform:
+    ports:
+      - "8888:8000"
+      # - "5001:5000"
+    build:    
+     context: ../
+     dockerfile: ./Dockerfile
+     target: develop
+    volumes:
+      - ../addons:/usr/local/lib/python3.12/site-packages/lkf_addons/
+      - ../addons/bin/lkfaddons.py:/usr/local/bin/lkfaddons.py
+      - ../addons/bin/download_module.py:/usr/local/bin/download_module.py
+      - ../addons/bin/json_xml.py:/usr/local/bin/json_xml.py
+      - ../addons/bin/xml_2_json.py:/usr/local/bin/xml_2_json.py
+      - ../app:/srv/lkf-sanic-app/app
+      - ../config:/srv/lkf-sanic-app/config
+      - ../modules:/srv/lkf-sanic-app/modules
+      - ../middleware:/srv/lkf-sanic-app/middleware
+      - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
+      - ../../lkf/infosync_scripts/:/srv/infosync_scripts
+      - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
+      - ../lkf-sanic-app:/srv/lkf-sanic-app/
+      - ./:/docker/
+    #command: sleep infinity
+    command: "/docker/main_entrypoint.sh"
+    stdin_open: true
+    tty: true

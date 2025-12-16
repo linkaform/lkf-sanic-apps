@@ -1,0 +1,81 @@
+<?xml version='1.0' encoding='utf-8'?>
+<lkf>
+    <form_id>{{ form.stock_move_new_production.id }}</form_id>
+    <id>62fc588b124a19cfc987edc7</id>
+    <rules>
+        <item>
+            <conditions>
+                <item>
+                    <condition>not__empty=</condition>
+                    <field>
+                        <catalog_id>None</catalog_id>
+                        <field_id>62e9d296cf8d5b373b24e028</field_id>
+                        <group_id>None</group_id>
+                        <id>62e9d296cf8d5b373b24e028</id>
+                        <label>Move Status</label>
+                        <type>select</type>
+                    </field>
+                    <value> </value>
+                </item>
+            </conditions>
+            <element_ids>[]</element_ids>
+            <empty>False</empty>
+            <fields_ruled>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>62c5ff0162a70c261328845d</field_id>
+                    <group_id>None</group_id>
+                    <id>62c5ff0162a70c261328845d</id>
+                    <label>Team</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>61ef32bcdf0ec2ba73dec33d</field_id>
+                    <group_id>None</group_id>
+                    <id>61ef32bcdf0ec2ba73dec33d</id>
+                    <label>Plant Code</label>
+                    <type>catalog-select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620a9ee0a449b98114f61d75</field_id>
+                    <group_id>None</group_id>
+                    <id>620a9ee0a449b98114f61d75</id>
+                    <label>Year</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>6441d33a153b3521f5b2afcb</field_id>
+                    <group_id>None</group_id>
+                    <id>6441d33a153b3521f5b2afcb</id>
+                    <label>Contamin Code</label>
+                    <type>select</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>621007e60718d93b752312c4</field_id>
+                    <group_id>None</group_id>
+                    <id>621007e60718d93b752312c4</id>
+                    <label>Stage</label>
+                    <type>integer</type>
+                </item>
+                <item>
+                    <catalog_id>None</catalog_id>
+                    <field_id>620ad6247a217dbcb888d175</field_id>
+                    <group_id>None</group_id>
+                    <id>620ad6247a217dbcb888d175</id>
+                    <label>Inventory Status</label>
+                    <type>select</type>
+                </item>
+            </fields_ruled>
+            <group_conditions>{}</group_conditions>
+            <name>Disable All Fields</name>
+            <operator>and</operator>
+            <rule_id>726243620b91fd6</rule_id>
+            <rule_type>disabled</rule_type>
+            <user_conditions>{}</user_conditions>
+        </item>
+    </rules>
+</lkf>
