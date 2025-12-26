@@ -23,8 +23,7 @@ CUSTOM_MODULE_PATHS = [
 # DYNAMIC CLASS LOADER
 # ============================================
 
-
-def find_module_file(base_paths, class_name, filenames=['accesos_utils.py', 'app.py']):
+def find_module_file(base_paths, class_name, filenames=[]):
     """
     Busca archivos de módulo en múltiples rutas
     
@@ -45,8 +44,6 @@ def find_module_file(base_paths, class_name, filenames=['accesos_utils.py', 'app
                 return full_path, filename
     
     return None, None
-
-
 
 def extend_routes(module_bp, module_name):
     print('Cargando Rutas de Modulo: ', module_name)
@@ -174,7 +171,7 @@ def load_class_from_file(file_path, class_name='Accesos'):
 def get_module_class(class_name):
     """
     Obtiene la clase Accesos con la siguiente prioridad:
-    1. Módulo personalizado en CUSTOM_MODULE_PATHS (accesos_utils.py)
+    1. Módulo personalizado en CUSTOM_MODULE_PATHS (accesos_service.py)
     2. Módulo personalizado en CUSTOM_MODULE_PATHS (app.py)
     3. Módulo local (.app)
     
@@ -184,7 +181,8 @@ def get_module_class(class_name):
     print('>>>  Buscan do clase...', class_name)
     
     # 1. Intentar cargar desde rutas personalizadas
-    custom_file, filename = find_module_file(CUSTOM_MODULE_PATHS, class_name)
+    filenames = [f'{class_name.lower()}_service.py', 'app.py']
+    custom_file, filename = find_module_file(CUSTOM_MODULE_PATHS, class_name, filenames)
     
     if custom_file:
         print(f'>>> Intentando cargar desde módulo personalizado: {custom_file}')
