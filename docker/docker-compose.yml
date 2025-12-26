@@ -3,9 +3,8 @@ volumes:
 
 
 networks:
-  linkaform:
+  sanic:
     external: true
-    #   name: linkaform
 
 services:
   lkf-sanic-app-base:
@@ -28,7 +27,6 @@ services:
       - ../config:/srv/lkf-sanic-app/config
       - ../modules:/srv/lkf-sanic-app/modules
       - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
-      - ../../lkf/infosync_scripts/:/srv/infosync_scripts
       - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
     command: sleep infinity
     stdin_open: true
@@ -40,7 +38,7 @@ services:
     hostname: lkf-sanic-app
     image: linkaform/sanic-app:develop
     networks:
-     linkaform:
+       sanic:
     ports:
       - "8888:8000"
       # - "5001:5000"
