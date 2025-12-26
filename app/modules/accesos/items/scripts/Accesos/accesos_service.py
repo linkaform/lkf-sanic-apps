@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime, timedelta
 from linkaform_api import base
-from lkf_addons.accesos.app import Accesos
+from lkf_addons.accesos.service import Accesos
 import pytz, simplejson
 
 
@@ -112,27 +112,27 @@ class Accesos( Accesos):
             'tipo_de_incidencia': '663973809fa65cafa759eb97'
         })
 
-    def get_config_accesos(self):
-        response = []
-        print('AAAAA === HERDACION....')
-        match_query = {
-            "deleted_at":{"$exists":False},
-            "form_id": self.CONF_ACCESOS,
-            f"answers.{self.Employee.EMPLOYEE_OBJ_ID}.{self.Employee.employee_fields['user_id_id']}":self.user['id'],
-            #"answers.677ffe8711c99ee27489d564.638a9a99616398d2e392a9f5":self.user['id'],
-        }
-        query = [
-            {'$match': match_query },
-            {'$project': {
-                "usuario":f"$answers.{self.conf_accesos_fields['usuario_cat']}",
-                "grupos":f"$answers.{self.conf_accesos_fields['grupos']}",
-                "menus": f"$answers.{self.conf_accesos_fields['menus']}",
-            }},
-            {'$limit':1},
-        ]
-        # print('cr', self.cr)
-        # print('query><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<', simplejson.dumps(query, indent=2))
-        return self.format_cr_result(self.cr.aggregate(query),  get_one=True)
+    # def get_config_accesos(self):
+    #     response = []
+    #     print('AAAAA === HERDACION....')
+    #     match_query = {
+    #         "deleted_at":{"$exists":False},
+    #         "form_id": self.CONF_ACCESOS,
+    #         f"answers.{self.Employee.EMPLOYEE_OBJ_ID}.{self.Employee.employee_fields['user_id_id']}":self.user['id'],
+    #         #"answers.677ffe8711c99ee27489d564.638a9a99616398d2e392a9f5":self.user['id'],
+    #     }
+    #     query = [
+    #         {'$match': match_query },
+    #         {'$project': {
+    #             "usuario":f"$answers.{self.conf_accesos_fields['usuario_cat']}",
+    #             "grupos":f"$answers.{self.conf_accesos_fields['grupos']}",
+    #             "menus": f"$answers.{self.conf_accesos_fields['menus']}",
+    #         }},
+    #         {'$limit':1},
+    #     ]
+    #     # print('cr', self.cr)
+    #     # print('query><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<', simplejson.dumps(query, indent=2))
+    #     return self.format_cr_result(self.cr.aggregate(query),  get_one=True)
 
     def get_cantidades_de_pases(self, x_empresa=False):
         print('entra a get_cantidades_de_pases')

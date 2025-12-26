@@ -186,7 +186,7 @@ def get_module_class(class_name):
     print('>>>  Buscan do clase...', class_name)
     
     # 1. Intentar cargar desde rutas personalizadas
-    filenames = [f'{class_name.lower()}_service.py', 'app.py']
+    filenames = [f'{class_name.lower()}_service.py', 'service.py']
     custom_file, filename = find_module_file(CUSTOM_MODULE_PATHS, class_name, filenames)
     
     if custom_file:
