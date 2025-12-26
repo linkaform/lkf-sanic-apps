@@ -8,6 +8,11 @@ from pathlib import Path
 
 # from bin.lkfaddons import module
 
+# Agregar ruta de la app al path para imports
+APP_ROOT = os.getenv('APP_ROOT', '/srv/lkf-sanic-app/app')
+if APP_ROOT not in sys.path:
+    sys.path.insert(0, APP_ROOT)
+    print(f'>>> Ruta agregada a sys.path: {APP_ROOT}')
 
 account_id = os.getenv("ACCOUNT_ID", 126)
 

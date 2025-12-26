@@ -2,9 +2,9 @@
 
 from linkaform_api.settings import config
 
-#ENV = 'prod' 
+ENV = 'prod' 
 #ENV = 'preprod' 
-ENV = 'local' 
+#ENV = 'local' 
 
 print('=================== LODING SETTINGS FOR ENVIOIRMENT: {} ==================='.format(ENV))
 mongo_hosts = config.get('mongo_hosts')
