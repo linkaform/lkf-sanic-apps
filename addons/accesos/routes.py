@@ -64,16 +64,10 @@ async def post_incidente(request: Request):
 
 @accesos_bp.get("/lista_pases")
 async def get_lista_pases(request: Request):
-    print('request.asrgs:', request.args)
-    # records = service.get_locations_address()
-    location = request.args.get('location')
-    status = request.args.get('status')
-    inActive = request.args.get('inActive')
-    records = service.get_lista_pase(location, status, inActive)
-    print('records:', records)
-    # records = await service.listar_pases_por_empresa(empresa=empresa)
-    # records = [{"empresa": empresa, "count": 42}]
-    return json({"data": records}, status=201)
+    allowed_params = ["location", "status", "inActive"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    records = service.get_lista_pase(**filters)
+    return json({"data": records}, status=200)
 
 
 @accesos_bp.get("/pases")
