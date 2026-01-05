@@ -57,8 +57,7 @@ if __name__ == "__main__":
     # option = 'get_user_menu'
     print('option', option)
     if option == 'load_shift':
-        # used
-        response = acceso_obj.get_shift_data(booth_location=location, booth_area=area)
+        response = dispatch("load_shift", params={'booth_location': location, 'booth_area': area})
     elif option == 'assets_access_pass':
         response = acceso_obj.assets_access_pass(location)
     elif option == 'assing_gafete':

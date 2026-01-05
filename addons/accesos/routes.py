@@ -81,5 +81,12 @@ async def get_pases(request: Request):
     # records = [{"empresa": empresa, "count": 42}]
     return json({"data": records})
 
+@accesos_bp.get("/load_shift")
+async def get_shift_data(request: Request):
+    allowed_params = ["booth_location", "booth_area"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    print('filters:', filters)
+    records = service.get_shift_data(**filters)
+    return json({"data": records}, status=200)
 
 print('fin de rutas...')
