@@ -163,7 +163,10 @@ class Employee(Base):
         if kwargs.get('user_id'):
             user_id = kwargs['user_id']
         else:
-            user_id = self.user.get('user_id')
+            if hasattr(self, 'user'):
+                user_id = self.user.get('id')
+            else:
+                user_id = self.kwargs.get('user',{}).get('id')
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.CONF_AREA_EMPLEADOS,
@@ -182,14 +185,15 @@ class Employee(Base):
                 {'_id': 1,
                     'folio': "$folio",
                     'created_at': "$created_at",
-                    'area': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
-                    'location': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+                    'area': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}",
+                    'location': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
                     'employee': f"$answers.{self.EMPLOYEE_OBJ_ID}.{self.f['worker_name']}",
                     'marcada_como': f"$answers.{self.f['areas_group']}.{self.f['area_default']}",
                     }
             }
             ]
         res = self.format_cr(self.cr.aggregate(query))
+
         caseta = None
         user_booths = []
         for x in res:
@@ -270,11 +274,11 @@ class Employee(Base):
         unwind_query = {}
         if location_name:
             unwind_query.update({
-                f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}": location_name
+                f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}": location_name
                 })
         if area_name:
             unwind_query.update({
-                f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}": area_name
+                f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}": area_name
                 })
         if kwargs.get('position'):
             positions = kwargs.get('position')
@@ -291,8 +295,8 @@ class Employee(Base):
                 {'_id': 1,
                     'folio': "$folio",
                     'created_at': "$created_at",
-                    'area': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
-                    'location': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+                    'area': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}",
+                    'location': f"$answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
                     'name': f"$answers.{self.EMPLOYEE_OBJ_ID}.{self.f['worker_name']}",
                     'user_id': {'$first':f"$answers.{self.EMPLOYEE_OBJ_ID}.{self.employee_fields['user_id_id']}"},
                     'marcada_como': f"$answers.{self.f['areas_group']}.{self.f['area_default']}",

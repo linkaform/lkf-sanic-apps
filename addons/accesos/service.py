@@ -1753,7 +1753,7 @@ class Accesos(Base):
             {'$project':{
                 "_id":0,
                 'tipo_de_guardia': f"$answers.{self.f['guard_group']}.{self.mf['tipo_de_guardia']}",
-                'puesto': f"$answers.{self.f['guard_group']}.{self.PUESTOS_OBJ_ID}.{self.f['worker_position']}"
+                'puesto': f"$answers.{self.f['guard_group']}.{self.Employee.PUESTOS_OBJ_ID}.{self.f['worker_position']}"
                 }
             },
             {'$unwind': f"$tipo_de_guardia"},
@@ -2998,7 +2998,7 @@ class Accesos(Base):
     def get_booths_guards(self, location=None, area=None, solo_disponibles=False, **kwargs):
         res = {}
         if not area:
-            default_booth , user_booths = self.get_user_booth(search_default=False)
+            default_booth , user_booths = self.Employee.get_user_booth(search_default=False)
             location = default_booth.get('location')
             area = default_booth.get('area')
         guards_positions = self.config_get_guards_positions()
@@ -3009,13 +3009,13 @@ class Accesos(Base):
             if kwargs.get('position') and kwargs['position'] != puesto:
                 continue
             res[puesto] = res.get(puesto,
-                self.get_users_by_location_area(location, area, **{'position': guard_type['puestos']})
+                self.Employee.get_users_by_location_area(location, area, **{'position': guard_type['puestos']})
                 )
         uids = []
         for pos, user in res.items():
             uids += [x['user_id'] for x in user]
         
-        pics = self.get_employee_pic(uids)
+        pics = self.Employee.get_employee_pic(uids)
         for pos, user in res.items():
             for x in user:
                 if x['user_id'] in list(pics.keys()):
@@ -3829,7 +3829,7 @@ class Accesos(Base):
         if kwargs.get('user_id'):
             user_id = kwargs['user_id']
         else:
-            user_id = self.user.get('user_id')
+            user_id = self.user.get('id')
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.CHECKIN_CASETAS,
@@ -3837,7 +3837,7 @@ class Accesos(Base):
         unwind = {'$unwind': f"$answers.{self.f['guard_group']}"}
         query = [{'$match': match_query }, unwind ]
 
-        unwind_query = {f"answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": {"$exists":True}}
+        unwind_query = {f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": {"$exists":True}}
         if as_shift:
             match_query.update({'created_by_id':user_id})
             query = [
@@ -3848,19 +3848,19 @@ class Accesos(Base):
                 ]
         else:
             if type(user_ids) == list:
-                unwind_query.update({f"answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": {"$in": user_ids}})
+                unwind_query.update({f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": {"$in": user_ids}})
             else:
-                unwind_query.update({f"answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": user_ids })
+                unwind_query.update({f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": user_ids })
         query += [ {'$match': unwind_query }]
         query += [
             {'$project':
                 {'_id': 1,
                     'folio': "$folio",
                     'created_at': "$created_at",
-                    'name': f"$answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
-                    'user_id': {"$first":f"$answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
-                    'location': f"$answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
-                    'area': f"$answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+                    'name': f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
+                    'user_id': {"$first":f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
+                    'location': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+                    'area': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
                     'checkin_date': f"$answers.{self.f['guard_group']}.{self.f['checkin_date']}",
                     'checkout_date': f"$answers.{self.f['guard_group']}.{self.f['checkout_date']}",
                     'checkin_status': f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}",
@@ -5061,7 +5061,7 @@ class Accesos(Base):
         Regresa las castas configurados por usuario y su stats
         TODO, se puede mejorar la parte de la obtencion de la direccion para hacerlo en 1 sola peticion
         '''
-        default_booth , user_booths = self.get_user_booth(search_default=False, turn_areas=turn_areas)
+        default_booth , user_booths = self.Employee.get_user_booth(search_default=False, turn_areas=turn_areas)
         user_booths.insert(0, default_booth)
         user_booths_with_area = []
         for booth in user_booths:
@@ -5070,7 +5070,7 @@ class Accesos(Base):
                 location = booth.get('location')
                 booth_status = self.get_booth_status(booth_area, location)
                 booth['status'] = booth_status.get('status', 'Disponible')
-                booth_address = self.get_area_address(location, booth_area)
+                booth_address = self.Location.get_area_address(location, booth_area)
                 booth_address.pop('_id')
                 booth_address.pop('folio')
                 booth.update(booth_address)
@@ -5122,10 +5122,10 @@ class Accesos(Base):
                 '_id': 1,
                 'folio': "$folio",
                 'created_at': "$created_at",
-                'name': f"$answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
-                'user_id': {"$first": f"$answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
-                'location': f"$answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
-                'area': f"$answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+                'name': f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
+                'user_id': {"$first": f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
+                'location': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+                'area': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
                 'checkin_date': f"$answers.{self.f['guard_group']}.{self.f['checkin_date']}",
                 'checkout_date': f"$answers.{self.f['guard_group']}.{self.f['checkout_date']}",
                 'checkin_status': f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}",
@@ -5177,12 +5177,12 @@ class Accesos(Base):
 
         load_shift_json = { }
         username = self.user.get('username')
-        user_id = self.user.get('user_id')
+        user_id = self.user.get('id')
         config_accesos_user="" #get_config_accesos(user_id)
         user_status = self.get_employee_checkin_status(user_id, as_shift=True,  available=False)
         this_user = user_status.get(user_id)
         if not this_user:
-            this_user =  self.get_employee_data(email=self.user.get('email'), get_one=True)
+            this_user =  self.Employee.get_employee_data(email=self.user.get('email'), get_one=True)
             this_user['name'] = this_user.get('worker_name','')
         user_booths = []
         guards_positions = self.config_get_guards_positions()
@@ -5215,7 +5215,7 @@ class Accesos(Base):
                         location_employees[self.support_guard].append(each_user)
         else:
             # location_employees = {}
-            default_booth , user_booths = self.get_user_booth(search_default=False)
+            default_booth , user_booths = self.Employee.get_user_booth(search_default=False)
             # location = default_booth.get('location')
             if not booth_location:
                 booth_area = default_booth.get('area')
@@ -5237,7 +5237,7 @@ class Accesos(Base):
                 support_guards.pop(idx)
                 break
         location_employees['guardia_de_apoyo'] = support_guards
-        booth_address = self.get_area_address(booth_location, booth_area)
+        booth_address = self.Location.get_area_address(booth_location, booth_area)
         notes = self.get_list_notes(booth_location, booth_area, status='abierto')
         load_shift_json["location"] = {
             "name":  booth_location,
@@ -5280,15 +5280,15 @@ class Accesos(Base):
         for clave in ["guardia_de_apoyo", "guardia_lider"]:
             if location_employees.get(clave):
                 for usuario in location_employees[clave]:
-                    if usuario.get("user_id") == self.user.get('user_id'):
+                    if usuario.get("user_id") == self.user.get('id'):
                         location_guards = location_employees[clave]
                 
         location_employees = location_guards
 
         for employee in location_employees:
-            if employee.get('user_id',0) == self.user.get('user_id'):
+            if employee.get('user_id', 0) == self.user.get('id'):
                     return employee
-        self.LKFException(f"El usuario con id {self.user['user_id']}, no se ecuentra configurado como guardia")
+        self.LKFException(f"El usuario con id {self.user['id']}, no se ecuentra configurado como guardia")
 
     def get_guards_booths(self, location, area):
         match_query = {
@@ -5526,7 +5526,7 @@ class Accesos(Base):
             else:
                 if x:
                     employee_ids.append(x['user_id'])
-        pics = self.get_employee_pic(employee_ids)
+        pics = self.Employee.get_employee_pic(employee_ids)
         for a, x in employees.items():
             if type(x) == list:
                 for y in x:
