@@ -919,7 +919,7 @@ class Accesos(Base):
      
     def assets_access_pass(self, location):
         ### Areas
-        catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
+        catalog_id = self.Location.AREAS_DE_LAS_UBICACIONES_CAT_ID
         form_id = self.PASE_ENTRADA
         group_level = 2
         options = {
@@ -934,7 +934,7 @@ class Accesos(Base):
             }
         areas = self.lkf_api.catalog_view(catalog_id, form_id, options) 
         ### Aquien Visita
-        catalog_id = self.CONF_AREA_EMPLEADOS_CAT_ID
+        catalog_id = self.Employee.CONF_AREA_EMPLEADOS_CAT_ID
         visita_a = self.lkf_api.catalog_view(catalog_id, form_id, options) 
         # visita_a = [r.get('key')[group_level-1] for r in visita_a]
         ### Pases de accesos
