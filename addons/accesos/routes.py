@@ -89,4 +89,11 @@ async def get_shift_data(request: Request):
     records = service.get_shift_data(**filters)
     return json({"data": records}, status=200)
 
+@accesos_bp.get("/assets_access_pass")
+async def assets_access_pass(request: Request):
+    allowed_params = ["location"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    records = service.assets_access_pass(**filters)
+    return json({"data": records}, status=200)
+
 print('fin de rutas...')

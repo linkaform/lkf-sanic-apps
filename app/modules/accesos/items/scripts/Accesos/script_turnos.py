@@ -59,7 +59,7 @@ if __name__ == "__main__":
     if option == 'load_shift':
         response = dispatch("load_shift", params={'booth_location': location, 'booth_area': area})
     elif option == 'assets_access_pass':
-        response = acceso_obj.assets_access_pass(location)
+        response = dispatch("assets_access_pass", params={'location': location})
     elif option == 'assing_gafete':
         response = acceso_obj.assing_gafete(data_gafete, id_bitacora, tipo_movimiento)
     elif option == 'list_bitacora':
