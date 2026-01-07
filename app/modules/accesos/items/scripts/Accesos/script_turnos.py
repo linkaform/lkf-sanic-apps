@@ -61,7 +61,7 @@ if __name__ == "__main__":
     elif option == 'assets_access_pass':
         response = dispatch("assets_access_pass", params={'location': location})
     elif option == 'assing_gafete':
-        response = acceso_obj.assing_gafete(data_gafete, id_bitacora, tipo_movimiento)
+        response = dispatch("assing_gafete", params={'data_gafete': data_gafete, 'id_bitacora': id_bitacora, 'tipo_movimiento': tipo_movimiento})
     elif option == 'list_bitacora':
         response = acceso_obj.get_list_bitacora(location,  area, prioridades=prioridades, dateFrom=dateFrom, dateTo=dateTo, limit=limit, offset=offset,  filterDate=filterDate)
     elif option == 'list_bitacora2':
