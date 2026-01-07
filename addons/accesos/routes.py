@@ -96,4 +96,11 @@ async def assets_access_pass(request: Request):
     records = service.assets_access_pass(**filters)
     return json({"data": records}, status=200)
 
+@accesos_bp.get("/assing_gafete")
+async def assing_gafete(request: Request):
+    allowed_params = ["data_gafete", "id_bitacora", "tipo_movimiento"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    records = service.assing_gafete(**filters)
+    return json({"data": records}, status=200)
+
 print('fin de rutas...')
