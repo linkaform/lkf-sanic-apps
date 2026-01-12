@@ -297,9 +297,9 @@ class Accesos( Accesos):
             "form_id": self.BITACORA_ACCESOS
         }
         if location:
-            match_query.update({f"answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}":location})
+            match_query.update({f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}":location})
         if area:
-            match_query.update({f"answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}":area})
+            match_query.update({f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}":area})
         if prioridades:
             match_query[f"answers.{self.bitacora_fields['status_visita']}"] = {"$in": prioridades}
   
@@ -332,9 +332,9 @@ class Accesos( Accesos):
             'folio': "$folio",
             'created_at': "$created_at",
             'updated_at': "$updated_at",
-            'a_quien_visita':f"$answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
+            'a_quien_visita':f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
             'documento': f"$answers.{self.mf['documento']}",
-            'caseta_entrada':f"$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+            'caseta_entrada':f"$answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
             'codigo_qr':f"$answers.{self.mf['codigo_qr']}",
             'comentarios':f"$answers.{self.bitacora_fields['grupo_comentario']}",
             'fecha_salida':f"$answers.{self.mf['fecha_salida']}",
@@ -347,13 +347,13 @@ class Accesos( Accesos):
             'identificacion':  {"$first":f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['identificacion']}"},
             'pase_id':{"$toObjectId":f"$answers.{self.mf['codigo_qr']}"},
             'motivo_visita':f"$answers.{self.CONFIG_PERFILES_OBJ_ID}.{self.mf['motivo']}",
-            'nombre_area_salida':f"$answers.{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
+            'nombre_area_salida':f"$answers.{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
             'nombre_visitante':f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['nombre_visita']}",
             'contratista':f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['empresa']}",
             'perfil_visita':{'$arrayElemAt': [f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['nombre_perfil']}",0]},
             'status_gafete':f"$answers.{self.mf['status_gafete']}",
             'status_visita':f"$answers.{self.mf['tipo_registro']}",
-            'ubicacion':f"$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+            'ubicacion':f"$answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
             'vehiculos':f"$answers.{self.mf['grupo_vehiculos']}",
             'visita_a': f"$answers.{self.mf['grupo_visitados']}"
             }
