@@ -52,6 +52,12 @@ def get_user_booths(data):
         'turn_areas': data.get('turn_areas', True)
     })
 
+def get_boot_guards(data):
+    return dispatch("get_boot_guards", params={
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+    })
+
 DISPATCHER = {
     "load_shift": load_shift,
     "assets_access_pass": assets_access_pass,
@@ -59,6 +65,8 @@ DISPATCHER = {
     "list_bitacora": list_bitacora,
     "list_bitacora2": list_bitacora2,
     "get_user_booths": get_user_booths,
+    "get_boot_guards": get_boot_guards,
+    "guardias_de_apoyo": get_boot_guards,
 }
 
 if __name__ == "__main__":

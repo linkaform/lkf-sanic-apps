@@ -124,4 +124,13 @@ async def get_user_booths(request: Request):
     records = service.get_user_booths_availability(**filters)
     return json({"data": records}, status=200)
 
+@accesos_bp.get("/get_boot_guards")
+async def get_booths_guards(request: Request):
+    allowed_params = ["location", "area", "solo_disponibles", "position"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    filters['solo_disponibles'] = True
+    filters['position'] = 'guardia_de_apoyo'
+    records = service.get_booths_guards(**filters)
+    return json({"data": records}, status=200)
+
 print('fin de rutas...')
