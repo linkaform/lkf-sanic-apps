@@ -9,42 +9,47 @@ def get_data():
 
 def load_shift(data):
     return dispatch("load_shift", params={
-        'booth_location': data.get('location'), 
-        'booth_area': data.get('area')
+        'booth_location': data.get('location', ''), 
+        'booth_area': data.get('area', '')
     })
 
 def assets_access_pass(data):
     return dispatch("assets_access_pass", params={
-        'location': data.get('location')
+        'location': data.get('location', '')
     })
 
 def assing_gafete(data):
     return dispatch("assing_gafete", params={
-        'data_gafete': data.get('data_gafete'), 
-        'id_bitacora': data.get('id_bitacora'), 
-        'tipo_movimiento': data.get('tipo_movimiento')
+        'data_gafete': data.get('data_gafete', {}), 
+        'id_bitacora': data.get('id_bitacora', ''), 
+        'tipo_movimiento': data.get('tipo_movimiento', '')
     })
 
 def list_bitacora(data):
     return dispatch("list_bitacora", params={
-        'location': data.get('location'),
-        'area': data.get('area'),
-        'prioridades': data.get('prioridades'),
-        'dateFrom': data.get('dateFrom'),
-        'dateTo': data.get('dateTo'),
-        'limit': data.get('limit'),
-        'offset': data.get('offset'),
-        'filterDate': data.get('filterDate')
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'prioridades': data.get('prioridades', []),
+        'dateFrom': data.get('dateFrom', ''),
+        'dateTo': data.get('dateTo', ''),
+        'limit': data.get('limit', 10),
+        'offset': data.get('offset', 0),
+        'filterDate': data.get('filterDate', '')
     })
 
 def list_bitacora2(data):
     return dispatch("list_bitacora2", params={
-        'location': data.get('location'),
-        'area': data.get('area'),
-        'prioridades': data.get('prioridades'),
-        'dateFrom': data.get('dateFrom'),
-        'dateTo': data.get('dateTo'),
-        'filterDate': data.get('filterDate')
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'prioridades': data.get('prioridades', []),
+        'dateFrom': data.get('dateFrom', ''),
+        'dateTo': data.get('dateTo', ''),
+        'filterDate': data.get('filterDate', '')
+    })
+
+def get_user_booths(data):
+    return dispatch("get_user_booths", params={
+        'turn_areas': data.get('turn_areas', True)
     })
 
 DISPATCHER = {
@@ -53,6 +58,7 @@ DISPATCHER = {
     "assing_gafete": assing_gafete,
     "list_bitacora": list_bitacora,
     "list_bitacora2": list_bitacora2,
+    "get_user_booths": get_user_booths,
 }
 
 if __name__ == "__main__":

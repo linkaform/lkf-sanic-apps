@@ -117,4 +117,11 @@ async def get_list_bitacora2(request: Request):
     records = service.get_list_bitacora2(**filters)
     return json({"data": records}, status=200)
 
+@accesos_bp.get("/get_user_booths")
+async def get_user_booths(request: Request):
+    allowed_params = ["turn_areas"]
+    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    records = service.get_user_booths_availability(**filters)
+    return json({"data": records}, status=200)
+
 print('fin de rutas...')
