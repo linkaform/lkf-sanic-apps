@@ -7,25 +7,34 @@ from middleware.auth import dispatch
 def get_data():
     pass
 
-def load_shift(data):
-    return dispatch("load_shift", params={
-        'booth_location': data.get('location', ''), 
-        'booth_area': data.get('area', '')
-    })
+def load_shift(params):
+    data = params.get("data", {})
+    return dispatch(
+        "load_shift", 
+        params={
+            'booth_location': data.get('location', ''), 
+            'booth_area': data.get('area', '')
+        },
+        method='get',
+        **params
+    )
 
-def assets_access_pass(data):
+def assets_access_pass(params):
+    data = kwargs.get("data", {})
     return dispatch("assets_access_pass", params={
         'location': data.get('location', '')
-    })
+    }, **params)
 
-def assing_gafete(data):
+def assing_gafete(params):
+    data = kwargs.get("data", {})
     return dispatch("assing_gafete", params={
         'data_gafete': data.get('data_gafete', {}), 
         'id_bitacora': data.get('id_bitacora', ''), 
         'tipo_movimiento': data.get('tipo_movimiento', '')
-    })
+    }, **params)
 
-def list_bitacora(data):
+def list_bitacora(params):
+    data = params.get("data", {})
     return dispatch("list_bitacora", params={
         'location': data.get('location', ''),
         'area': data.get('area', ''),
@@ -35,9 +44,10 @@ def list_bitacora(data):
         'limit': data.get('limit', 10),
         'offset': data.get('offset', 0),
         'filterDate': data.get('filterDate', '')
-    })
+    }, **params)
 
-def list_bitacora2(data):
+def list_bitacora2(params):
+    data = params.get("data", {})
     return dispatch("list_bitacora2", params={
         'location': data.get('location', ''),
         'area': data.get('area', ''),
@@ -45,18 +55,20 @@ def list_bitacora2(data):
         'dateFrom': data.get('dateFrom', ''),
         'dateTo': data.get('dateTo', ''),
         'filterDate': data.get('filterDate', '')
-    })
+    }, **params)
 
-def get_user_booths(data):
+def get_user_booths(params):
+    data = params.get("data", {})
     return dispatch("get_user_booths", params={
         'turn_areas': data.get('turn_areas', True)
-    })
+    }, **data)
 
-def get_boot_guards(data):
+def get_boot_guards(params):
+    data = params.get("data", {})
     return dispatch("get_boot_guards", params={
         'location': data.get('location', ''),
         'area': data.get('area', ''),
-    })
+    }, **params)
 
 DISPATCHER = {
     "load_shift": load_shift,
@@ -79,15 +91,14 @@ if __name__ == "__main__":
     # lo que necesitamos es la flexiblidad de que cada cuenta por medio de scripts tenga su flexibilidad
 
     #data = acceso_obj.data.get('data',{})
-    all_data = simplejson.loads(sys.argv[2])
-    data = all_data.get("data", {})
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
     option = data.get("option")
-
+    print('..... arranca script turnos')
     handler = DISPATCHER.get(option)
-
     if not handler:
         response = {"error": f"Option '{option}' not supported"}
     else:
-        response = handler(data)
+        response = handler(params)
 
     sys.stdout.write(simplejson.dumps(response.json()))

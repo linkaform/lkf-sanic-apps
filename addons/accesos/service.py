@@ -24,6 +24,7 @@ from zipfile import ZipFile
 
 print('--------------- ACCESOS APP --------------------')
 from ..base.app import Base
+from ..base.tools import *
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
@@ -5170,11 +5171,11 @@ class Accesos(Base):
             }
         return res
 
-    def get_shift_data(self, booth_location=None, booth_area=None, search_default=True):
+    @reload_user
+    def get_shift_data(self, booth_location=None, booth_area=None, search_default=True, headers=None):
         """
         Obtiene informacion del turno del usuario logeado
         """
-
         load_shift_json = { }
         username = self.user.get('username')
         user_id = self.user.get('id')
@@ -5188,7 +5189,6 @@ class Accesos(Base):
         guards_positions = self.config_get_guards_positions()
         if not guards_positions:
             self.LKFException({"status_code":400, "msg":'No Existen puestos de guardias configurados.'})
-
         if this_user and this_user.get('status') == 'out':
             check_aux_guard = self.check_in_aux_guard()
 

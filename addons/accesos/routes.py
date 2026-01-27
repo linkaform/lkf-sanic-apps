@@ -38,6 +38,7 @@ ModuleClass = get_module_class('Accesos')
 
 # Crear instancia global del servicio
 print('>>> Creando instancia del servicio Accesos')
+
 service = ModuleClass(settings)
 print('>>> Servicio Accesos inicializado correctamente')
 
@@ -86,7 +87,7 @@ async def get_shift_data(request: Request):
     allowed_params = ["booth_location", "booth_area"]
     filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
     print('filters:', filters)
-    records = service.get_shift_data(**filters)
+    records = service.get_shift_data(**filters, headers=dict(request.headers))
     return json({"data": records}, status=200)
 
 @accesos_bp.get("/assets_access_pass")

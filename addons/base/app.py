@@ -26,6 +26,7 @@ month_dict = {
 }
 print('--------------- ADDONS Base APP --------------------')
 
+
 class Base(base.LKF_Base):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
