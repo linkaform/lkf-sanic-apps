@@ -51,8 +51,10 @@ class Accesos(Base):
         self.CARGA_PERMISOS_VISITANTES = self.lkm.form_id('carga_de_permisos_de_visitantes','id')
         self.CHECKIN_CASETAS = self.lkm.form_id('checkin_checkout_casetas','id')
         self.CONCESSIONED_ARTICULOS = self.lkm.form_id('concesion_de_activos_unico','id')
+        self.CONFIGURACION_RECORRIDOS_FORM = self.lkm.form_id('configuracion_de_recorridos','id')
         self.CONF_PERFILES = self.lkm.form_id('configuracion_de_perfiles','id')
         self.PASE_ENTRADA = self.lkm.form_id('pase_de_entrada','id')
+        self.PROGRAMAR_TAREAS = self.lkm.form_id('programar_tareas', 'id')
         self.PUESTOS_GUARDIAS = self.lkm.form_id('puestos_de_guardias','id')
         self.VISITA_AUTORIZADA = self.lkm.form_id('visita_autorizada','id')
         self.CONF_ACCESOS = self.lkm.form_id('configuracion_accesos','id')
@@ -61,7 +63,7 @@ class Accesos(Base):
         self.BITACORA_RONDINES = self.lkm.form_id('bitacora_rondines','id')
         self.CHECK_UBICACIONES = self.lkm.form_id('check_ubicaciones','id')
         self.REGISTRO_ASISTENCIA = self.lkm.form_id('registro_de_asistencia','id')
-        self.CONFIGURACION_RECORRIDOS_FORM = self.lkm.form_id('configuracion_de_recorridos','id')
+        self.FORMATO_VACACIONES = self.lkm.form_id('formato_vacaciones_aviso','id')
 
         self.last_check_in = []
         # self.FORM_ALTA_COLABORADORES = self.lkm.form_id('alta_de_colaboradores_visitantes','id')
@@ -79,6 +81,10 @@ class Accesos(Base):
         Para ello deberás llamar el método `lkm.catalog_id` del objeto `lkm`(linkaform modules, por sus siglas).
         En `lkm` están todas las funciones generales de módulos).
         '''
+
+        self.ACTIVOS_FIJOS_CAT = self.lkm.catalog_id('activos_fijos')
+        self.ACTIVOS_FIJOS_CAT_ID = self.ACTIVOS_FIJOS_CAT.get('id')
+        self.ACTIVOS_FIJOS_CAT_OBJ_ID = self.ACTIVOS_FIJOS_CAT.get('obj_id')
 
         self.CONFIGURACION_GAFETES_LOCKERS = self.lkm.catalog_id('configuracion_de_gafetes_y_lockers')
         self.CONFIGURACION_GAFETES_LOCKERS_ID = self.CONFIGURACION_GAFETES_LOCKERS.get('id')
@@ -146,18 +152,19 @@ class Accesos(Base):
 
         self.load(module='Employee', **self.kwargs)
         self.load(module='Location', **self.kwargs)
-        self.load(module='Activo_Fijo', module_class='Vehiculo', import_as='AF', **self.kwargs)
-        self.f.update(self.Employee.f)
-        self.f.update(self.Location.f)
-        self.f.update(self.AF.f)
+
         # self.CONF_PERFIL = self.lkm.catalog_id('configuracion_de_perfiles','id')
         # self.CONF_PERFIL_ID = self.CONF_PERFIL.get('id')
         # self.CONF_PERFIL_OBJ_ID = self.CONF_PERFIL.get('obj_id')
 
 
-        # self.AREAS_DE_LAS_UBICACIONES_CAT = self.lkm.catalog_id('areas_de_las_ubicaciones')
-        # self.AREAS_DE_LAS_UBICACIONES_CAT_ID = self.AREAS_DE_LAS_UBICACIONES_CAT.get('id')
-        # self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID = self.AREAS_DE_LAS_UBICACIONES_CAT.get('obj_id')
+        self.AREAS_DE_LAS_UBICACIONES_CAT = self.lkm.catalog_id('areas_de_las_ubicaciones')
+        self.AREAS_DE_LAS_UBICACIONES_CAT_ID = self.AREAS_DE_LAS_UBICACIONES_CAT.get('id')
+        self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID = self.AREAS_DE_LAS_UBICACIONES_CAT.get('obj_id')
+
+        self.AREAS_DE_LAS_UBICACIONES_SALIDA = self.lkm.catalog_id('areas_de_las_ubicaciones_salidas')
+        self.AREAS_DE_LAS_UBICACIONES_SALIDA_ID = self.AREAS_DE_LAS_UBICACIONES_SALIDA.get('id')
+        self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID = self.AREAS_DE_LAS_UBICACIONES_SALIDA.get('obj_id')
         #----Dic Fields Forms
 
         ## Module Fields ##
@@ -278,6 +285,7 @@ class Accesos(Base):
             'tipo_vehiculo': '65f22098d1dc5e0b9529e89a',
             'tipo_visita_pase': '662c304fad7432d296d92581',
             'ubicacion': '663e5c57f5b8a7ce8211ed0b',
+            'username': '6759e4a7a9a6e13c7b26da33',
             'user_id_empleado': '663bd32d7fb8869bbc4d7f7b',
             'vigencia_certificado':'662962bb203407ab90c886e6',
             'vigencia_certificado_en':'662962bb203407ab90c886e7',
@@ -301,9 +309,9 @@ class Accesos(Base):
         self.perdidos_fields = {
             'estatus_perdido':'6639ae65356a6efb4de97d28',
             'date_hallazgo_perdido':'6639ae65356a6efb4de97d29',
-            'ubicacion_catalog':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
+            'ubicacion_catalog':f"{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
             'ubicacion_perdido':f"{self.mf['ubicacion']}",
-            'area_catalog':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
+            'area_catalog':f"{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
             'area_perdido':f"{self.mf['nombre_area_salida']}",
             'color_perdido':'66ce223e174f3f39c0020d65',
             'articulo_perdido':'6639aeeb97b12e6f4ccb9711',
@@ -315,9 +323,9 @@ class Accesos(Base):
             'descripcion':'66ce2397c5c4d148311adf83',
             'comentario_perdido':'6639affa5a9f58f5b5cb9706',
             'quien_entrega_catalog':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}",
-            'quien_entrega_interno':f"{self.Employee.f['worker_name']}",
+            'quien_entrega_interno':f"{self.Employee.employee_fields['worker_name']}",
             'quien_entrega':'66ce2646033c793281b2c414',
-            #'quien_entrega_interno':f"{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
+            #'quien_entrega_interno':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
             'quien_entrega_externo':'66ce2647033c793281b2c415',
             'recibe_perdido':'6639affa5a9f58f5b5cb9707',
             'telefono_recibe_perdido':'664415ce630b1fb22b07e159',
@@ -333,8 +341,8 @@ class Accesos(Base):
             "pase_entrada": f"{self.PASE_ENTRADA_OBJ_ID}",
             'fecha_salida':f"{self.mf['fecha_salida']}",
             'fecha_entrada':f"{self.mf['fecha_entrada']}",
-            'caseta_entrada':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
-            'caseta_salida':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
+            'caseta_entrada':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+            'caseta_salida':f"{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
             'codigo_qr':f"{self.mf['codigo_qr']}",
             'documento':f"{self.mf['documento']}",
             'comentario':"66ba83cc079d8a54634711c1",
@@ -345,7 +353,7 @@ class Accesos(Base):
             'perfil_visita':f"{self.mf['catalog_visita']}.{self.mf['nombre_perfil']}",
             'status_visita':f"{self.mf['tipo_registro']}",
             'tipo_comentario':"66ba83cc079d8a54634711c2",
-            'ubicacion':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+            'ubicacion':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
             'visita_a':"663d4ba61b14fab90559ebb0",
             'visita':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}",
             'visita_nombre_empleado': f"{self.mf['nombre_empleado']}",
@@ -356,6 +364,7 @@ class Accesos(Base):
             "catalogo_pase_entrada": "66a83ad652d2643c97489d31",
             "gafete_catalog": "66a83ace56d1e741159ce114",
         }
+        
         self.checkin_fields = {
             'boot_checkin_date':'663bffc28d00553254f274e1',
             'boot_checkout_date':'663bffc28d00553254f274e2',
@@ -369,32 +378,90 @@ class Accesos(Base):
             'guard_group': mf['guard_group'],
             'checkin_image': '685ac4e836c1c936b97275ad',
             'employee_position':'665f482cc9a2f8acf685c20b',
-            'cat_created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
-            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
-            'employee': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
-            'cat_location': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
-            'cat_area': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
-            'cat_employee_b': f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_b']}",
+            'cat_created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
+            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
+            'employee': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
+            'cat_location': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Location.f['location']}",
+            'cat_area': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Location.f['area']}",
+            'cat_employee_b': f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name_b']}",
             'fotografia_inicio_turno':'68d384ef55840a75f2cb7e28',
-            'fotografia_cierre_turno':'68d384ef55840a75f2cb7e29'
+            'fotografia_cierre_turno':'68d384ef55840a75f2cb7e29',
+            'nombre_suplente':'6927a1176c60848998a157a2'
         }
         #- Para salida de bitacora  de articulos consecionados y lista
-        self.consecionados_fields = {
-            'status_concesion':'66469e193e6a703350f2e029',
-            'ubicacion_catalog_concesion': f"{self.Location.UBICACIONES_CAT_OBJ_ID}",
-            'ubicacion_concesion':f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
-            'solicita_concesion':'66469e5a3e6a703350f2e03a',
-            'persona_catalog_concesion':f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}",
-            'persona_nombre_concesion':f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.mf['nombre_guardia_apoyo']}",
-            'area_catalog_concesion':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
-            'caseta_concesion':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
-            'fecha_concesion':'66469ef8c9d58517f85d035f',
-            'equipo_catalog_concesion':f"{self.AF.ACTIVOS_FIJOS_CAT_OBJ_ID}",
-            'equipo_imagen_concesion':'6646393c3fa8b818265d0326',
-            'area_concesion':'663e5d44f5b8a7ce8211ed0f',
-            'equipo_concesion':'6646373dda020fe797cafa20',
-            'observacion_concesion':'66469f47c0580e5ead07e39a',
-            'fecha_devolucion_concesion':'66469f47c0580e5ead07e39b',
+        self.cons_f = {
+            'area_catalog_concesion': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'area_concesion': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.663e5d44f5b8a7ce8211ed0f",
+            '_area_concesion': "663e5d44f5b8a7ce8211ed0f",
+            'categoria_equipo_concesion':  f"{self.ACTIVOS_FIJOS_CAT_OBJ_ID}.66ce23efc5c4d148311adf86",
+            '_categoria_equipo_concesion': '66ce23efc5c4d148311adf86',
+            'cantidad_devolucion': '699fec1e0f178e858bbf1b92',
+            'cantidad_equipo_concesion': '69799523aa75e6a4c99c4d3f',
+            'cantidad_equipo_devuelto': '6979962e6eac7e391dbb244e',
+            'cantidad_equipo_pendiente': '699fe2e679aaab897b504c65',
+            
+            'caseta_concesion':  f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.663e5d44f5b8a7ce8211ed0f",
+            '_caseta_concesion':  "663e5d44f5b8a7ce8211ed0f",
+            
+            'comentario_entrega': '69799523aa75e6a4c99c4d41',
+            
+            'costo_equipo_concesion': f"{self.ACTIVOS_FIJOS_CAT_OBJ_ID}.697991fffd83f49bb9fe074e",
+            '_costo_equipo_concesion': "697991fffd83f49bb9fe074e",
+            
+            'entregado_por': '6979962e6eac7e391dbb2450',
+            'equipo_catalog_concesion': f"{self.ACTIVOS_FIJOS_CAT_OBJ_ID}",
+            'equipo_imagen_concesion': '6646393c3fa8b818265d0326',
+            'estatus_equipo': '6979962e6eac7e391dbb244f',
+            'evidencia': '6970914a3059168605ce10c8',
+            'evidencia_entrega': '6979962e6eac7e391dbb2453',
+            'evidencia_devolucion': '6979962e6eac7e391dbb2444',
+            'fecha_concesion': '66469ef8c9d58517f85d035f',
+            'fecha_cierre_concesion': '66469f47c0580e5ead07e39b',
+            'fecha_devolucion_concesion': '699fed207a15d39b937d805c',
+            'firma': '6979b0b4a2a5a141dfef9cc5',
+            'grupo_equipos': '697991cb4298cbe60db6b883',
+            'grupo_equipos_devolucion': '699fe58a0f178e858bbf1b91',
+            'id_movimiento':'697b055eb9a8d97bb5614ee0',
+            'id_movimiento_devolucion':'699fe63679aaab897b504c71',
+            'marca_equipo_concesion': '65f22098d1dc5e0b9529e89b',
+            
+            'nombre_equipo': f"{self.ACTIVOS_FIJOS_CAT_OBJ_ID}.66c192ef89463aa27fc1818b",
+            '_nombre_equipo': "66c192ef89463aa27fc1818b",
+            
+            'identificacion_entrega': '6979962e6eac7e391dbb2452',
+            'imagen_equipo_concesion': f"{self.ACTIVOS_FIJOS_CAT_OBJ_ID}.6646393c3fa8b818265d0326",
+            '_imagen_equipo_concesion': "6646393c3fa8b818265d0326",
+            
+            'observacion_concesion': '66469f47c0580e5ead07e39a',
+            'persona_catalog_concesion': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}",
+            
+            'persona_nombre_concesion': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
+            '_persona_nombre_concesion': self.mf['nombre_empleado'],
+            
+            'persona_email_concesion': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['email_visita_a']}",
+            '_persona_email_concesion': self.mf['email_visita_a'],
+            
+            'persona_id_concesion': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['id_usuario']}",
+            '_persona_id_concesion': self.mf['id_usuario'],
+            
+            'persona_email_otro': '697991ad1cfb3b3210269901',
+            'persona_nombre_otro': '696fd2291527668d067cdb85',
+            'persona_identificacion_otro': '697991ad1cfb3b3210269902',
+            'quien_entrega': '6979962e6eac7e391dbb2451',
+            'quien_entrega_company': '699feaa2a0e52f55fd5589a5',
+            'tipo_persona_solicita': '66469e5a3e6a703350f2e03a',
+            'status_concesion': '66469e193e6a703350f2e029',
+            'status_concesion_equipo': '66469e193e6a703350f2e299',
+            'subotal_concesion_equipo': '69799523aa75e6a4c99c4d40',
+            'ubicacion_catalog_concesion': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'ubicacion_concesion': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+            '_ubicacion_concesion': self.mf['ubicacion'],
+        }
+        
+        self.status_equipo_dict = {
+            'complete':'completo',
+            'lost':'perdido',
+            'damage':'dañado'
         }
         #- Para creación , edición y lista de fallas
         self.fallas_fields = {
@@ -403,7 +470,7 @@ class Accesos(Base):
             'falla_reporta_catalog':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}",
             'falla_reporta_nombre': '62c5ff407febce07043024dd',
             'falla_reporta_departamento': '663bc4ed8a6b120eab4d7f1e',
-            'falla_ubicacion_catalog':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'falla_ubicacion_catalog':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
             'falla_ubicacion': f"{self.mf['ubicacion']}",
             'falla_caseta':f"{self.mf['nombre_area']}",
             'falla_catalog': f"{self.LISTA_FALLAS_CAT_OBJ_ID}",
@@ -430,14 +497,15 @@ class Accesos(Base):
             'falla_evidencia_solucion':'66f2dfb2c80d24e5e82332b5',
 
         }
+        
         #- Para creación , edición y lista de incidencias
         self.incidence_fields = {
             'reporta_incidencia_catalog': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}", 
             'reporta_incidencia': '62c5ff407febce07043024dd',
             'fecha_hora_incidencia': '66396efeb37283c921e97cdf',
-            'ubicacion_incidencia_catalog': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'ubicacion_incidencia_catalog': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
             'ubicacion_incidencia': f"{self.mf['ubicacion']}",
-            'area_incidencia_catalog': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'area_incidencia_catalog': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
             'area_incidencia': '663e5d44f5b8a7ce8211ed0f',
             'incidencia_catalog': f"{self.LISTA_INCIDENCIAS_CAT_OBJ_ID}",
             'incidencia': '663973809fa65cafa759eb97',
@@ -454,7 +522,7 @@ class Accesos(Base):
             'tipo_persona': '66ec6936fc1f0f3f111d818f',
             'responsable_accion':'66ec69a914bf1142b6a024e2',
             'acciones_tomadas':'66ec69a914bf1142b6a024e3',
-            'area_incidencia_ver2':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+            'area_incidencia_ver2':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
             'total_deposito_incidencia':'66ec6821ea3c921534b22c30',
             'datos_deposito_incidencia':'66ec6793eb386ff970218f1f',
             'tipo_deposito': '66ec67dc608b1faed7b22c45',
@@ -533,6 +601,7 @@ class Accesos(Base):
             'evidencia':'68c305c624e99970e536dc44',
             'documento':'68c305c624e99970e536dc45'
         }
+        
         #- Para creación , edición y lista de gafetes y lockers
         self.gafetes_fields = {
             'caseta_gafete':f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
@@ -542,6 +611,7 @@ class Accesos(Base):
             'ubicacion_gafete':f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
             'visita_gafete':f"{self.mf['catalog_visita']}.{self.mf['nombre_visita']}",
         }
+        
         self.lockers_fields = {
             'locker_id':'66480101786e8cdb66e70124',
             'tipo_locker':'66ccfec6acaa16b31e5593a3',
@@ -564,20 +634,23 @@ class Accesos(Base):
             'note_comments_group':'6647fb1874c1a87eb02a9037',
             'note_comments':'6647fb38da07bf430e273ea2',
         }
+        
         self.notes_project_fields = {
-            'location': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
-            'area': f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
-            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
-            'closed_by': f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_b']}",
-            'support_guard':f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_b']}",
+            'location': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
+            'area': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}",
+            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
+            'closed_by': f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name_b']}",
+            'support_guard':f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name_b']}",
         }
+        
         self.pase_entrada_fields = {
-            'area':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'area':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
             'grupo_areas_acceso':'663fed6cb8262fd454326cb3',
             'comentario_pase':'65e0a69a322b61fbf9ed23af',
             'commentario_area':"66af1a77d703592958dca5eb",
             'catalog_area_pase':'664fc5f3bbbef12ae61b15e9',
             'catalogo_visitante_registrado': '66a83ad456d1e741159ce118',
+            'creado_desde':'698b6f3d13a551df2b2ecfcb',
             'curp_catalog_pase':f"{self.PASE_ENTRADA_OBJ_ID}.{self.mf['curp']}",
             'nombre_permiso':f"{self.CONFIG_PERFILES_OBJ_ID}.662962bb203407ab90c886e4",
             'email_catalog_pase':f"{self.PASE_ENTRADA_OBJ_ID}.{self.mf['email_vista']}",
@@ -594,7 +667,7 @@ class Accesos(Base):
             'nombre_area':f"{self.mf['nombre_area']}",
             'nombre_catalog_pase':f"{self.PASE_ENTRADA_OBJ_ID}.{self.mf['nombre_visita']}",
             'nombre_tipo_pase':f"{self.CONFIG_PERFILES_OBJ_ID}.66297e1579900d9018c886ad",
-            'nombre_perfil':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
+            'nombre_perfil':f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
             'nombre_visitante_registrado': '5ea0693a0c12d5a8e43d37df',
             'pdf_to_img': '682222d27e0ea505751e17b4',
             'perfil_pase':f"{self.CONFIG_PERFILES_OBJ_ID}.661dc67e901906b7e9b73bac",
@@ -620,14 +693,14 @@ class Accesos(Base):
             'conf_perfiles':f"{self.CONFIG_PERFILES_OBJ_ID}",
             'vigencia_pase':f"{self.CONFIG_PERFILES_OBJ_ID}.'662962bb203407ab90c886e6",
             'vigencia_expresa_pase':f"{self.CONFIG_PERFILES_OBJ_ID}.662962bb203407ab90c886e7",
-            'worker_department': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_department']}",
+            'worker_department': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_department']}",
             'walkin_email':'662c2937108836dec6d92581',
             'walkin_empresa':'66357d5e4f00f9018ce97ce9',
             'walkin_fotografia':'66c4d5b6d1095c4ce8b2c42a',
             'walkin_identificacion':'66c4d5b6d1095c4ce8b2c42b',
             'walkin_nombre':'662c2937108836dec6d92580',
             'walkin_telefono':'662c2937108836dec6d92582',
-            'worker_position':   f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_position']}",    
+            'worker_position':   f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_position']}",    
             'favoritos':'674642e2d53ce9476994dd89',  
             'acepto_aviso_privacidad': '6825268e0663cce4b1bf0a17',
             'acepto_aviso_datos_personales': '6827488724317731cb288117',
@@ -635,22 +708,26 @@ class Accesos(Base):
             'ubicaciones':'6834e34fa6242006acedda0f',
             'todas_las_areas':'68f9fdfbd9bf5cb7fd3caece'
         }
+        
         self.pase_grupo_visitados:{
         }
+        
         # self.pase_entrada_fields.update(self.pase_grupo_visitados)
         self.pase_grupo_areas:{
-            'nombre_perfil':     f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
+            'nombre_perfil':     f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}",
         }
+        
         # self.pase_entrada_fields.update(self.pase_grupo_areas)
         self.pase_grupo_vehiculos:{
-            'nombre_perfil':     f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}",
-            'tipo_vehiuclo':   f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_position']}",        
+            'nombre_perfil':     f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}",
+            'tipo_vehiuclo':   f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_position']}",        
         }
+        
         # self.pase_entrada_fields.update(self.pase_grupo_vehiculos)
         self.pase_entrada_fields.update({
             'ubicacion_cat': f"{self.Location.UBICACIONES_CAT_OBJ_ID}",
             'ubicacion_nombre':self.mf['ubicacion'],
-            'ubicacion': f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+            'ubicacion': f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
             'nombre_visita': f"{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{mf['nombre_visita']}",
             'email_vista': f"{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['email_vista']}",
             'curp': self.unlist(f"{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{mf['curp']}"),
@@ -661,9 +738,9 @@ class Accesos(Base):
             'empresa': f"{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{mf['empresa']}",
             'status_visita': f"{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{mf['status_visita']}",
             'nombre_perfil': f"{self.CONFIG_PERFILES_OBJ_ID}.{mf['nombre_perfil']}",
-            #'nombre_perfil': f"{self.mf['grupo_visitados']}{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
-            'worker_department': f"{self.mf['grupo_visitados']}{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_department']}",
-            'worker_position': f"{self.mf['grupo_visitados']}{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_position']}",
+            #'nombre_perfil': f"{self.mf['grupo_visitados']}{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
+            'worker_department': f"{self.mf['grupo_visitados']}{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_department']}",
+            'worker_position': f"{self.mf['grupo_visitados']}{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_position']}",
             'catalago_autorizado_por': f"{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}",
             'autorizado_por': self.mf['nombre_guardia_apoyo'],
             'tipo_visita_pase': self.mf['tipo_visita_pase'],
@@ -673,22 +750,21 @@ class Accesos(Base):
             'config_dia_de_acceso': self.mf['config_dia_de_acceso'],
             'config_limitar_acceso': self.mf['config_limitar_acceso'],
             'config_dias_acceso': self.mf['config_dias_acceso'],
-            'area_catalog_normal':  f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
-            'area_catalog':  f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
+            'area_catalog_normal':  f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
+            'area_catalog':  f"{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}",
             'area': '663fb45992f2c5afcfe97ca8',
             'tema_cita':'67329875978e6460083c5648',
             'descripcion': '67329875978e6460083c5649',
             'link':'6732aa1189fc6b0ae27e3824',
             'enviar_correo':'6732a153496e3b26d18e7ee1',
             'enviar_correo_pre_registro':'6734c6d5254e9a61df8e7f51',
-            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['worker_name']}",
+            'created_by': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Employee.employee_fields['worker_name']}",
             'comentario_area_pase':self.mf['commentario_area'],
             'ubicaciones': '6834e34fa6242006acedda0f'
         })
 
         self.conf_accesos_fields = {
-            # 'usuario_cat':  f"{self.Employee.EMPLOYEE_OBJ_ID}",
-            'usuario_cat':  "677ffe8711c99ee27489d564",
+            'usuario_cat':  f"{self.Employee.EMPLOYEE_OBJ_ID}",
             'grupos':f"{self.GRUPOS_CAT_OBJ_ID}",
             'menus':"6722472f162366c38ebe1c64",
         }
@@ -699,11 +775,12 @@ class Accesos(Base):
             'grupo_requisitos':"676975321df93a68a609f9ce",
             'datos_requeridos':"6769756fc728a0b63b8431ea",
             'envio_por':"6810180169eeaca9517baa5b",
+            'grupo_tipo_de_pase': '694055a57d064b380f010d7f'
         }
 
         self.paquetes_fields = {
             'ubicacion_paqueteria':f"{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
-            'area_paqueteria':f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+            'area_paqueteria':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
             'fotografia_paqueteria': "67e46624da3191c5ef4ab6d0",
             'descripcion_paqueteria':"67e4652619b4be1c5a76a485",
             'quien_recibe_cat': f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}",
@@ -718,6 +795,7 @@ class Accesos(Base):
         }
 
         self.notes_project_fields.update(self.notes_fields)
+        
         self.bitacora_acceos = {}
         ## Fields ##
         '''
@@ -737,6 +815,7 @@ class Accesos(Base):
         self.f.update(self.notes_fields)
         self.f.update(self.checkin_fields)
         self.f.update({
+            'areas_del_rondin': '66462aa5d4a4af2eea07e0d1',
             'duracion_rondin':'6639b47565d8e5c06fe97cf3',
             'duracion_traslado_area':'6760a9581e31b10a38a22f1f',
             'fecha_inspeccion_area':'6760a908a43b1b0e41abad6b',
@@ -775,6 +854,13 @@ class Accesos(Base):
             'image_checkin': '6855e761adab5d93274da7d7',
             'foto_cierre_turno': '6879823d856f580aa0e05a3b',
             'fecha_cierre_turno': '6879828d0234f02649cad391',
+            'personalizacion_pases': '695d2e1f6be562c3da95c4a7',
+            'pases': '695d31b503ccc7766ac28507',
+            'grupo_alertas': '695d35b618a37ea04899524f',
+            'nombre_alerta': '695d36605f78faab793f497b',
+            'accion_alerta': '695d36605f78faab793f497c',
+            'llamar_num_alerta': '695d36605f78faab793f497d',
+            'email_alerta': '695d36605f78faab793f497e'
         })
 
     '''
@@ -824,8 +910,8 @@ class Accesos(Base):
         answers = {
             f"{self.mf['tipo_registro']}": 'entrada',
             f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}":{
-                f"{self.f['location']}":location,
-                f"{self.f['area']}":area
+                f"{self.Location.f['location']}":location,
+                f"{self.Location.f['area']}":area
                 },
             f"{self.PASE_ENTRADA_OBJ_ID}":pase,
             f"{self.mf['codigo_qr']}": str(access_pass['_id']),
@@ -919,30 +1005,48 @@ class Accesos(Base):
         return response_create
      
     def assets_access_pass(self, location):
-        ### Areas
-        catalog_id = self.Location.AREAS_DE_LAS_UBICACIONES_CAT_ID
-        form_id = self.PASE_ENTRADA
-        group_level = 2
-        options = {
-              "group_level": group_level,
-              "startkey": [
-                location
-              ],
-              "endkey": [
-                f"{location}\n",
-                {}
-              ]
+        """
+        Regresa diccionario con las areas, personas que puede visitar en esa ubicacion y los perfiles
+            
+        args:
+            location (str|list): Nombre de la ubicacion
+
+        returns:
+            {
+            Areas:[ lista de areas ],
+            Vistia_a:[ lista de personas ]
+            Perfiles:[ lista de prefiles ]
             }
-        areas = self.lkf_api.catalog_view(catalog_id, form_id, options) 
+        """
+        ### Areas
+        try:
+            areas = self.Location.get_areas_by_location(location)
+        except:
+            areas = []
         ### Aquien Visita
-        catalog_id = self.Employee.CONF_AREA_EMPLEADOS_CAT_ID
-        visita_a = self.lkf_api.catalog_view(catalog_id, form_id, options) 
-        # visita_a = [r.get('key')[group_level-1] for r in visita_a]
-        ### Pases de accesos
+        try:
+            visita_a =  self.Employee.get_users_by_location_area(location_name=location)
+            visita_a = [x['name'] for x in visita_a if x.get('name')]
+        except:
+            visita_a = []
+        # try:
+        if True:
+            config_modulo = self.get_config_modulo_seguridad(location)
+            requerimientos = config_modulo.get('requerimientos',[])
+            envios = config_modulo.get('envios',[])
+            perfiles = config_modulo.get('tipos',[])
+        # except:
+        #     Perfiles = []
+        #     envios = []
+        #     requerimientos = []
         res = {
             'Areas': areas,
             'Visita_a': visita_a,
-            'Perfiles': self.get_pefiles_walkin(location),
+            'Perfiles': perfiles,
+            'requerimientos': requerimientos,
+            'envios':envios,
+            'Perfiles':perfiles
+
         }
         return res
 
@@ -959,14 +1063,14 @@ class Accesos(Base):
 
             if  key == 'ubicacion' or key == 'area':
                 if data_gafete['ubicacion'] and not data_gafete['area']:
-                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.f['location']:data_gafete.get('ubicacion')}
-                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.f['location']:data_gafete.get('ubicacion')}
+                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.Location.f['location']:data_gafete.get('ubicacion')}
+                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.Location.f['location']:data_gafete.get('ubicacion')}
                 elif data_gafete['area'] and not data_gafete['ubicacion']:
-                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.f['area']:data_gafete.get('area', "")}
-                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.f['area']:data_gafete.get('area', "")}
+                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.Location.f['area']:data_gafete.get('area', "")}
+                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]={self.Location.f['area']:data_gafete.get('area', "")}
                 elif data_gafete['area'] and data_gafete['ubicacion']: 
-                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID] = {self.f['location']:data_gafete.get('ubicacion'),self.f['area']:data_gafete.get('area', "")}
-                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID] = {self.f['location']:data_gafete.get('ubicacion'),self.f['area']:data_gafete.get('area', "")}
+                    answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID] = {self.Location.f['location']:data_gafete.get('ubicacion'),self.Location.f['area']:data_gafete.get('area', "")}
+                    # answers_return[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID] = {self.Location.f['location']:data_gafete.get('ubicacion'),self.Location.f['area']:data_gafete.get('area', "")}
             elif key == "status_gafete":
                 answers[self.mf['status_gafete']]=data_gafete.get('status_gafete')
                 # answers_return[self.mf['status_gafete']]=data_gafete.get('status_gafete')
@@ -1239,7 +1343,7 @@ class Accesos(Base):
         if resp_create.get('status_code') == 201:
             resp_create['json'].update({'boot_status':{'guard_on_duty':user_data['name']}})
             asistencia_answers = {
-                self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID: {
+                self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID: {
                     self.Location.f['location']: location,
                     self.Location.f['area']: area
                 },
@@ -1317,8 +1421,8 @@ class Accesos(Base):
         record = self.get_record_by_id(checkin_id)
         checkin_answers = record['answers']
         folio = record['folio']
-        area = checkin_answers.get(self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID,{}).get(self.f['area'])
-        location = checkin_answers.get(self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID,{}).get(self.f['location'])
+        area = checkin_answers.get(self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID,{}).get(self.Location.f['area'])
+        location = checkin_answers.get(self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID,{}).get(self.Location.f['location'])
         rec_guards = checkin_answers.get(self.checkin_fields['guard_group'])
         if not guards:
             checkin_answers[self.checkin_fields['commentario_checkin_caseta']] = \
@@ -1383,8 +1487,8 @@ class Accesos(Base):
             {"$match": {
                 "deleted_at":{"$exists":False},
                 "form_id": self.REGISTRO_ASISTENCIA,
-                f"answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['location']}": location,
-                f"answers.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['area']}": area,
+                f"answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Location.f['location']}": location,
+                f"answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.Location.f['area']}": area,
                 f"answers.{self.f['fecha_cierre_turno']}": {"$exists": False},
                 "created_by_id": guard,
             }},
@@ -1482,7 +1586,7 @@ class Accesos(Base):
             "form_id": self.CONF_AREA_EMPLEADOS,
         }
         if user_id:
-            match_query[f"answers.{self.EMPLOYEE_OBJ_ID}.{self.employee_fields['user_id_id']}"] = user_id
+            match_query[f"answers.{self.Employee.EMPLOYEE_OBJ_ID}.{self.employee_fields['user_id_id']}"] = user_id
 
         query = [
             {'$match': match_query },
@@ -1696,7 +1800,7 @@ class Accesos(Base):
         checkin[self.f['guard_group']] = checkin.get(self.f['guard_group'],[])
         if checkin_type == 'out':
             for guard in checkin[self.f['guard_group']]:
-                user_id = int(self.unlist(guard.get(self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID,{})\
+                user_id = int(self.unlist(guard.get(self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID,{})\
                     .get(self.employee_fields['user_id_jefes'],0)))
                 if guard[self.checkin_fields['checkin_status']] != checkin_status:
                     if not employee_list:
@@ -1708,13 +1812,13 @@ class Accesos(Base):
         elif employee_list:
             for idx, guard in enumerate(employee_list):
                 empl_cat = {}
-                empl_cat[self.f['worker_name_b']] = guard.get('name')
+                empl_cat[self.Employee.employee_fields['worker_name_b']] = guard.get('name')
                 if isinstance(guard.get('usuario_id'), list):
                     empl_cat[self.f['user_id_b']] = [(guard.get('usuario_id', [])[0]),]
                 else:
                     empl_cat[self.f['user_id_b']] = [guard.get('user_id'),]
                 guard_data = {
-                        self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID : empl_cat,
+                        self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID : empl_cat,
                         self.checkin_fields['checkin_position']:'guardiad_de_apoyo',
                         self.checkin_fields['checkin_status']:checkin_status,
                         self.checkin_fields[date_id]:check_datetime,
@@ -1733,10 +1837,10 @@ class Accesos(Base):
         checkin = {
             self.f['checkin_type']: set_type,
             self.f['boot_checkin_date'] : now_datetime,
-            self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID : {
-                self.f['location']: location,
-                self.f['area']: area, 
-                self.f['worker_name']: employee.get('worker_name'),
+            self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID : {
+                self.Location.f['location']: location,
+                self.Location.f['area']: area, 
+                self.Employee.employee_fields['worker_name']: employee.get('worker_name'),
             },
 
         }
@@ -1754,7 +1858,7 @@ class Accesos(Base):
             {'$project':{
                 "_id":0,
                 'tipo_de_guardia': f"$answers.{self.f['guard_group']}.{self.mf['tipo_de_guardia']}",
-                'puesto': f"$answers.{self.f['guard_group']}.{self.Employee.PUESTOS_OBJ_ID}.{self.f['worker_position']}"
+                'puesto': f"$answers.{self.f['guard_group']}.{self.Employee.PUESTOS_OBJ_ID}.{self.Employee.employee_fields['worker_position']}"
                 }
             },
             {'$unwind': f"$tipo_de_guardia"},
@@ -1934,69 +2038,65 @@ class Accesos(Base):
             data_msj['enviado_desde'] = 'Modulo de Accesos'
         return self.send_email_by_form(data_msj)
     
-    def send_msj_pase(self, data_cel_msj=None, pre_sms=False, account=''):
-        """
-        Envía un mensaje de texto a un número de celular con información personalizada sobre un pase de invitación.
-
-        Este método genera un mensaje en función de los datos proporcionados en `data_cel_msj`. 
-        Si `pre_sms` es `True`, indica que se enviara un mensaje pre-registro para completar el pase. 
-        En caso contrario, incluirá el mensaje de cuando se completa el pase.
-
-        Args:
-            data_cel_msj (dict): Un diccionario con los datos necesarios para personalizar el mensaje. 
-                Las claves esperadas son:
-                    - 'nombre' (str): Nombre de la persona invitada.
-                    - 'visita_a' (str): Nombre de la persona o entidad que invita.
-                    - 'ubicacion' (str): Ubicación del evento o visita.
-                    - 'link' (str): Enlace para completar el registro.
-                    - 'fecha_desde' (str): Fecha de inicio de la invitación.
-                    - 'fecha_hasta' (str): Fecha de finalización de la invitación.
-                    - 'numero' (str): Número de teléfono al que se enviará el mensaje.
-            pre_sms (bool): Si es `True`, se genera un mensaje con instrucciones de registro.
-                            Si es `False`, se genera un mensaje de pase completado.
-
-        Returns:
-            dict: Un diccionario con el código de estado del envío. Por ejemplo:
-                - {'status_code': 200} si el mensaje fue enviado exitosamente.
-        """
-
-        fecha_str_desde = data_cel_msj.get('fecha_desde', '')
-        fecha_str_hasta = data_cel_msj.get('fecha_hasta', '')
-
-        fecha_desde = datetime.strptime(fecha_str_desde, "%Y-%m-%d %H:%M:%S")
-        if fecha_str_hasta:
-            fecha_hasta = datetime.strptime(fecha_str_hasta, "%Y-%m-%d %H:%M:%S")
-
-        mensaje=''
-        if pre_sms:
-            msg = f"Hola {data_cel_msj.get('nombre', '')}, {data_cel_msj.get('visita_a', '')} "
-            msg += f"te invita a {data_cel_msj.get('ubicacion', '')} y creo un pase para ti."
-            msg += f" Completa tus datos de registro aquí: {data_cel_msj.get('link', '')}"
-            mensaje = msg
-        else:
-            if account == 'milenium':
-                get_pdf_url = self.get_pdf(data_cel_msj.get('qr_code', ''), template_id=553)
-                get_pdf_url = get_pdf_url.get('data', '').get('download_url', '')
-            else:
-                get_pdf_url = self.get_pdf(data_cel_msj.get('qr_code', ''))
-                get_pdf_url = get_pdf_url.get('data', '').get('download_url', '')
-            msg = f"Estimado {data_cel_msj.get('nombre', '')}, {data_cel_msj.get('visita_a', '')}"
-
-            if data_cel_msj.get('fecha_desde', '') and not data_cel_msj.get('fecha_hasta', ''):
-                fecha_desde_format = fecha_desde.strftime("%d/%m/%Y a las %H:%M")
-                msg += f", te invita a {data_cel_msj.get('ubicacion', '')} el {fecha_desde_format}."
-            elif data_cel_msj.get('fecha_desde', '') and data_cel_msj.get('fecha_hasta', ''):
-                fecha_desde_format = fecha_desde.strftime("%d/%m/%Y")
-                fecha_hasta_format = fecha_hasta.strftime("%d/%m/%Y")
-                msg += f", te invita a {data_cel_msj.get('ubicacion', '')} "
-                msg += f"del {fecha_desde_format} al {fecha_hasta_format}."
-
-            msg += f" Descarga tu pase: {get_pdf_url}"
-            mensaje = msg
-        phone_to = data_cel_msj.get('numero', '')
-        res =self.lkf_api.send_sms(phone_to, mensaje, use_api_key=True)
-        if res:
-            return {'status_code':200}
+    def check_in_aux_guard(self):
+        match_query = {
+            "deleted_at": {"$exists": False},
+            "form_id": self.CHECKIN_CASETAS,
+        }
+        query = [
+            {'$match': match_query},
+            {'$unwind': f"$answers.{self.f['guard_group']}"},
+            {'$project': {
+                '_id': 1,
+                'folio': "$folio",
+                'created_at': "$created_at",
+                'name': f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
+                'user_id': {"$first": f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
+                'location': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+                'area': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
+                'checkin_date': f"$answers.{self.f['guard_group']}.{self.f['checkin_date']}",
+                'checkout_date': f"$answers.{self.f['guard_group']}.{self.f['checkout_date']}",
+                'checkin_status': f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}",
+                'checkin_position': f"$answers.{self.f['guard_group']}.{self.f['checkin_position']}",
+            }},
+            {'$sort': {'updated_at': -1}},
+            {'$group': {
+                '_id': {'user_id': '$user_id'},
+                'name': {'$last': '$name'},
+                'location': {'$last': '$location'},
+                'area': {'$last': '$area'},
+                'checkin_date': {'$last': '$checkin_date'},
+                'checkout_date': {'$last': '$checkout_date'},
+                'checkin_status': {'$last': '$checkin_status'},
+                'checkin_position': {'$last': '$checkin_position'},
+            }},
+            {'$project': {
+                '_id': 0,
+                'user_id': '$_id.user_id',
+                'name': '$name',
+                'location': '$location',
+                'area': '$area',
+                'checkin_date': '$checkin_date',
+                'checkout_date': '$checkout_date',
+                'checkin_status': {'$cond': [{'$eq': ['$checkin_status', 'entrada']}, 'in', 'out']},
+                'checkin_position': '$checkin_position',
+            }},
+        ]
+        data = self.format_cr(self.cr.aggregate(query))
+        res = {}
+        for rec in data:
+            status = 'in' if rec.get('checkin_status') in ['in', 'entrada'] else 'out'
+            res[int(rec.get('user_id', 0))] = {
+                'status': status,
+                'name': rec.get('name'),
+                'user_id': rec.get('user_id'),
+                'location': rec.get('location'),
+                'area': rec.get('area'),
+                'checkin_date': rec.get('checkin_date'),
+                'checkout_date': rec.get('checkout_date'),
+                'checkin_position': rec.get('checkin_position')
+            }
+        return res
         
     def check_out_all_users(self):
         match_query_visitas = {
@@ -2038,24 +2138,6 @@ class Accesos(Base):
         else:
             res = 'No hay registros para hacer checkout...'
         return res
-
-    def set_checkout_all_users(self, data):
-        folio_list = []
-        for item in data:
-            folio_list.append(item['folio'])
-
-        tz_mexico = pytz.timezone('America/Mexico_City')
-        now = datetime.now(tz_mexico)
-        fecha_hora_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        duration = '02:00:00'
-        answers = {
-            f"{self.bitacora_fields['status_visita']}":'salida',
-            f"{self.mf['fecha_salida']}":fecha_hora_str,
-            f"{self.mf['duracion']}":duration,
-        }
-
-        response = self.lkf_api.patch_multi_record( answers=answers, form_id=self.BITACORA_ACCESOS, folios=folio_list)
-        return response
 
     def create_enviar_msj_pase(self, folio=None):
         access_pass={"enviar_correo": ["enviar_sms"]}
@@ -2292,11 +2374,11 @@ class Accesos(Base):
         employee = self.get_employee_data(email=self.user.get('email'), get_one=True)
         answers = {
             f"{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}":{
-                self.f['location']:location,
-                self.f['area']:area
+                self.Location.f['location']:location,
+                self.Location.f['area']:area
             },
-            f"{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}":{
-                self.f['worker_name']:employee['worker_name'],
+            f"{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}":{
+                self.Employee.employee_fields['worker_name']:employee['worker_name'],
             }
                 }
         #----Assign Values Keys
@@ -2405,33 +2487,6 @@ class Accesos(Base):
 
         return result
     
-    def get_locations_address(self, list_locations=[]):
-        match_query = {
-            "deleted_at": {"$exists": False},
-            "form_id": self.UBICACIONES,
-            # f"answers.{self.mf['ubicacion']}": {"$in": list_locations}
-        }
-        query = [                   
-            {'$match': match_query},
-            {'$project': {
-                "_id": 0,
-                "ubicacion": f"$answers.{self.mf['ubicacion']}",
-                "direccion": f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f['address_name']}",
-                "geolocalizacion": f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f['address_geolocation']}",
-            }},
-        ]
-        print('query=', simplejson.dumps(query, indent=2))
-        res = self.format_cr(self.cr.aggregate(query))
-        print('res', res)
-        format_res = {}
-        for item in res:
-            print('item', item)
-            format_res[item.get('ubicacion','')] = {
-                'address': item.get('direccion', ''),
-                'geolocation': item.get('geolocalizacion') or []
-            }
-        return format_res
-
     def create_access_pass(self, location, access_pass):
         #---Define Metadata
         metadata = self.lkf_api.get_metadata(form_id=self.PASE_ENTRADA)
@@ -2467,7 +2522,7 @@ class Accesos(Base):
             access_pass['ubicaciones'] = [location]
 
         answers[self.Location.UBICACIONES_CAT_OBJ_ID] = {}
-        # answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.f['location']] = location
+        # answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.Location.f['location']] = location
         if access_pass.get('custom') == True :
             answers[self.pase_entrada_fields['tipo_visita_pase']] = access_pass.get('tipo_visita_pase',"")
             answers[self.pase_entrada_fields['fecha_desde_visita']] = access_pass.get('fecha_desde_visita',"")
@@ -2557,7 +2612,7 @@ class Accesos(Base):
         answers[self.mf['grupo_visitados']] = []
         nombre_visita_a = access_pass.get('visita_a') if not nombre_visita_a else nombre_visita_a
         visita_set = {
-            self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
+            self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
                 self.mf['nombre_empleado'] : nombre_visita_a,
                 }
             }
@@ -2582,13 +2637,13 @@ class Accesos(Base):
 
             row_catalog = self.lkf_api.search_catalog(self.CONF_AREA_EMPLEADOS_CAT_ID, mango_query)
             if row_catalog:
-                visita_set[self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update({
+                visita_set[self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update({
                     self.mf['nombre_empleado']: nombre_visita_a,
                     self.mf['email_visita_a']: [row_catalog[0].get(self.mf['email_visita_a'], "")],
                     self.mf['id_usuario']: [row_catalog[0].get(self.mf['id_usuario'], "")],
                 })
 
-        visita_set[self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
+        visita_set[self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
         answers[self.mf['grupo_visitados']].append(visita_set)
 
         # Perfil de Pase
@@ -2869,10 +2924,10 @@ class Accesos(Base):
         for r in data:
             row = {}
             row['_id'] = r.get('_id')
-            row['ubicacion'] = r.get(self.f['location'])
+            row['ubicacion'] = r.get(self.Location.f['location'])
             row['gafete_id'] = r.get(self.gafetes_fields['gafete_id'])
             row['status'] = r.get(self.mf['status_gafete'])
-            row['area'] = r.get(self.f['area'])
+            row['area'] = r.get(self.Location.f['area'])
             res.append(row)
         return res
 
@@ -2881,11 +2936,11 @@ class Accesos(Base):
         for r in data:
             row = {}
             row['_id'] = r.get('_id')
-            row['ubicacion'] = r.get(self.f['location'])
+            row['ubicacion'] = r.get(self.Location.f['location'])
             row['locker_id'] = r.get(self.mf['locker_id'])
             row['status'] = r.get(self.mf['status_locker'])
             row['tipo_locker'] = r.get(self.mf['tipo_locker'])
-            row['area'] = r.get(self.f['area'])
+            row['area'] = r.get(self.Location.f['area'])
             res.append(row)
         return res
 
@@ -2986,8 +3041,8 @@ class Accesos(Base):
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.ACCESOS_NOTAS,
-            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}":location_name,
-            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}":area_name
+            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}":location_name,
+            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}":area_name
             }
         query = [
             {'$match': match_query },
@@ -3610,12 +3665,10 @@ class Accesos(Base):
 
     def get_config_accesos(self):
         response = []
-        print('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM2')
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.CONF_ACCESOS,
-            f"answers.{self.Employee.EMPLOYEE_OBJ_ID}.{self.Employee.employee_fields['user_id_id']}":self.user['id'],
-            #"answers.677ffe8711c99ee27489d564.638a9a99616398d2e392a9f5":self.user['id'],
+            f"answers.{self.Employee.EMPLOYEE_OBJ_ID}.{self.Employee.employee_fields['user_id_id']}":self.user['user_id'],
         }
         query = [
             {'$match': match_query },
@@ -3625,8 +3678,62 @@ class Accesos(Base):
                 "menus": f"$answers.{self.conf_accesos_fields['menus']}",
             }},
             {'$limit':1},
+            {'$lookup': {
+                'from': 'form_answer',
+                'pipeline': [
+                    {'$match': {
+                        'deleted_at': {'$exists': False},
+                        'form_id': self.CONF_MODULO_SEGURIDAD,
+                    }},
+                    {'$project': {
+                        "_id": 0,
+                        "excluir": f"$answers.{self.f['personalizacion_pases']}",
+                        "incluir": f"$answers.{self.f['grupo_incluir']}",
+                        "alertas": f"$answers.{self.f['grupo_alertas']}",
+                    }}
+                ],
+                'as': 'personalizaciones'
+            }},
+            {'$unwind': '$personalizaciones'},
+            {'$project': {
+                "usuario":1,
+                "grupos":1,
+                "menus":1,
+                "exclude_inputs": "$personalizaciones.excluir",
+                "include_inputs": "$personalizaciones.incluir",
+                "alertas": "$personalizaciones.alertas",
+            }}
         ]
-        return self.format_cr_result(self.cr.aggregate(query),  get_one=True)
+        data = self.format_cr_result(self.cr.aggregate(query),  get_one=True)
+        format_data = {}
+
+        if data:
+            exclude_inputs = data.get('exclude_inputs', [])
+            format_exclude_inputs = self.unlist([i for i in exclude_inputs])
+
+            include_inputs = data.get('include_inputs', [])
+            format_include_inputs = self.unlist([i for i in include_inputs])
+
+            alertas = data.get('alertas', [])
+            format_alerts = []
+            for i in alertas:
+                new_item = {}
+                new_item[i.get('nombre_alerta')] = {
+                    'accion': i.get('accion_alerta', '') if len(i.get('accion_alerta', [])) > 1 else self.unlist(i.get('accion_alerta', [])),
+                }
+                if 'llamar' in i.get('accion_alerta') or 'sms' in i.get('accion_alerta'):
+                    new_item[i.get('nombre_alerta')]['number'] = i.get('llamar_num_alerta', 0000000000)
+                if 'email' in i.get('accion_alerta'):
+                    new_item[i.get('nombre_alerta')]['email'] = i.get('email_alerta', '')
+                format_alerts.append(new_item)
+
+            data.update({
+                'exclude_inputs': format_exclude_inputs,
+                'include_inputs': format_include_inputs,
+                'alertas': format_alerts,
+            })
+
+        return data
 
     def get_config_modulo_seguridad(self, ubicaciones=[]):
         #TODO Verificar por que se envia asi la lista
@@ -3647,27 +3754,33 @@ class Accesos(Base):
             }},
         ]
     
-        raw_result = self.format_cr_result(self.cr.aggregate(query))
+        raw_result = self.format_cr(self.cr.aggregate(query))
         for raw in raw_result:
             for grupo in raw.get('grupo_requisitos', []):
+                print("GRUPO", grupo)
                 #TODO Verficiar el cambio de key
                 ubicacion = grupo.get('incidente_location', grupo.get('ubicacion_recorrido', ''))
                 if ubicacion in ubicaciones:
-                    reqs = grupo.get(self.conf_modulo_seguridad['datos_requeridos'], [])
+                    clave_conf = self.conf_modulo_seguridad.get('datos_requeridos')
+                    reqs = grupo.get('datos_requeridos') or grupo.get(clave_conf, [])
                     if isinstance(reqs, list):
                         requerimientos.update(reqs)
-                    envs = grupo.get(self.conf_modulo_seguridad['envio_por'], [])
-                    if isinstance(envs, list):
-                        envios.update(envs)
-                    if requerimientos == {"identificacion", "fotografia"} and envios == {"correo", "sms"}:
-                        break
-            if requerimientos == {"identificacion", "fotografia"} and envios == {"correo", "sms"}:
-                break
-    
+                    envios = set()
+                    envio_por_list = self.conf_modulo_seguridad.get('envio_por', [])
+                    for item in envio_por_list if isinstance(envio_por_list, list) else [envio_por_list]:
+                        envs = grupo.get(item) or grupo.get('envio_por', [])
+                        if envs:
+                            if isinstance(envs, list):
+                                envios.update(envs)
+                            else:
+                                envios.add(envs)
+
+        tipos = self.get_tipos_de_pase(ubicaciones)
         return {
             "ubicaciones": ubicaciones,
             "requerimientos": list(requerimientos),
-            "envios": list(envios)
+            "envios": list(envios),
+            "tipos": tipos
         }
 
     def get_count_ingresos(self, qr_code):
@@ -3702,7 +3815,7 @@ class Accesos(Base):
             {'$project': 
                 {'_id':1,
                 'folio': f"$folio",
-                'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+                'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
                 'nombre': {"$ifNull":[
                     f"$answers.{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['nombre_visita']}",
                     f"$answers.{self.mf['nombre_pase']}"]},
@@ -3737,17 +3850,17 @@ class Accesos(Base):
                 'tipo_de_pase':f"$answers.{self.pase_entrada_fields['perfil_pase']}",
                 'tipo_de_comentario': f"$answers.{self.mf['tipo_de_comentario']}",
                 'visita_a_nombre':
-                     f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
+                     f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
                 'visita_a_puesto': 
-                    f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
+                    f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
                 'visita_a_departamento':
-                    f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
+                    f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
                 'visita_a_user_id':
-                    f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
+                    f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
                 'visita_a_email':
-                    f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['email_visita_a']}",
+                    f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['email_visita_a']}",
                 'visita_a_telefono':
-                    f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['telefono_visita_a']}",
+                    f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['telefono_visita_a']}",
                 'grupo_areas_acceso': f"$answers.{self.mf['grupo_areas_acceso']}",
                 # 'grupo_commentario_area': f"$answers.{self.mf['grupo_commentario_area']}",
                 'grupo_equipos': f"$answers.{self.mf['grupo_equipos']}",
@@ -3965,11 +4078,11 @@ class Accesos(Base):
             else:
                 #hace busqueda en lista de opciones
                 match_query.update({
-                    f"answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}":{'$in':user_ids}
+                    f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}":{'$in':user_ids}
                     })
         if user_ids and type(user_ids) == int:
             unwind_query.update({
-                f"answers.{self.f['guard_group']}.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}":user_ids
+                f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}":user_ids
                 })
         if not unwind_query:
             return self.LKFException({"msg":f"Algo salio mal al intentar buscar el checkin del los ids: {user_id}"})
@@ -4137,9 +4250,9 @@ class Accesos(Base):
         if status:
             selector.update({f"answers.{self.mf['status_gafete']}":status})
         if location:
-            selector.update({f"answers.{self.f['location']}":location})
+            selector.update({f"answers.{self.Location.f['location']}":location})
         if area:
-            selector.update({f"answers.{self.f['area']}":area})
+            selector.update({f"answers.{self.Location.f['area']}":area})
         if gafete_id:
             selector.update({f"answers.{self.gafetes_fields['gafete_id']}":gafete_id})
         if not selector:
@@ -4156,9 +4269,9 @@ class Accesos(Base):
         if status:
             selector.update({f"answers.{self.mf['status_locker']}":status})
         if location:
-            selector.update({f"answers.{self.f['location']}":location})
+            selector.update({f"answers.{self.Location.f['location']}":location})
         if area:
-            selector.update({f"answers.{self.f['area']}":area})
+            selector.update({f"answers.{self.Location.f['area']}":area})
         if tipo_locker:
             selector.update({f"answers.{self.mf['tipo_locker']}":tipo_locker})
         if locker_id:
@@ -4498,11 +4611,11 @@ class Accesos(Base):
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.ACCESOS_NOTAS,
-            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}":location
+            f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}":location
         }
         if area and not area == 'todas':
             match_query.update({
-                f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['area']}":area
+                f"answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}":area
             })
         if status != 'dia':
             match_query.update({f"answers.{self.notes_fields['note_status']}":status})
@@ -4592,7 +4705,7 @@ class Accesos(Base):
 
         proyect_fields = {'_id':1,
             'folio': f"$folio",
-            'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+            'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
             'nombre': {"$ifNull":[
                 f"$answers.{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['nombre_visita']}",
                 f"$answers.{self.mf['nombre_pase']}"]},
@@ -4607,7 +4720,7 @@ class Accesos(Base):
         query = [
             {'$match': match_query },
             {'$unwind': f"$answers.{self.mf['grupo_ubicaciones_pase']}"},
-            {'$match': {f"answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}":location}},
+            {'$match': {f"answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}":location}},
             {'$project': proyect_fields},
             {'$sort':{'_id':-1}},
         ]
@@ -4692,6 +4805,33 @@ class Accesos(Base):
                     r['equipos'] = self.format_equipos(r2.get('equipos',[]))
         return result
 
+    def get_locations_address(self, list_locations=[]):
+        match_query = {
+            "deleted_at": {"$exists": False},
+            "form_id": self.UBICACIONES,
+            # f"answers.{self.mf['ubicacion']}": {"$in": list_locations}
+        }
+        query = [                   
+            {'$match': match_query},
+            {'$project': {
+                "_id": 0,
+                "ubicacion": f"$answers.{self.mf['ubicacion']}",
+                "direccion": f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f['address_name']}",
+                "geolocalizacion": f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f['address_geolocation']}",
+            }},
+        ]
+        print('query=', simplejson.dumps(query, indent=2))
+        res = self.format_cr(self.cr.aggregate(query))
+        print('res', res)
+        format_res = {}
+        for item in res:
+            print('item', item)
+            format_res[item.get('ubicacion','')] = {
+                'address': item.get('direccion', ''),
+                'geolocation': item.get('geolocalizacion') or []
+            }
+        return format_res
+
     def get_pefiles_walkin(self, location):
         query = {
             "deleted_at":{"$exists":False},
@@ -4700,7 +4840,7 @@ class Accesos(Base):
         }
         format_filed = {
             'perfil': f"$answers.{self.PERFILES_OBJ_ID}.{self.mf['nombre_perfil']}",
-            'ubicacion': f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}"
+            'ubicacion': f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}"
             } 
         res = []
         for r in self.cr.find(query,format_filed):
@@ -4727,7 +4867,7 @@ class Accesos(Base):
         match_query = {
             'form_id':self.PASE_ENTRADA,
             'deleted_at':{'$exists':False},
-            f"answers.{self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.pase_entrada_fields['autorizado_por']}":employee.get('worker_name') or '',
+            f"answers.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.pase_entrada_fields['autorizado_por']}":employee.get('worker_name') or '',
         }
         if tab_status == "Favoritos":
             match_query.update({f"answers.{self.pase_entrada_fields['favoritos']}":'si'})
@@ -4760,7 +4900,7 @@ class Accesos(Base):
                     '_id': 1,
                     'folio': "$folio",
                     'favoritos':f"$answers.{self.pase_entrada_fields['favoritos']}",
-                    'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
+                    'ubicacion': f"$answers.{self.mf['grupo_ubicaciones_pase']}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
                     # 'ubicacion': f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
                     'nombre': {"$ifNull":[
                         f"$answers.{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['nombre_visita']}",
@@ -4787,15 +4927,15 @@ class Accesos(Base):
                         f"$answers.{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['foto']}",
                         f"$answers.{self.pase_entrada_fields['walkin_fotografia']}"]},
                     'visita_a_nombre':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
                     'visita_a_puesto': 
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
                     'visita_a_departamento':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
                     'visita_a_user_id':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
                     'visita_a_email':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['email']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['email']}",
                     'motivo_visita':f"$answers.{self.CONFIG_PERFILES_OBJ_ID}.{self.mf['motivo']}",
                     'tipo_de_pase':f"$answers.{self.pase_entrada_fields['perfil_pase']}",
                     'tema_cita':f"$answers.{self.pase_entrada_fields['tema_cita']}",
@@ -5057,6 +5197,55 @@ class Accesos(Base):
 
         return start_date, end_date
 
+    def get_tipos_de_pase(self, ubicaciones=[]):
+        query = [
+            {'$match': {
+                "deleted_at": {"$exists": False},
+                "form_id": self.CONF_PERFILES,
+                f"answers.{self.PERFILES_OBJ_ID}.{self.mf['walkin']}": "Si"
+            }},
+            {'$project': {
+                "ubicacion": f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
+                "tipo": f"$answers.{self.PERFILES_OBJ_ID}.{self.mf['nombre_perfil']}",
+            }},
+            {'$group': {
+                "_id": {"$ifNull": ["$ubicacion", "General"]},
+                "tipos": {"$addToSet": "$tipo"}
+            }},
+            {'$project': {
+                "_id": 0,
+                "ubicacion": "$_id",
+                "tipos": 1
+            }}
+        ]
+        if isinstance(ubicaciones, str):
+            ubicaciones = [ubicaciones,]
+        data = self.format_cr(self.cr.aggregate(query))
+        if not data:
+            return []
+        mapped = {
+            item.get("ubicacion", "General"): set(item.get("tipos", []))
+            for item in data
+        }
+
+        tipos_generales = mapped.get("General", set())
+
+        if not ubicaciones:
+            return sorted(tipos_generales)
+
+        tipos_por_ubicacion = []
+
+        for u in ubicaciones:
+            tipos_especificos = mapped.get(u, set())
+            tipos_reales = tipos_especificos | tipos_generales
+            tipos_por_ubicacion.append(tipos_reales)
+
+        tipos_comunes = tipos_por_ubicacion[0].copy()
+
+        for t in tipos_por_ubicacion[1:]:
+            tipos_comunes &= t
+        return sorted(tipos_comunes)
+
     def get_user_booths_availability(self, turn_areas=True):
         '''
         Regresa las castas configurados por usuario y su stats
@@ -5111,66 +5300,6 @@ class Accesos(Base):
             ]
         return self.format_cr(self.cr.aggregate(query))        
     
-    def check_in_aux_guard(self):
-        match_query = {
-            "deleted_at": {"$exists": False},
-            "form_id": self.CHECKIN_CASETAS,
-        }
-        query = [
-            {'$match': match_query},
-            {'$unwind': f"$answers.{self.f['guard_group']}"},
-            {'$project': {
-                '_id': 1,
-                'folio': "$folio",
-                'created_at': "$created_at",
-                'name': f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['worker_name_jefes']}",
-                'user_id': {"$first": f"$answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}"},
-                'location': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['ubicacion']}",
-                'area': f"$answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_area']}",
-                'checkin_date': f"$answers.{self.f['guard_group']}.{self.f['checkin_date']}",
-                'checkout_date': f"$answers.{self.f['guard_group']}.{self.f['checkout_date']}",
-                'checkin_status': f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}",
-                'checkin_position': f"$answers.{self.f['guard_group']}.{self.f['checkin_position']}",
-            }},
-            {'$sort': {'updated_at': -1}},
-            {'$group': {
-                '_id': {'user_id': '$user_id'},
-                'name': {'$last': '$name'},
-                'location': {'$last': '$location'},
-                'area': {'$last': '$area'},
-                'checkin_date': {'$last': '$checkin_date'},
-                'checkout_date': {'$last': '$checkout_date'},
-                'checkin_status': {'$last': '$checkin_status'},
-                'checkin_position': {'$last': '$checkin_position'},
-            }},
-            {'$project': {
-                '_id': 0,
-                'user_id': '$_id.user_id',
-                'name': '$name',
-                'location': '$location',
-                'area': '$area',
-                'checkin_date': '$checkin_date',
-                'checkout_date': '$checkout_date',
-                'checkin_status': {'$cond': [{'$eq': ['$checkin_status', 'entrada']}, 'in', 'out']},
-                'checkin_position': '$checkin_position',
-            }},
-        ]
-        data = self.format_cr(self.cr.aggregate(query))
-        res = {}
-        for rec in data:
-            status = 'in' if rec.get('checkin_status') in ['in', 'entrada'] else 'out'
-            res[int(rec.get('user_id', 0))] = {
-                'status': status,
-                'name': rec.get('name'),
-                'user_id': rec.get('user_id'),
-                'location': rec.get('location'),
-                'area': rec.get('area'),
-                'checkin_date': rec.get('checkin_date'),
-                'checkout_date': rec.get('checkout_date'),
-                'checkin_position': rec.get('checkin_position')
-            }
-        return res
-
     @reload_user
     def get_shift_data(self, booth_location=None, booth_area=None, search_default=True, headers=None):
         """
@@ -5352,8 +5481,8 @@ class Accesos(Base):
         elif employee_list and replace:
             checkin[self.f['guard_group']] += [
                 {self.f['employee_position']:'guardiad_de_apoyo',
-                 self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID:
-                   {self.f['worker_name_b']:guard.get('name'),
+                 self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID:
+                   {self.Employee.employee_fields['worker_name_b']:guard.get('name'),
                    }} 
                     for guard in employee_list ]
         return checkin
@@ -5371,7 +5500,7 @@ class Accesos(Base):
         if qr_code:
             match_query.update({"_id":ObjectId(qr_code)})
         if location:
-            match_query.update({f"answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}":location})
+            match_query.update({f"answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}":location})
         query = [
             {'$match': match_query },
             {'$project': self.proyect_format(self.mf)},
@@ -5472,15 +5601,15 @@ class Accesos(Base):
                         f"$answers.{self.VISITA_AUTORIZADA_CAT_OBJ_ID}.{self.mf['foto']}",
                         f"$answers.{self.pase_entrada_fields['walkin_fotografia']}"]},
                     'visita_a_nombre':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['nombre_empleado']}",
                     'visita_a_puesto': 
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['puesto_empleado']}",
                     'visita_a_departamento':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['departamento_empleado']}",
                     'visita_a_user_id':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['user_id_empleado']}",
                     'visita_a_email':
-                        f"$answers.{self.mf['grupo_visitados']}.{self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['email_empleado']}",
+                        f"$answers.{self.mf['grupo_visitados']}.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.mf['email_empleado']}",
                     'motivo_visita':f"$answers.{self.CONFIG_PERFILES_OBJ_ID}.{self.mf['motivo']}",
                     'tipo_de_pase':f"$answers.{self.pase_entrada_fields['perfil_pase']}",
                     'tema_cita':f"$answers.{self.pase_entrada_fields['tema_cita']}",
@@ -5510,12 +5639,94 @@ class Accesos(Base):
         ]
         return self.format_cr(self.cr.aggregate(query))
 
+    def send_msj_pase(self, data_cel_msj=None, pre_sms=False, account=''):
+        """
+        Envía un mensaje de texto a un número de celular con información personalizada sobre un pase de invitación.
+
+        Este método genera un mensaje en función de los datos proporcionados en `data_cel_msj`. 
+        Si `pre_sms` es `True`, indica que se enviara un mensaje pre-registro para completar el pase. 
+        En caso contrario, incluirá el mensaje de cuando se completa el pase.
+
+        Args:
+            data_cel_msj (dict): Un diccionario con los datos necesarios para personalizar el mensaje. 
+                Las claves esperadas son:
+                    - 'nombre' (str): Nombre de la persona invitada.
+                    - 'visita_a' (str): Nombre de la persona o entidad que invita.
+                    - 'ubicacion' (str): Ubicación del evento o visita.
+                    - 'link' (str): Enlace para completar el registro.
+                    - 'fecha_desde' (str): Fecha de inicio de la invitación.
+                    - 'fecha_hasta' (str): Fecha de finalización de la invitación.
+                    - 'numero' (str): Número de teléfono al que se enviará el mensaje.
+            pre_sms (bool): Si es `True`, se genera un mensaje con instrucciones de registro.
+                            Si es `False`, se genera un mensaje de pase completado.
+
+        Returns:
+            dict: Un diccionario con el código de estado del envío. Por ejemplo:
+                - {'status_code': 200} si el mensaje fue enviado exitosamente.
+        """
+
+        fecha_str_desde = data_cel_msj.get('fecha_desde', '')
+        fecha_str_hasta = data_cel_msj.get('fecha_hasta', '')
+
+        fecha_desde = datetime.strptime(fecha_str_desde, "%Y-%m-%d %H:%M:%S")
+        if fecha_str_hasta:
+            fecha_hasta = datetime.strptime(fecha_str_hasta, "%Y-%m-%d %H:%M:%S")
+
+        mensaje=''
+        if pre_sms:
+            msg = f"Hola {data_cel_msj.get('nombre', '')}, {data_cel_msj.get('visita_a', '')} "
+            msg += f"te invita a {data_cel_msj.get('ubicacion', '')} y creo un pase para ti."
+            msg += f" Completa tus datos de registro aquí: {data_cel_msj.get('link', '')}"
+            mensaje = msg
+        else:
+            if account == 'milenium':
+                get_pdf_url = self.get_pdf(data_cel_msj.get('qr_code', ''), template_id=553)
+                get_pdf_url = get_pdf_url.get('data', '').get('download_url', '')
+            else:
+                get_pdf_url = self.get_pdf(data_cel_msj.get('qr_code', ''))
+                get_pdf_url = get_pdf_url.get('data', '').get('download_url', '')
+            msg = f"Estimado {data_cel_msj.get('nombre', '')}, {data_cel_msj.get('visita_a', '')}"
+
+            if data_cel_msj.get('fecha_desde', '') and not data_cel_msj.get('fecha_hasta', ''):
+                fecha_desde_format = fecha_desde.strftime("%d/%m/%Y a las %H:%M")
+                msg += f", te invita a {data_cel_msj.get('ubicacion', '')} el {fecha_desde_format}."
+            elif data_cel_msj.get('fecha_desde', '') and data_cel_msj.get('fecha_hasta', ''):
+                fecha_desde_format = fecha_desde.strftime("%d/%m/%Y")
+                fecha_hasta_format = fecha_hasta.strftime("%d/%m/%Y")
+                msg += f", te invita a {data_cel_msj.get('ubicacion', '')} "
+                msg += f"del {fecha_desde_format} al {fecha_hasta_format}."
+
+            msg += f" Descarga tu pase: {get_pdf_url}"
+            mensaje = msg
+        phone_to = data_cel_msj.get('numero', '')
+        res =self.lkf_api.send_sms(phone_to, mensaje, use_api_key=True)
+        if res:
+            return {'status_code':200}
+
     def set_boot_status(self, checkin_type):
         if checkin_type == 'in':
             set_boot_status = 'apertura'
         elif checkin_type == 'out':
             set_boot_status = 'cierre'
         return set_boot_status
+
+    def set_checkout_all_users(self, data):
+        folio_list = []
+        for item in data:
+            folio_list.append(item['folio'])
+
+        tz_mexico = pytz.timezone('America/Mexico_City')
+        now = datetime.now(tz_mexico)
+        fecha_hora_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        duration = '02:00:00'
+        answers = {
+            f"{self.bitacora_fields['status_visita']}":'salida',
+            f"{self.mf['fecha_salida']}":fecha_hora_str,
+            f"{self.mf['duracion']}":duration,
+        }
+
+        response = self.lkf_api.patch_multi_record( answers=answers, form_id=self.BITACORA_ACCESOS, folios=folio_list)
+        return response
 
     def set_employee_pic(self, employees):
         employee_ids = []
@@ -5748,7 +5959,7 @@ class Accesos(Base):
                 })
             elif key == 'falla_responsable_solucionar_nombre':
                 answers.update({
-                    self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID: {
+                    self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID: {
                         self.fallas_fields['falla_responsable_solucionar_nombre']: value
                     }
                 })
@@ -6206,10 +6417,10 @@ class Accesos(Base):
             gafete_id = answers[self.GAFETES_CAT_OBJ_ID][self.gafetes_fields['gafete_id']]
             locker_id = answers[self.LOCKERS_CAT_OBJ_ID][self.mf['locker_id']]
             if self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID in answers:
-                if self.f['area'] in answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]:
-                    area = answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID][self.f['area']]
-                if self.f['location'] in answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]:
-                    location = answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID][self.f['location']]
+                if self.Location.f['area'] in answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]:
+                    area = answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID][self.Location.f['area']]
+                if self.Location.f['location'] in answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID]:
+                    location = answers[self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID][self.Location.f['location']]
             
             gafete = self.get_gafetes(status=None, location=location, area=area, gafete_id=gafete_id)
 
@@ -6241,7 +6452,7 @@ class Accesos(Base):
         checkin = self.check_in_out_employees('in', now_datetime, checkin={}, 
             employee_list=data_guard, **{'employee_type':self.support_guard})
         for idx, employee in enumerate(checkin.get(self.mf['guard_group'],[])):
-            user_id = employee[self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID].get(self.f['user_id_jefes'])
+            user_id = employee[self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID].get(self.f['user_id_jefes'])
             validate_status = self.get_employee_checkin_status(user_id)
             not_allowed = [uid for uid, u_data in validate_status.items() if u_data['status'] =='in']
             if not_allowed:
@@ -6291,7 +6502,7 @@ class Accesos(Base):
             fecha_hora_str =self.today_str(timezone, date_format='datetime')
             answers.update({
                 f"{self.notes_fields['note_close_date']}":fecha_hora_str,
-                self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID :{
+                self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID :{
                     self.employee_fields['worker_name_b']:employee['worker_name'],
                     }
                 }
@@ -6562,8 +6773,8 @@ class Accesos(Base):
         now_datetime =self.today_str(timezone, date_format='datetime')
         answers[self.mf['grupo_visitados']] = []
         # answers[self.Location.UBICACIONES_CAT_OBJ_ID] = {}
-        # answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.f['location']] = location
-        answers[self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {}
+        # answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.Location.f['location']] = location
+        answers[self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {}
         answers[self.CONFIG_PERFILES_OBJ_ID] = {}
         answers[self.VISITA_AUTORIZADA_CAT_OBJ_ID] = {}
         # answers[self.pase_entrada_fields['qr_pase']] = []
@@ -6640,7 +6851,7 @@ class Accesos(Base):
                         )
                     answers.update({self.pase_entrada_fields['grupo_areas_acceso']:acciones_list})
             elif key == 'autorizado_por':
-                answers[self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {
+                answers[self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {
                     self.mf['nombre_guardia_apoyo'] : access_pass.get('autorizado_por', ''),
                 }
             elif key == 'link':
@@ -6674,7 +6885,7 @@ class Accesos(Base):
                 answers[self.mf['grupo_visitados']] = []
                 visita_a = access_pass.get('visita_a')
                 visita_set = {
-                    self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
+                    self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
                         self.mf['nombre_empleado'] : visita_a,
                         }
                     }
@@ -6686,7 +6897,7 @@ class Accesos(Base):
                 cat_visita = self.catalogo_view(self.CONF_AREA_EMPLEADOS_CAT_ID, self.PASE_ENTRADA, options_vistia)
                 if len(cat_visita) > 0:
                     cat_visita =  {key: [value,] for key, value in cat_visita[0].items() if value}
-                visita_set[self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
+                visita_set[self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
                 answers[self.mf['grupo_visitados']].append(visita_set)
             elif key == 'perfil_pase':
                 # Perfil de Pase
@@ -6834,8 +7045,8 @@ class Accesos(Base):
         now_datetime =self.today_str(timezone, date_format='datetime')
         answers[self.mf['grupo_visitados']] = []
         answers[self.Location.UBICACIONES_CAT_OBJ_ID] = {}
-        answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.f['location']] = location
-        answers[self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {}
+        answers[self.Location.UBICACIONES_CAT_OBJ_ID][self.Location.f['location']] = location
+        answers[self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {}
         answers[self.CONFIG_PERFILES_OBJ_ID] = {}
         answers[self.VISITA_AUTORIZADA_CAT_OBJ_ID] = {}
 
@@ -6913,7 +7124,7 @@ class Accesos(Base):
                         )
                     answers.update({self.pase_entrada_fields['grupo_areas_acceso']:acciones_list})
             elif key == 'autorizado_por':
-                answers[self.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {
+                answers[self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID] = {
                     self.mf['nombre_guardia_apoyo'] : access_pass.get('autorizado_por', ''),
                 }
             elif key == 'link':
@@ -6935,7 +7146,7 @@ class Accesos(Base):
                 answers[self.mf['grupo_visitados']] = []
                 visita_a = access_pass.get('visita_a')
                 visita_set = {
-                    self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
+                    self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID:{
                         self.mf['nombre_empleado'] : visita_a,
                         }
                     }
@@ -6947,7 +7158,7 @@ class Accesos(Base):
                 cat_visita = self.catalogo_view(self.CONF_AREA_EMPLEADOS_CAT_ID, self.PASE_ENTRADA, options_vistia)
                 if len(cat_visita) > 0:
                     cat_visita =  {key: [value,] for key, value in cat_visita[0].items() if value}
-                visita_set[self.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
+                visita_set[self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID].update(cat_visita)
                 answers[self.mf['grupo_visitados']].append(visita_set)
             elif key == 'perfil_pase':
                 answers[self.CONFIG_PERFILES_OBJ_ID] = {}

@@ -109,7 +109,20 @@ class Accesos( Accesos):
             'incidente_documento': '685063ba36910b2da9952697',
             'url_registro_rondin': '6750adb2936622aecd075607',
             'bitacora_rondin_incidencias': '686468a637d014b9e0ab5090',
-            'tipo_de_incidencia': '663973809fa65cafa759eb97'
+            'tipo_de_incidencia': '663973809fa65cafa759eb97',
+            'personalizacion_pases': '695d2e1f6be562c3da95c4a7',
+            'pases': '695d31b503ccc7766ac28507',
+            'grupo_alertas': '695d35b618a37ea04899524f',
+            'nombre_alerta': '695d36605f78faab793f497b',
+            'accion_alerta': '695d36605f78faab793f497c',
+            'llamar_num_alerta': '695d36605f78faab793f497d',
+            'email_alerta': '695d36605f78faab793f497e',
+            'free_day_start': '55887b7e01a4de2ea71c5ab4',
+            'free_day_end': '55887b7e01a4de2ea71c5ab5',
+            'free_day_type': '55887b7e01a4de2ea71c5ab2',
+            'free_day_autorization': '55887b7e01a4de2ea71c5ab8',
+            'grupo_incluir': '69974d3806cc6d6a17f8b1fa',
+            'pases_incluir': '69974d55879296015c1cd8d2'
         })
 
     # def get_config_accesos(self):

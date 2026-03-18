@@ -20,7 +20,7 @@ def load_shift(params):
     )
 
 def assets_access_pass(params):
-    data = kwargs.get("data", {})
+    data = params.get("data", {})
     return dispatch("assets_access_pass", params={
         'location': data.get('location', '')
     }, **params)
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     params = simplejson.loads(sys.argv[2])
     data = params.get("data", {})
     option = data.get("option")
-    print('..... arranca script turnos')
+    print('..... arranca script turnos OPTION:', option)
     handler = DISPATCHER.get(option)
     if not handler:
         response = {"error": f"Option '{option}' not supported"}
