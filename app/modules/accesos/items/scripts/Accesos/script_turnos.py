@@ -70,6 +70,11 @@ def get_boot_guards(params):
         'area': data.get('area', ''),
     }, **params)
 
+def get_user_menu(params):
+    data = params.get("data", {})
+    return dispatch("get_config_accesos", params={}, **params)
+
+
 DISPATCHER = {
     "load_shift": load_shift,
     "assets_access_pass": assets_access_pass,
@@ -78,6 +83,7 @@ DISPATCHER = {
     "list_bitacora2": list_bitacora2,
     "get_user_booths": get_user_booths,
     "get_boot_guards": get_boot_guards,
+    "get_user_menu": get_user_menu,
     "guardias_de_apoyo": get_boot_guards,
 }
 
@@ -98,7 +104,7 @@ if __name__ == "__main__":
     handler = DISPATCHER.get(option)
     if not handler:
         response = {"error": f"Option '{option}' not supported"}
+        sys.stdout.write(simplejson.dumps(response))
     else:
         response = handler(params)
-
-    sys.stdout.write(simplejson.dumps(response.json()))
+        sys.stdout.write(simplejson.dumps(response.json()))

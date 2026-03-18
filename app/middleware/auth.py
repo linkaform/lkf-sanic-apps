@@ -29,6 +29,8 @@ def dispatch(end_point, params={}, method='get', **kwargs):
         'Content-Type': 'application/json',
     }
     url = "http://127.0.0.1:8000/accesos/"+end_point
+    print('url', url)
+    print('params', params)
     if method == 'get':
         response = requests.get(url, params, headers=headers)
     elif method == 'post':

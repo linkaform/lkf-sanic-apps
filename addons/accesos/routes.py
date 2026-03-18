@@ -52,9 +52,13 @@ accesos_bp = Blueprint("accesos", url_prefix="/accesos")
 @accesos_bp.get("/acceso")
 async def get_acceso(request: Request):
     res = {'demo':'true', 'message':'Acceso registrado'}
-    print("Acceso regist22rado", res)
     return json(res, status=201)
 
+
+@accesos_bp.get("/get_config_accesos")
+async def get_config_accesos(request: Request):
+    res = service.get_config_accesos()
+    return json(res, status=201)
 
 @accesos_bp.post("/incidentes")
 async def post_incidente(request: Request):

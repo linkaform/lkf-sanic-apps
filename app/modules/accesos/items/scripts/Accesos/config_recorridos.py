@@ -108,6 +108,7 @@ class Schedule(Schedule):
         print('schedule_config=', schedule_config)
         if not schedule_config:
             error_msg = 'No se encontro configuracion'
+            self.LKFException(error_msg)
         body = {}
         item_id = self.Accesos.BITACORA_RONDINES
         item_type = 'form'
@@ -116,7 +117,8 @@ class Schedule(Schedule):
             msg_error_app = {
                 "error":{"msg": ["Error al obtener el tipo de recurso (item)"], "label": "Cron Id", "error":["Error al obtener el tipo de recurso (item)"]},
             }
-            raise Exception(simplejson.dumps(msg_error_app))
+            self.LKFException(simplejson.dumps(msg_error_app))
+            # raise Exception(simplejson.dumps(msg_error_app))
         if type(item_type) == list:
             item_type = item_type[0]
         item_type = item_type.lower()
