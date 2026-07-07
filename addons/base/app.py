@@ -40,6 +40,16 @@ class Base(base.LKF_Base):
         else:
             self.mf = mf
         super().__init__(settings, sys_argv=sys_argv, use_api=use_api, **kwargs)
+
+        # ── OpenRouter — solo si el usuario configuró su API key ──
+        # El linkaform_api instalado en este proyecto (3.0) todavía no trae la
+        # integración de OpenRouter en LKF_Base._set_connections, por eso se
+        # resuelve aquí directamente contra settings.config.
+        if settings.config.get('OPENROUTER_API_KEY'):
+            from lkf_addons.tools.openrouter import OpenRouter
+            self.ai = OpenRouter(settings.config)
+        else:
+            self.ai = None
         #use self.lkm.catalog_id() to get catalog id
        #--Variables 
         ### Forms ###

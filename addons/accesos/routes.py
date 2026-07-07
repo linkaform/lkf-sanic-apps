@@ -138,4 +138,119 @@ async def get_booths_guards(request: Request):
     records = service.get_booths_guards(**filters)
     return json({"data": records}, status=200)
 
+# ============================================
+# OCR (self.ai / OpenRouter)
+# Todos reciben la imagen como file_url en el body JSON (image_source).
+# La opción de subida directa de archivo se agrega en una fase posterior.
+# ============================================
+
+@accesos_bp.post("/ocr_identificacion")
+async def post_ocr_identificacion(request: Request):
+    payload = request.json or {}
+    res = service.ocr_identificacion(
+        image_source=payload.get('image_source'),
+        form_id=payload.get('form_id'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        name=payload.get('name'),
+        is_employee=payload.get('is_employee', False),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_documento")
+async def post_ocr_documento(request: Request):
+    payload = request.json or {}
+    res = service.ocr_documento(
+        image_source=payload.get('image_source'),
+        fields=payload.get('fields'),
+        extra_instructions=payload.get('extra_instructions'),
+        form_id=payload.get('form_id'),
+        model=payload.get('model'),
+        is_employee=payload.get('is_employee', False),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_batch")
+async def post_ocr_batch(request: Request):
+    payload = request.json or {}
+    images = payload.get('images') or ([payload['image_source']] if payload.get('image_source') else [])
+    res = service.ocr_batch(
+        images=images,
+        option_type=payload.get('option_type', 'ocr_id'),
+        form_id=payload.get('form_id'),
+        model=payload.get('model'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_articulo_perdido")
+async def post_ocr_articulo_perdido(request: Request):
+    payload = request.json or {}
+    res = service.ocr_articulo_perdido(
+        image_source=payload.get('image_source'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_paquete")
+async def post_ocr_paquete(request: Request):
+    payload = request.json or {}
+    res = service.ocr_paquete(
+        image_source=payload.get('image_source'),
+        fields=payload.get('fields', {}),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_equipo")
+async def post_ocr_equipo(request: Request):
+    payload = request.json or {}
+    res = service.ocr_equipo(
+        image_source=payload.get('image_source'),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_persona")
+async def post_ocr_persona(request: Request):
+    payload = request.json or {}
+    res = service.ocr_persona(
+        image_source=payload.get('image_source'),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_vehiculo")
+async def post_ocr_vehiculo(request: Request):
+    payload = request.json or {}
+    res = service.ocr_vehiculo(
+        image_source=payload.get('image_source'),
+        fields=payload.get('fields', {}),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_truck")
+async def post_ocr_truck(request: Request):
+    payload = request.json or {}
+    res = service.ocr_truck(
+        image_source=payload.get('image_source'),
+        fields=payload.get('fields', {}),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
+@accesos_bp.post("/ocr_articulo_concesionado")
+async def post_ocr_articulo_concesionado(request: Request):
+    payload = request.json or {}
+    res = service.ocr_articulo_concesionado(
+        image_source=payload.get('image_source'),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
 print('fin de rutas...')
