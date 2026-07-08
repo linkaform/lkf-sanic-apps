@@ -19,7 +19,7 @@ Uso básico desde cualquier módulo de lkf_addons:
         result = self.ai.chat("resume esto", image_url="https://...")
 """
 
-import json
+import json, simplejson
 import base64
 import requests
 from pathlib import Path
@@ -146,7 +146,14 @@ class OpenRouter:
             donde cada elemento corresponde a una identificación con estos campos:
             - tipo_documento   (IMPORTANTE: indica exactamente el tipo: INE, Pasaporte, Licencia de conducir,
                                 Credencial escolar, etc.)
-            - nombre
+            - es_empresa       (boolean — true si la identificación pertenece a una empresa/negocio
+                                en lugar de a una persona física, ej. constancia de situación fiscal
+                                de una persona moral, gafete o credencial corporativa, tarjeta de
+                                presentación de una empresa, etc. false en cualquier otro caso)
+            - nombre_empresa   (string — nombre o razón social de la empresa si es_empresa es true,
+                                null en caso contrario)
+            - nombres           (IMPORTANTE: incluye TODOS los nombres tal como aparecen en el
+                                documento, si tiene 2 nombres incluyelos aqui)
             - apellido_paterno
             - apellido_materno
             - fecha_nacimiento  (formato YYYY-MM-DD si es posible)
@@ -177,6 +184,7 @@ class OpenRouter:
             max_tokens=1500,
             temperature=0,
         )
+        print('rwar=',raw)
         return self._parse_json(raw)
 
     def ocr(self, image_source: list, fields: list = None,

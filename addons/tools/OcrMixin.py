@@ -210,7 +210,6 @@ class OcrMixin:
                 form_id=self.EMPLEADOS_FORM,
             )
         """
-
         if not self.ai:
             return {'status_code': 400, 'msg': 'OpenRouter no configurado'}
 
@@ -446,9 +445,9 @@ class OcrMixin:
             datos['curp'] = datos['curp'].upper().strip()
         if datos.get('rfc'):
             datos['rfc'] = datos['rfc'].upper().strip()
-        if datos.get('nombre'):
-            datos['nombre'] = datos['nombre'].strip().title()
-            datos['nombre_completo'] += f"{datos['nombre']}"
+        if datos.get('nombres'):
+            datos['nombres'] = datos['nombres'].strip().title()
+            datos['nombre_completo'] += f"{datos['nombres']}"
         if datos.get('apellido_paterno'):
             datos['apellido_paterno'] = datos['apellido_paterno'].strip().title()
             datos['nombre_completo'] += f" {datos['apellido_paterno']}"

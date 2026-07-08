@@ -22,23 +22,25 @@ def setup_auth(app: Sanic):
 
 
 
-def dispatch(end_point, params={}, method='get', **kwargs):
+def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
     print('en dispatcher....', kwargs)
     headers = {
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = "http://127.0.0.1:8000/accesos/"+end_point
+    url = f"http://127.0.0.1:8000/{module}/{end_point}"
     print('url', url)
+    print('module', module)
     print('params', params)
+    print('method', method)
     if method == 'get':
         response = requests.get(url, params, headers=headers)
     elif method == 'post':
-        response = requests.post(url, params, headers=headers)
+        response = requests.post(url, json=params, headers=headers)
     elif method == 'put':
-        response = requests.put(url, params, headers=headers)
+        response = requests.put(url, json=params, headers=headers)
     elif method == 'delete':
-        response = requests.delete(url, params, headers=headers)
+        response = requests.delete(url, params=params, headers=headers)
     else:
         response = requests.get(url, params, headers=headers)
     return response
