@@ -20,18 +20,18 @@ def load_shift(params):
     )
 
 def assets_access_pass(params):
-    data = kwargs.get("data", {})
+    data = params.get("data", {})
     return dispatch("assets_access_pass", params={
         'location': data.get('location', '')
     }, **params)
 
 def assing_gafete(params):
-    data = kwargs.get("data", {})
+    data = params.get("data", {})
     return dispatch("assing_gafete", params={
-        'data_gafete': data.get('data_gafete', {}), 
-        'id_bitacora': data.get('id_bitacora', ''), 
+        'data_gafete': data.get('data_gafete', {}),
+        'id_bitacora': data.get('id_bitacora', ''),
         'tipo_movimiento': data.get('tipo_movimiento', '')
-    }, **params)
+    }, method='post', **params)
 
 def list_bitacora(params):
     data = params.get("data", {})
@@ -46,22 +46,11 @@ def list_bitacora(params):
         'filterDate': data.get('filterDate', '')
     }, **params)
 
-def list_bitacora2(params):
-    data = params.get("data", {})
-    return dispatch("list_bitacora2", params={
-        'location': data.get('location', ''),
-        'area': data.get('area', ''),
-        'prioridades': data.get('prioridades', []),
-        'dateFrom': data.get('dateFrom', ''),
-        'dateTo': data.get('dateTo', ''),
-        'filterDate': data.get('filterDate', '')
-    }, **params)
-
 def get_user_booths(params):
     data = params.get("data", {})
     return dispatch("get_user_booths", params={
         'turn_areas': data.get('turn_areas', True)
-    }, **data)
+    }, **params)
 
 def get_boot_guards(params):
     data = params.get("data", {})
@@ -80,7 +69,6 @@ DISPATCHER = {
     "assets_access_pass": assets_access_pass,
     "assing_gafete": assing_gafete,
     "list_bitacora": list_bitacora,
-    "list_bitacora2": list_bitacora2,
     "get_user_booths": get_user_booths,
     "get_boot_guards": get_boot_guards,
     "get_user_menu": get_user_menu,
