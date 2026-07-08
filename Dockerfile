@@ -24,7 +24,8 @@ RUN apt-get update && \
 
 #mongo 5.0 tools
 RUN curl -fsSL https://pgp.mongodb.com/server-6.0.asc | gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg --dearmor
-RUN echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg] http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+# trusted=yes: la clave de firma de MongoDB usa una firma SHA1 que Debian trixie rechaza (sqv) desde 2026-02-01
+RUN echo "deb [ trusted=yes signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg] http://repo.mongodb.org/apt/debian bullseye/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list
 
 RUN apt-get update && \
     apt-get -y install \
@@ -48,6 +49,9 @@ COPY ./docker/main_entrypoint.sh /usr/local/bin/main_entrypoint.sh
 RUN chmod a+x /usr/local/bin/main_entrypoint.sh
 COPY ./docker/requires.txt /tmp/
 
+# setuptools>=82 quito pkg_resources, que el setup.py legacy de cx-Oracle 8.3.0 todavia necesita
+RUN echo "setuptools<82" > /tmp/build-constraints.txt
+ENV PIP_CONSTRAINT=/tmp/build-constraints.txt
 RUN pip install -r /tmp/requires.txt
 COPY ./bin/lkfaddons.py /usr/local/bin/lkfaddons
 RUN chmod a+x /usr/local/bin/lkfaddons
@@ -59,8 +63,6 @@ RUN chmod a+x /usr/local/bin/lkfaddons
 #     && rm -rf /var/lib/apt/lists/*
 
 
-# RUN pip install -r /tmp/requires.txt
-# RUN pip install twilio
 RUN pip install git+https://github.com/Bastian-Kuhn/wallet.git
 WORKDIR /tmp/
 ADD https://f001.backblazeb2.com/file/lkf-resources/backblaze_utils-0.1.tar.gz ./backblaze_utils-0.1.tar.gz 
@@ -82,14 +84,18 @@ WORKDIR /srv/lkf-sanic-app/app
 WORKDIR /opt/oracle
 ADD https://f001.backblazeb2.com/file/app-linkaform/public-client-126/71202/6650c41a967ad190e6a76dd3/66b5974cae333f423347115c.zip  66b5974cae333f423347115c.zip
 RUN unzip 66b5974cae333f423347115c.zip
-RUN cd /opt/oracle/instantclient_12_2/
 ENV LD_LIBRARY_PATH=/opt/oracle/instantclient:$LD_LIBRARY_PATH
 
-RUN apt-get install libaio1t64
+RUN apt-get update && apt-get -y install libaio1t64
 RUN echo /opt/oracle/instantclient_12_2 > /etc/ld.so.conf.d/oracle-instantclient.conf
 RUN ldconfig
 
 ### END ORACLE ###
+
+RUN echo teesttt
+WORKDIR /tmp/
+ADD  https://f001.backblazeb2.com/file/lkf-resources/linkaform_api-3.0.tar.gz ./linkaform_api-3.0.tar.gz
+RUN pip install linkaform_api-3.0.tar.gz
 
 # USER nonroot
 
@@ -98,16 +104,11 @@ WORKDIR /srv/lkf-sanic-app/app
 ####################################
 # Image for prodcution             #
 ####################################
-FROM develop AS prod
+FROM linkaform/sanic-app:develop AS prod
 
 
 USER root
-RUN echo teesttt
-WORKDIR /tmp/
-ADD  https://f001.backblazeb2.com/file/lkf-resources/linkaform_api-3.0.tar.gz ./linkaform_api-3.0.tar.gz
-RUN pip install linkaform_api-3.0.tar.gz
 
-#COPY ./docker/requires.txt /tmp/
 # TODO COPIAR TODO ADDONS Y HACER IMAGEN.... AQUI O EN SCIRPTS?
 COPY /addons /usr/local/lib/python3.12/site-packages/lkf_addons/
 COPY ./ /srv/lkf-sanic-app/
@@ -118,6 +119,5 @@ RUN chmod a+x /docker/main_entrypoint.sh
 
 # USER www-data
 
-#RUN pip install -r /tmp/requires.txt
 WORKDIR /srv/lkf-sanic-app/app/
 CMD ["python", "main.py"]

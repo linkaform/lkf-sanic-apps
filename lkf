@@ -4,7 +4,6 @@ set -e
 set -u
 #set -o pipefail
 
-echo "" >.env
 _usage(){
   APP=$(basename "$0")
       echo
@@ -185,9 +184,9 @@ _build(){
       echo "Building base image"
       cd docker
       if [ "$NOCACHE" = "1" ]; then
-        docker compose build lkf-sanic-app-base
-      else
         docker compose build --no-cache lkf-sanic-app-base
+      else
+        docker compose build lkf-sanic-app-base
       fi
      if [ "$UPLOAD" = "1" ]; then
         docker push linkaform/sanic-app:base
@@ -212,14 +211,13 @@ _build(){
         docker compose -f docker-prod.yml build --no-cache
       else
         docker compose -f docker-prod.yml build
+      fi
       docker tag linkaform/sanic-app:latest linkaform/sanic-app:develop
       if [ "$UPLOAD" = "1" ]; then
         echo 'UPLOADING IMAGE: linkaform/sanic-app:develop'
         docker push linkaform/sanic-app:develop
-      fi  
-
       fi
-      for CONTAINER_ID in $(docker ps | grep lkf-sanic-app | awk '{print $1}') 
+      for CONTAINER_ID in $(docker ps | grep lkf-sanic-app | awk '{print $1}')
       do
         echo 'Stopping cotainers...'
         docker stop $CONTAINER_ID && docker rm $CONTAINER_ID
@@ -229,22 +227,22 @@ _build(){
       #docker pull linkaform/sanic-app:develop
       git pull origin master
       cd docker
-      if [ "$NOCACHE" != "0" ]; then
-        docker compose -f docker-prod.yml build
-      else
+      if [ "$NOCACHE" = "1" ]; then
         docker compose -f docker-prod.yml build --no-cache
+      else
+        docker compose -f docker-prod.yml build
       fi
       if [ "$UPLOAD" = "1" ]; then
         docker push linkaform/sanic-app:latest
-      fi  
+      fi
     ;;
     preprod)
       #docker pull linkaform/sanic-app:develop
       cd docker
-      if [ "$NOCACHE" != "0" ]; then
-        docker compose -f docker-prod.yml build
-      else
+      if [ "$NOCACHE" = "1" ]; then
         docker compose -f docker-prod.yml build --no-cache
+      else
+        docker compose -f docker-prod.yml build
       fi
       echo "Nameing image:  linkaform/sanic-app:develop"
       docker tag linkaform/sanic-app:latest linkaform/sanic-app:develop
@@ -256,9 +254,9 @@ _build(){
     test)
       cd test/docker
       if [ "$NOCACHE" = "1" ]; then
-        docker compose build lkf-sanic-test
-      else
         docker compose build --no-cache lkf-sanic-test
+      else
+        docker compose build lkf-sanic-test
       fi
      if [ "$UPLOAD" = "1" ]; then
         docker push linkaform/lkf_sanic_test:develop
@@ -282,7 +280,10 @@ _update(){
   case $Enviorment in
     prod)
       echo '--------------', $IMAGE_NAME
-      env -i ssh -i $HOME/.ssh/keys/$Account_id _lkf_docker_remote@ansible.linkaform.com prod $IMAGE_NAME
+      for ip in 70 71 72; do
+        ssh -i ~/.ssh/keys/lkf lkf@10.128.10.$ip stop_container $Account_id $IMAGE_NAME &
+      done
+      # env -i ssh -i $HOME/.ssh/keys/$Account_id _lkf_docker_remote@ansible.linkaform.com prod $IMAGE_NAME
     ;;
     preprod)
       echo 'Running Account_id...' $Account_id
