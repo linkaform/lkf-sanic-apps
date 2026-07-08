@@ -101,10 +101,12 @@ async def assets_access_pass(request: Request):
     records = service.assets_access_pass(**filters)
     return json({"data": records}, status=200)
 
-@accesos_bp.get("/assing_gafete")
+@accesos_bp.post("/assing_gafete")
 async def assing_gafete(request: Request):
+    # POST porque data_gafete es un dict — no cabe de forma confiable en query string.
+    payload = _ocr_payload(request)
     allowed_params = ["data_gafete", "id_bitacora", "tipo_movimiento"]
-    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    filters = {k: payload.get(k) for k in allowed_params if payload.get(k) is not None}
     records = service.assing_gafete(**filters)
     return json({"data": records}, status=200)
 
@@ -113,13 +115,6 @@ async def get_list_bitacora(request: Request):
     allowed_params = ["location", "area", "prioridades", "dateFrom", "dateTo", "limit", "offset", "filterDate"]
     filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
     records = service.get_list_bitacora(**filters)
-    return json({"data": records}, status=200)
-
-@accesos_bp.get("/list_bitacora2")
-async def get_list_bitacora2(request: Request):
-    allowed_params = ["location", "area", "prioridades", "dateFrom", "dateTo", "filterDate"]
-    filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
-    records = service.get_list_bitacora2(**filters)
     return json({"data": records}, status=200)
 
 @accesos_bp.get("/get_user_booths")
@@ -140,13 +135,32 @@ async def get_booths_guards(request: Request):
 
 # ============================================
 # OCR (self.ai / OpenRouter)
-# Todos reciben la imagen como file_url en el body JSON (image_source).
+# Todos reciben la imagen como file_url (image_source), no como archivo subido.
 # La opción de subida directa de archivo se agrega en una fase posterior.
 # ============================================
 
+def _ocr_payload(request: Request) -> dict:
+    """
+    Acepta el payload venga como JSON (pruebas directas con curl/Postman) o
+    como form-data (así lo manda middleware.auth.dispatch cuando los scripts
+    CLI de app/modules invocan estas rutas con method='post').
+    """
+    try:
+        if request.json:
+            return request.json
+    except Exception:
+        pass
+    if request.form:
+        return {
+            k: (v[0] if isinstance(v, list) and len(v) == 1 else v)
+            for k, v in request.form.items()
+        }
+    return dict(request.args)
+
+
 @accesos_bp.post("/ocr_identificacion")
 async def post_ocr_identificacion(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_identificacion(
         image_source=payload.get('image_source'),
         form_id=payload.get('form_id'),
@@ -158,7 +172,7 @@ async def post_ocr_identificacion(request: Request):
 
 @accesos_bp.post("/ocr_documento")
 async def post_ocr_documento(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_documento(
         image_source=payload.get('image_source'),
         fields=payload.get('fields'),
@@ -171,7 +185,7 @@ async def post_ocr_documento(request: Request):
 
 @accesos_bp.post("/ocr_batch")
 async def post_ocr_batch(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     images = payload.get('images') or ([payload['image_source']] if payload.get('image_source') else [])
     res = service.ocr_batch(
         images=images,
@@ -183,7 +197,7 @@ async def post_ocr_batch(request: Request):
 
 @accesos_bp.post("/ocr_articulo_perdido")
 async def post_ocr_articulo_perdido(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_articulo_perdido(
         image_source=payload.get('image_source'),
         model=payload.get('model', 'google/gemini-2.5-flash-lite'),
@@ -192,7 +206,7 @@ async def post_ocr_articulo_perdido(request: Request):
 
 @accesos_bp.post("/ocr_paquete")
 async def post_ocr_paquete(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_paquete(
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
@@ -203,7 +217,7 @@ async def post_ocr_paquete(request: Request):
 
 @accesos_bp.post("/ocr_equipo")
 async def post_ocr_equipo(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_equipo(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
@@ -213,7 +227,7 @@ async def post_ocr_equipo(request: Request):
 
 @accesos_bp.post("/ocr_persona")
 async def post_ocr_persona(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_persona(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
@@ -223,7 +237,7 @@ async def post_ocr_persona(request: Request):
 
 @accesos_bp.post("/ocr_vehiculo")
 async def post_ocr_vehiculo(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_vehiculo(
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
@@ -234,7 +248,7 @@ async def post_ocr_vehiculo(request: Request):
 
 @accesos_bp.post("/ocr_truck")
 async def post_ocr_truck(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_truck(
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
@@ -245,7 +259,7 @@ async def post_ocr_truck(request: Request):
 
 @accesos_bp.post("/ocr_articulo_concesionado")
 async def post_ocr_articulo_concesionado(request: Request):
-    payload = request.json or {}
+    payload = _ocr_payload(request)
     res = service.ocr_articulo_concesionado(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
