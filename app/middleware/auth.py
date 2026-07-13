@@ -2,9 +2,52 @@
 # coding: utf-8
 # middlewares/auth.py
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
+
+
+class ConnectionClient(object):
+    """Mismo patron de retry de conexion que linkaform_api/network.py
+    (ConnectionClient) -- reintenta a nivel de conexion (timeouts, connection
+    refused) con backoff exponencial, no reintenta por status code de la
+    respuesta. Util aqui porque dispatch() llama a las propias rutas de este
+    proceso Sanic, y justo despues de que el backend recrea el contenedor la
+    primera peticion puede llegar antes de que el server termine de
+    levantar."""
+
+    def __init__(self, retries=9, backoff_factor=0.1):
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=retries,
+            status_forcelist=None,
+            status=0,
+            allowed_methods=['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE'],
+            backoff_factor=backoff_factor,
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+
+    def get(self, url, params=None, **kwargs):
+        return self.session.get(url, params=params, **kwargs)
+
+    def post(self, url, json=None, **kwargs):
+        return self.session.post(url, json=json, **kwargs)
+
+    def put(self, url, json=None, **kwargs):
+        return self.session.put(url, json=json, **kwargs)
+
+    def delete(self, url, params=None, **kwargs):
+        return self.session.delete(url, params=params, **kwargs)
+
+
+# Singleton a nivel de modulo: se reusa la misma session (y su pool de
+# conexiones) entre llamadas a dispatch(), igual que el resto de la
+# arquitectura Sanic mantiene sus dependencias "calientes" entre requests.
+_connection_client = ConnectionClient()
 
 
 def setup_auth(app: Sanic):
@@ -56,13 +99,13 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
     url = f"http://0.0.0.0:8000/{module}/{end_point}"
     print('url', url)
     if method == 'get':
-        response = requests.get(url, params, headers=headers)
+        response = _connection_client.get(url, params=params, headers=headers)
     elif method == 'post':
-        response = requests.post(url, json=params, headers=headers)
+        response = _connection_client.post(url, json=params, headers=headers)
     elif method == 'put':
-        response = requests.put(url, json=params, headers=headers)
+        response = _connection_client.put(url, json=params, headers=headers)
     elif method == 'delete':
-        response = requests.delete(url, params=params, headers=headers)
+        response = _connection_client.delete(url, params=params, headers=headers)
     else:
-        response = requests.get(url, params, headers=headers)
+        response = _connection_client.get(url, params=params, headers=headers)
     return response
