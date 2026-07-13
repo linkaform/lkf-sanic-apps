@@ -1,19 +1,10 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson, json
-from linkaform_api import settings
-from account_settings import *
-
-from accesos_utils import Accesos
-
-class Accesos(Accesos):
-    pass
+import sys, simplejson, lkf_addons
+from middleware.auth import dispatch
 
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv)
-    acceso_obj.console_run()
-    
-    response = acceso_obj.check_out_all_users()
-
-    sys.stdout.write(simplejson.dumps({
-        'response': response
-    }))
+    params = simplejson.loads(sys.argv[2])
+    print('..... arranca script check_out_all')
+    response = dispatch("check_out_all", params={}, method='post', **params)
+    sys.stdout.write(simplejson.dumps(response.json()))

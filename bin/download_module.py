@@ -10,16 +10,18 @@ from linkaform_api import utils
 
 
 MODULES_PATH = '/srv/lkf-sanic-app/modules'
-ADDONS_PATH = '/usr/local/lib/python3.12/site-packages/lkf_addons/addons'
+ADDONS_PATH = '/usr/local/lib/python3.12/site-packages/lkf_addons'
 if ADDONS_PATH not in sys.path:
     sys.path.append(ADDONS_PATH)
+if '/srv/lkf-sanic-app' not in sys.path:
+    sys.path.append('/srv/lkf-sanic-app')
 if '/srv/lkf-sanic-app/config' not in sys.path:
     sys.path.append('/srv/lkf-sanic-app/config')
 if MODULES_PATH not in sys.path:
     sys.path.append(MODULES_PATH)
 
 
-from settings import get_settings
+from config.settings import get_settings
 from uts import get_lkf_api, get_lkf_module
 
 settings = get_settings()
@@ -30,7 +32,7 @@ from json_xml import json_to_xml
 
 import simplejson
 
-from settings import *
+from config.settings import *
 
 force_items = {
     "forms":{

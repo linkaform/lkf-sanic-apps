@@ -1,26 +1,31 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
-from linkaform_api import settings
-from account_settings import *
+import sys, simplejson, lkf_addons
+from middleware.auth import dispatch
 
-from accesos_utils import Accesos
 
-class Accesos(Accesos):
-    pass
-    
+def get_stats(params):
+    data = params.get("data", {})
+    return dispatch("get_stats", params={
+        'area': data.get('area', ''),
+        'location': data.get('location', ''),
+        'page': data.get('page', ''),
+    }, method='get', **params)
+
+
+DISPATCHER = {
+    "get_stats": get_stats,
+}
+
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv, use_api=True)
-    acceso_obj.console_run()
-    #-FILTROS
-    data = acceso_obj.data.get('data',{})
-    option = data.get("option",'')
-    area = data.get('area','')
-    location = data.get('location','')
-    page = data.get('page','')
-    print("data//////////////////", data)
-    
-    if option == 'get_stats':
-        response = acceso_obj.get_page_stats(booth_area=area, location=location, page=page)
-    else :
-        response = {"msg": "Empty"}
-    acceso_obj.HttpResponse({"data":response})
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
+    option = data.get("option")
+    print('..... arranca script get_stats')
+    handler = DISPATCHER.get(option)
+    if not handler:
+        response = {"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}
+        sys.stdout.write(simplejson.dumps(response))
+    else:
+        response = handler(params)
+        sys.stdout.write(simplejson.dumps(response.json()))

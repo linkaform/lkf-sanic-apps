@@ -3,23 +3,32 @@
 import sys, simplejson, lkf_addons
 from middleware.auth import dispatch
 
-
-def send_cel_msj(params):
+def get_menus(params):
     data = params.get("data", {})
-    return dispatch("send_cel_msj", params={
-        'data_cel_msj': data.get('data_cel_msj', {}),
+    return dispatch("get_menus", params={
+        'platform': data.get('platform', ''),
+    }, method='get', **params)
+
+def set_permissions(params):
+    data = params.get("data", {})
+    return dispatch("set_permissions", params={
+        'answers': data.get('answers', {}),
+        'user_id': data.get('user_id'),
     }, method='post', **params)
 
 
 DISPATCHER = {
-    "send_cel_msj": send_cel_msj,
+    "get_menus": get_menus,
+    "set_permissions": set_permissions,
 }
+
 
 if __name__ == "__main__":
     params = simplejson.loads(sys.argv[2])
     data = params.get("data", {})
-    option = data.get("option", "send_cel_msj")
-    print('..... arranca script sms_status')
+    option = data.get("option") or params.get('option', '')
+    print('..... arranca script menus')
+    print('nuevo build..')
     handler = DISPATCHER.get(option)
     if not handler:
         response = {"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}

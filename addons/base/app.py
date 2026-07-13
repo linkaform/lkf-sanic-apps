@@ -6,6 +6,7 @@ import simplejson, importlib
 import re, os, zipfile, wget, random, shutil, datetime
 from bson.objectid import ObjectId
 from datetime import timedelta
+from couchdb.http import ResourceNotFound
 
 print('11111--------------- ADDONS Base APP --------------------')
 from linkaform_api import base
@@ -319,6 +320,24 @@ class Base(base.LKF_Base):
         answers = self.send_email_by_form_answers(data)
         metadata.update({'answers':answers})
         return self.lkf_api.post_forms_answers(metadata)
+
+    def get_couch_user_db(self, db_name):
+        """
+        Retorna la instancia de la DB. Si no existe,
+        crea la base de datos en CouchDB si no existe.
+        """
+        try:
+            db = self.lkf_api.couch.set_db(db_name)
+        except ResourceNotFound:
+            try:
+                user_id = db_name.split('_')[-1]
+                response = self.lkf_api.create_user_couch_db(user_id, db_name)
+                db = self.lkf_api.couch.set_db(db_name)
+            except Exception as e:
+                self.LKFException(f'Error al crear la base de datos {db_name}: {str(e)}')
+        except Exception as e:
+            self.LKFException(f'Error inesperado al acceder a la base de datos {db_name}: {str(e)}')
+        return db
 
     def strip_special_characters(self, value, underscore = False, remove_spaces=True):
         res = ''
@@ -1304,9 +1323,11 @@ class Schedule(Base):
 
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
-        
+
 
         super().__init__(settings, sys_argv=sys_argv, use_api=use_api, **kwargs)
+        self.load(module='Location', **self.kwargs)
+        self.load(module='Accesos', **self.kwargs)
 
         self.mf.update({
             'dag_id':'abcde0001000000000000000',
@@ -1314,11 +1335,27 @@ class Schedule(Base):
             }
             )
 
-        print('shcedlue mf' , self.mf)
-
         self.PROGRAMAR_TAREAS = self.lkm.form_id('programar_tareas', 'id')
 
         self.f.update({
+            'status_cron': 'abcde00010000000a0000000',
+            'cron_id': 'abcde0001000000000000000',
+            'dag_id': 'abcde0001000000000000000',
+            'anticipacion': 'abcde0002000000000010001',
+            'timeframe_ant': 'abcde0002000000000010004',
+            'timeframe_unit_ant': 'abcde0002000000000010005',
+            'end_date': 'abcde0001000000000010099',
+            'timeframe': 'abcde0001000000000010004',
+            'timeframe_unit': 'abcde0001000000000010005',
+            'task_name': '6645050d873fc2d733961eba',
+            'task_st': 'abcde0001000000000000006',
+            'duration': 'abcde0001000000000000016',
+            'description': 'abcde0001000000000000007',
+            'status': 'abcde0001000000000000020',
+            'assigned_users': 'abcde0001000000000020002',
+            'field_map': 'abcded001000000000000001',
+            'group_field_map': 'abcde0001000000000000008',
+            'action': 'abcde00010000000a0000001',
         })
 
     def calc_date_as_function(self, first_date, tz_offset, timeframe =None, timeframe_unit=None):
@@ -1890,6 +1927,167 @@ class Schedule(Base):
         #manera sencilla porque si el nombre se tiene que editar y el nombre
         #compuesto por parametros, los parametros no pueden cambiar
         #hay que conectar airflow bob con mongo
+
+    def schedule_task_recorrido(self, answers=None, current_record=None):
+        '''
+        start_date: es la fecha con la que se va a porgramar la recurrencia del dag
+        ojo si esta fecha aun no pasa, las tareas del dag sencillamente no corren
+        por default el start date es igual a la fecha de la primer ejecucion, a menos de que se
+        programe con anticipacion.
+        '''
+        if answers is None:
+            answers = self.answers
+        if current_record is None:
+            current_record = self.current_record
+        response = {}
+        tz_offset = current_record.get('tz_offset', -300)
+        dag_id = answers.get(self.mf['dag_id'])
+        action = answers.get(self.f['action'])
+        if not answers or action in ('eliminar', 'delete'):
+            if dag_id:
+                return self.delete_cron(cron_id=dag_id)
+            else:
+                return self.delete_cron(current_record.get('item_id'), current_record.get('folio'))
+        task_type = 'create_and_assign'
+        if action in ('pausar', 'pause', 'pausa'):
+            if not dag_id:
+                msg_error_app = {
+                    "error":{"msg": ["Cron ID is needed, only existing Crons can be paused!"], "label": "Cron Id", "error":["Cron ID is needed, only existing Crons can be paused!!!"]},
+                }
+                self.LKFException(simplejson.dumps(msg_error_app))
+            body = {
+                'dag_id': dag_id,
+                'is_paused': True
+            }
+            response = self.lkf_api.update_cron(body)
+            if response.get('status_code') == 200:
+                response['is_paused'] = True
+            return response
+        elif action in ('corriendo', 'running', 'programar', 'program') and dag_id:
+            body = {
+                'dag_id': dag_id,
+                'is_pause': False
+            }
+            response = self.lkf_api.update_cron(body)
+            if response.get('satus_code') == 200:
+                response['is_paused'] = False
+
+        first_date = answers.get(self.mf['fecha_primer_evento'])
+        start_date = first_date
+        anticipacion = answers.get(self.f['anticipacion'])
+        timeframe_ant = answers.get(self.f['timeframe_ant'])
+        timeframe_unit_ant = answers.get(self.f['timeframe_unit_ant'], 'horas')
+        if anticipacion == 'si':
+            if timeframe_ant:
+                start_date = self.calc_date(first_date, timeframe_ant, timeframe_unit_ant, operator='-')
+                start_date = self.calc_date(start_date, tz_offset, 'minutes')
+        end_date = answers.get(self.f['end_date'])
+        timeframe = answers.get(self.f['timeframe'])
+        timeframe_unit = answers.get(self.f['timeframe_unit'], 1)
+        due_date = self.calc_date_as_function(first_date, tz_offset, timeframe, timeframe_unit)
+        first_date = self.calc_date_as_function(first_date, tz_offset)
+        task_name = answers.get(self.f['task_name'])
+        task_st = answers.get(self.f['task_st'])
+        duration = answers.get(self.f['duration'], 1) * 3600
+        description = answers.get(self.f['description'], '')
+        status = answers.get(self.f['status'])
+        tipo_rondin = answers.get(self.Accesos.rondin_keys['tipo_rondin'])
+
+        asigne_to = []
+        custom_cron = False
+        schedule_config = self.get_schedule_config(answers)
+        if not schedule_config:
+            error_msg = 'No se encontro configuracion: schedule_config'
+            self.LKFException(error_msg)
+        body = {}
+        item_id = self.Accesos.BITACORA_RONDINES
+        item_type = 'form'
+
+        if not item_type or not item_id:
+            msg_error_app = {
+                "error":{"msg": ["Error al obtener el tipo de recurso (item)"], "label": "Cron Id", "error":["Error al obtener el tipo de recurso (item)"]},
+            }
+            self.LKFException(simplejson.dumps(msg_error_app))
+        if type(item_type) == list:
+            item_type = item_type[0]
+        item_type = item_type.lower()
+
+        if dag_id:
+            body['id'] = dag_id
+        body['subscription_id'] = item_id
+        body['subscription_type'] = item_type
+        body['name'] = task_name
+        body['description'] = description
+        body['default_args'] = {
+            "email":["josepato@linkaform.com","roman.lezama@linkaform.com"],
+            "retries":1,
+            "email_on_failure" : True,
+            "retry_delay" : "timedelta(seconds=30)"
+        }
+        APIKEY = self.settings.config.get('APIKEY',self.settings.config.get('API_KEY'))
+        body['params'] = {'api_key':APIKEY}
+        body['dag_params'] = {
+            "concurrency":3,
+            "catchup": False,
+            "duration": duration,
+            "start_date":"datetime({} ,{}, {}, {}, {})".format(
+                int(start_date[:4]),
+                int(start_date[5:7]),
+                int(start_date[8:10]),
+                int(start_date[11:13]),
+                int(start_date[14:16]),
+                int(start_date[17:19]),
+            )
+        }
+
+        if custom_cron:
+            body['dag_params'].update({'schedule_interval':custom_cron})
+        else:
+            body['dag_params'].update({'schedule_config':schedule_config})
+
+        if end_date:
+            body['dag_params'].update({
+                "end_date":"datetime({} ,{}, {}, {}, {})".format(
+                int(end_date[:4]),
+                int(end_date[5:7]),
+                int(end_date[8:10]),
+                int(end_date[11:13]),
+                int(end_date[14:16]),
+                int(end_date[17:19]),
+                )
+                })
+
+        body['tasks'] = [{
+            "name":"LKF Login",
+            "operator_lib":"lkf_operator",
+            "operator":"LKFLogin",
+            "downstream_task_id":[]
+        }]
+        downstream_task_id = 1
+        if task_type == 'create_and_assign':
+            task = {
+                "name":task_name,
+                "operator_lib":"lkf_operator",
+                "operator":"CreateRecord",
+                "params":{
+                    "form_id":item_id,
+                    "answers": {
+                        self.Accesos.CONFIGURACION_RECORRIDOS_OBJ_ID: {
+                            self.Location.f['location']: answers.get(self.Location.UBICACIONES_CAT_OBJ_ID, {}).get(self.Location.f['location'], ''),
+                            self.Accesos.mf['nombre_del_recorrido']: answers.get(self.Accesos.mf['nombre_del_recorrido'], ''),
+                        },
+                        self.Accesos.f['fecha_programacion']: first_date,
+                        self.Accesos.f['estatus_del_recorrido']: "programado",
+                        self.Accesos.rondin_keys['tipo_rondin']: tipo_rondin,
+                    },
+                }
+            }
+            body['tasks'].append(task)
+            downstream_task_id += 1
+            body['tasks'][0]['downstream_task_id'].append(downstream_task_id)
+            response.update(self.subscribe_cron(body))
+
+        return response
 
     def update_users(self, all_users, new_users):
         ids = []

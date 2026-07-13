@@ -22,17 +22,39 @@ def setup_auth(app: Sanic):
 
 
 
+def get_jwt_from_api_key(api_key):
+    """
+    Intercambia un API key por un JWT valido usando el mecanismo ya existente
+    en linkaform_api (utils.Cache.get_jwt -> network.login). Es el equivalente
+    a instanciar la clase de un modulo con use_api=True en el sistema legacy:
+    en vez de requerir el JWT de un usuario logeado, se autentica con el
+    API key de la cuenta (que el cliente puede elegir por llamada).
+    """
+    from linkaform_api import settings, utils
+    lkf_api = utils.Cache(settings)
+    return lkf_api.get_jwt(api_key=api_key)
+
+
+def dispatch_with_api_key(end_point, api_key, module='accesos', params={}, method='get', **kwargs):
+    """
+    Igual que dispatch(), pero en vez de reusar el jwt del payload original
+    (kwargs['jwt']/kwargs['Bearer']), lo reemplaza por uno obtenido a partir
+    del API key indicado. Util para scripts que antes se ejecutaban con
+    use_api=True.
+    """
+    jwt = get_jwt_from_api_key(api_key)
+    kwargs = {k: v for k, v in kwargs.items() if k not in ('jwt', 'Bearer')}
+    kwargs['jwt'] = f"Bearer {jwt}"
+    return dispatch(end_point, module=module, params=params, method=method, **kwargs)
+
+
 def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
-    print('en dispatcher....', kwargs)
     headers = {
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = f"http://127.0.0.1:8000/{module}/{end_point}"
+    url = f"http://0.0.0.0:8000/{module}/{end_point}"
     print('url', url)
-    print('module', module)
-    print('params', params)
-    print('method', method)
     if method == 'get':
         response = requests.get(url, params, headers=headers)
     elif method == 'post':

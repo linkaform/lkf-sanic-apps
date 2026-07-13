@@ -14,8 +14,7 @@ from download_module import ADDONS_PATH, MODULES_PATH
 # sys.path.append('/srv/scripts/addons/config/')
 # sys.path.append('/srv/scripts/addons/modules')
 
-# from  settings import get_settings
-from settings import get_settings
+from config.settings import get_settings
 from uts import get_lkf_api
 
 settings = get_settings()

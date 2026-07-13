@@ -92,10 +92,6 @@ RUN ldconfig
 
 ### END ORACLE ###
 
-RUN echo teesttt
-WORKDIR /tmp/
-ADD  https://f001.backblazeb2.com/file/lkf-resources/linkaform_api-3.0.tar.gz ./linkaform_api-3.0.tar.gz
-RUN pip install linkaform_api-3.0.tar.gz
 
 # USER nonroot
 
@@ -118,6 +114,10 @@ RUN chmod a+x /docker/main_entrypoint.sh
 #RUN chown -R 33:33 /srv/lkf-sanic-app
 
 # USER www-data
+RUN echo teesttt
+WORKDIR /tmp/
+ADD  https://f001.backblazeb2.com/file/lkf-resources/linkaform_api-3.0.tar.gz ./linkaform_api-3.0.tar.gz
+RUN pip install linkaform_api-3.0.tar.gz
 
 WORKDIR /srv/lkf-sanic-app/app/
 CMD ["python", "main.py"]

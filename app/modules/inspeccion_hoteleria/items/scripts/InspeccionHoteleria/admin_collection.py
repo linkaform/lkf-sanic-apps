@@ -114,8 +114,6 @@ class Inspeccion_Hoteleria(Inspeccion_Hoteleria):
             'media': self.media,
             'field_label': self.field_label,
             })
-        # print('data:', simplejson.dumps(data, indent=3))
-        # breakpoint()
         return self.create(data, collection='inspeccion_collection')
     
     def dev_get_record(self):

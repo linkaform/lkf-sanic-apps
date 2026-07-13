@@ -1,22 +1,18 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
+import sys, simplejson, lkf_addons
 from linkaform_api import settings
 from account_settings import *
+from middleware.auth import dispatch_with_api_key
 
-sys.path.append('/srv/scripts/addons/modules/accesos/items/scripts/Accesos')
-from accesos_utils import Accesos
-
-class Accesos(Accesos):
-    pass
-    
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv, use_api=True)
-    acceso_obj.console_run()
-
-    res = acceso_obj.update_pass_status()
-    sys.stdout.write(simplejson.dumps({
-        'status': 101,
-        'replace_ans': acceso_obj.answers,
-        'matched_documents': res
-    }))
-    
+    current_record = simplejson.loads(sys.argv[1])
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
+    api_key = data.get('api_key') or config.get('APIKEY')
+    print('..... arranca rutina update_status_pass')
+    response = dispatch_with_api_key("update_status_pass", api_key, params={
+        'current_record': current_record,
+        'answers': current_record.get('answers', {}),
+    }, method='post', **params)
+    sys.stdout.write(simplejson.dumps(response.json()))

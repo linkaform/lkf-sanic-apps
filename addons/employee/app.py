@@ -12,7 +12,7 @@ Se permite la redistribución y el uso en formas de código fuente y binario, co
 
 '''
 
-import sys, simplejson
+import sys, simplejson, re
 
 from linkaform_api import settings
 from lkf_addons.base.app import Base
@@ -138,19 +138,33 @@ class Employee(Base):
             res  = {f"answers.{field_id}": value}
         return res
 
-    def get_employee_data(self, name=None, user_id=None, username=None, email=None,  get_one=False):
+    def get_employee_data(self, name=None, user_id=None, username=None, email=None, phone=None, get_one=False, active=True):
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.EMPLEADOS,
             }
+        if active:
+            match_query.update(self._get_match_q(self.employee_fields['estatus_dentro_empresa'], 'activo'))
         if name:
             match_query.update(self._get_match_q(self.f['worker_name'], name))
         if user_id:
-            match_query.update(self._get_match_q(self.employee_fields['user_id_id'], user_id))
+            match_query.update(self._get_match_q(f"{self.USUARIOS_OBJ_ID}.{self.employee_fields['user_id_id']}", user_id))
         if username:
             match_query.update(self._get_match_q(self.f['username'], username))
         if email:
-            match_query.update(self._get_match_q(self.employee_fields['usuario_email'], email)) 
+            match_query.update(self._get_match_q(self.employee_fields['usuario_email'], email))
+        if phone:
+            phone = re.sub(r'\D', '', phone)
+            phone = phone[-10:]
+            match_query.update(
+                {
+                "$or": [
+                    {f"answers.{self.employee_fields['telefono1']}": {"$regex": phone}},
+                    {f"answers.{self.employee_fields['telefono2']}": {"$regex": phone}},
+                    {f"answers.{self.employee_fields['usuario_telefono']}": {"$regex": phone}},
+                    ]
+                }
+                )
         query = [
             {'$match': match_query },    
             {'$project': self.project_format(self.employee_fields)},
@@ -193,43 +207,24 @@ class Employee(Base):
             }
             ]
         res = self.format_cr(self.cr.aggregate(query))
-
         caseta = None
         user_booths = []
+        location_areas = {}
         for x in res:
-            if not x.get('area') and not turn_areas:
-                selector = {}
-                selector.update({f"answers.{self.f['ubicacion']}": x.get('location')})
-
-                if not selector:
-                    selector = {"_id": {"$gt": None}}
-
-                fields = ["_id", f"answers.{self.f['nombre_area']}"]
-
-                mango_query = {
-                    "selector": selector,
-                    "fields": fields,
-                    "limit": 1000
-                }
-
-                row_catalog = self.lkf_api.search_catalog(self.Location.AREAS_DE_LAS_UBICACIONES_CAT_ID, mango_query)
-                if row_catalog:
-                    for r in row_catalog:
-                        res.append({
-                            'area': r.get(self.f['nombre_area']),
-                            'location': x.get('location'),
-                            'employee': x.get('employee'),
-                            'marcada_como': 'normal',
-                        })
+            location_areas[x['location']] = location_areas.get(x['location'], [])
+            if x.get('area'):
+                #agrupa las areas de las ubicacion, si la ubicacion no tiene area va regresar todas la areas de la ubicacion
+                location_areas[x['location']].append(x['area'])
             if x['marcada_como'] == 'default' and not caseta:
                 caseta = x
             else:
                 user_booths.append(x)
-        if not caseta and search_default:
-            caseta, user_booths_tmp = self.get_user_booth(search_default=False)
-        if not search_default and not caseta:
-            if user_booths:
-                caseta = user_booths[0]
+        for ubicacion, areas in location_areas.items():
+            if not areas:
+                location_areas = self.Location.get_areas_by_location(ubicacion)
+                if not caseta and location_areas:
+                    caseta = {'_id': None, 'location': ubicacion, 'area': location_areas[0]}
+                user_booths += [{'_id': None, 'location': ubicacion, 'area': area} for area in location_areas]
         if not caseta:
             msg = f'No existe caseta configurada para usuario id: {user_id}'
             self.LKFException(msg)
@@ -273,9 +268,14 @@ class Employee(Base):
             ]
         unwind_query = {}
         if location_name:
-            unwind_query.update({
-                f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}": location_name
-                })
+            if type(location_name) == str:
+                unwind_query.update({
+                    f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}": location_name
+                    })
+            elif type(location_name) == list:
+                unwind_query.update({
+                    f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}": {"$in": location_name}
+                    })
         if area_name:
             unwind_query.update({
                 f"answers.{self.f['areas_group']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f['area']}": area_name
@@ -302,6 +302,28 @@ class Employee(Base):
                     'marcada_como': f"$answers.{self.f['areas_group']}.{self.f['area_default']}",
                     'position': {"$first":f"$answers.{self.EMPLOYEE_OBJ_ID}.{self.f['worker_position']}"},
                     }
-                }
+                },
+            {"$group": {
+                "_id": "$name",
+                "id":           {"$first": "$_id"},
+                "folio":        {"$first": "$folio"},
+                "created_at":   {"$first": "$created_at"},
+                "area":         {"$addToSet": "$area"},
+                "location":     {"$first": "$location"},
+                "user_id":      {"$first": "$user_id"},
+                "marcada_como": {"$first": "$marcada_como"},
+                "position":     {"$first": "$position"}
+            }},
+            {"$project": {
+                "_id": "$id",
+                "folio": 1,
+                "created_at": 1,
+                "area": 1,
+                "location": 1,
+                "name": "$_id",
+                "user_id": 1,
+                "marcada_como": 1,
+                "position": 1
+            }}
             ]
         return self.format_cr_result(self.cr.aggregate(query))

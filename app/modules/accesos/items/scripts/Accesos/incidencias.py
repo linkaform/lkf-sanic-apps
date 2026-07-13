@@ -1,100 +1,91 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
-from linkaform_api import settings
-from account_settings import *
+import sys, simplejson, lkf_addons
+from middleware.auth import dispatch
 
-from accesos_utils import Accesos
 
-class Accesos(Accesos):
-    pass
+def nueva_incidencia(params):
+    data = params.get("data", {})
+    return dispatch("nueva_incidencia", params={
+        'data_incidence': data.get('data_incidence', {}),
+    }, method='post', **params)
+
+def get_incidences(params):
+    data = params.get("data", {})
+    return dispatch("get_incidences", params={
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'prioridades': data.get('prioridades', []),
+        'dateFrom': data.get('dateFrom', ''),
+        'dateTo': data.get('dateTo', ''),
+        'filterDate': data.get('filterDate', ''),
+    }, method='get', **params)
+
+def update_incidence(params):
+    data = params.get("data", {})
+    return dispatch("update_incidence", params={
+        'data_incidence_update': data.get('data_incidence_update', {}),
+        'folio': data.get('folio', ''),
+    }, method='post', **params)
+
+def update_incidence_seguimiento(params):
+    data = params.get("data", {})
+    return dispatch("update_incidence_seguimiento", params={
+        'folio': data.get('folio', ''),
+        'seguimientos_incidencia': data.get('seguimientos_incidencia', []),
+        'estatus': data.get('estatus', ''),
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+    }, method='post', **params)
+
+def delete_incidence(params):
+    data = params.get("data", {})
+    folio = data.get('folio')
+    return dispatch("delete_incidence", params={
+        'folio': folio if isinstance(folio, list) else ([folio] if folio else []),
+    }, method='get', **params)
+
+def catalogo_area_empleado(params):
+    data = params.get("data", {})
+    return dispatch("catalogo_area_empleado_incidencias", params={
+        'location': data.get('location', ''),
+    }, method='get', **params)
+
+def catalogo_incidencias(params):
+    data = params.get("data", {})
+    return dispatch("catalogo_incidencias", params={
+        'cat': data.get('cat', ''),
+        'sub_cat': data.get('sub_cat', ''),
+    }, method='get', **params)
+
+def get_pdf(params):
+    data = params.get("data", {})
+    return dispatch("get_pdf", params={
+        'qr_code': data.get('qr_code', ''),
+        'template_id': data.get('template_id', ''),
+    }, method='get', **params)
+
+
+DISPATCHER = {
+    "nueva_incidencia": nueva_incidencia,
+    "get_incidences": get_incidences,
+    "update_incidence": update_incidence,
+    "update_incidence_seguimiento": update_incidence_seguimiento,
+    "delete_incidence": delete_incidence,
+    "catalogo_area_empleado": catalogo_area_empleado,
+    "catalogo_incidencias": catalogo_incidencias,
+    "get_pdf": get_pdf,
+}
+
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv)
-    acceso_obj.console_run()
-    #-FILTROS
-    data = acceso_obj.data.get('data',{})
-    option = data.get("option","")
-
-    data_incidence = data.get("data_incidence",{
-        'reporta_incidencia': "",
-        'fecha_hora_incidencia':"",
-        'ubicacion_incidencia':"",
-        'area_incidencia': "",
-        'incidencia':"",
-        'comentario_incidencia': "",
-        'tipo_dano_incidencia': "",
-        'dano_incidencia':"",
-        'evidencia_incidencia': [],
-        'documento_incidencia':[],
-        'prioridad_incidencia':"",
-        'notificacion_incidencia':"",
-        'datos_deposito_incidencia': [],
-        'tags':[],
-        'categoria':"",
-        'sub_categoria':"",
-        'incidente':"",
-
-        'nombre_completo_persona_extraviada':"",
-        'edad':"",
-        'color_piel':"",
-        'color_cabello':"",
-        'estatura_aproximada':"",
-        'descripcion_fisica_vestimenta':"",
-        'nombre_completo_responsable':"",
-        'parentesco':"",
-        'num_doc_identidad':"",
-        'telefono':"",
-        'info_coincide_con_videos':"",
-        'responsable_que_entrega':"",
-        'responsable_que_recibe':"",
-    
-        'afectacion_patrimonial_incidencia':[],
-        'personas_involucradas_incidencia': [],
-        'acciones_tomadas_incidencia':[],
-        'seguimientos_incidencia':[],
-
-        'valor_estimado':"",
-        'pertenencias_sustraidas':"",
-        'placas':"",
-        'tipo':"",
-        'marca':"",
-        'modelo':"",
-        'color':"",
-    })
-    data_incidence_update = data.get("data_incidence_update",{
-        'incidence':'Se detuvierón las escaleras'
-    })
-    location = data.get("location","")
-    area = data.get("area","")
-    prioridades = data.get("prioridades",[])
-    folio = data.get("folio")
-    sub_cat = data.get("sub_cat")
-    cat = data.get("cat")
-    dateFrom = data.get("dateFrom", "")
-    dateTo = data.get("dateTo", "")
-    filterDate = data.get("filterDate", "")
-    seguimientos = data.get("seguimientos_incidencia", [])
-    qr_code = data.get('qr_code')
-    template_id = data.get('template_id')
-    name_pdf = data.get('name_pdf')
-    estatus = data.get('estatus')
-
-    print('option', option)
-    if option == 'nueva_incidencia':
-        response = acceso_obj.create_incidence(data_incidence)
-    elif option == 'get_incidences':
-        response = acceso_obj.get_list_incidences(location, area, prioridades= prioridades, dateFrom=dateFrom, dateTo=dateTo, filterDate=filterDate)
-    elif option == 'update_incidence':
-        response = acceso_obj.update_incidence(data_incidence_update, folio)
-    elif option == 'update_incidence_seguimiento':
-        response = acceso_obj.update_incidence_seguimiento(folio=folio, incidencia_grupo_seguimiento=seguimientos, estatus=estatus)
-    elif option == 'delete_incidence':
-        response = acceso_obj.delete_incidence(folio)
-    elif option == 'catalogo_area_empleado':
-        response = acceso_obj.catalogo_config_area_empleado(bitacora='Incidencias', location=location)
-    elif option == 'catalogo_incidencias':
-        response = acceso_obj.catalogo_incidencias(cat=cat,sub_cat=sub_cat)
-    elif option == 'get_pdf':
-        response = acceso_obj.get_pdf(qr_code=qr_code, template_id=template_id)
-    else :
-        response = {"msg": "Empty"}
-    acceso_obj.HttpResponse({"data":response})
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
+    option = data.get("option")
+    print('..... arranca script incidencias')
+    handler = DISPATCHER.get(option)
+    if not handler:
+        response = {"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}
+        sys.stdout.write(simplejson.dumps(response))
+    else:
+        response = handler(params)
+        sys.stdout.write(simplejson.dumps(response.json()))

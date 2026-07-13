@@ -1,65 +1,72 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
-from linkaform_api import settings
-from account_settings import *
-
-from accesos_utils import Accesos
-
-class Accesos(Accesos):
-    pass
+import sys, simplejson, lkf_addons
+from middleware.auth import dispatch
 
 
+def update_gafet_status(current_record, params):
+    return dispatch("update_gafet_status", params={
+        'answers': current_record.get('answers', {}),
+    }, method='post', **params)
+
+def new_badge(params):
+    data = params.get("data", {})
+    return dispatch("new_badge", params={
+        'data_gafete': data.get('data_gafete', {}),
+    }, method='post', **params)
+
+def get_gafetes(params):
+    data = params.get("data", {})
+    return dispatch("get_gafetes", params={
+        'status': data.get('status', ''),
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'gafete_id': data.get('gafete_id', data.get('id_gafete', '')),
+        'limit': data.get('limit', 1000),
+        'skip': data.get('skip', 0),
+    }, method='get', **params)
+
+def get_lockers(params):
+    data = params.get("data", {})
+    return dispatch("get_lockers", params={
+        'status': data.get('status', ''),
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'tipo_locker': data.get('tipo_locker', ''),
+        'locker_id': data.get('locker_id', data.get('id_locker', '')),
+        'limit': data.get('limit', 1000),
+        'skip': data.get('skip', 0),
+    }, method='get', **params)
+
+def deliver_badge(params):
+    data = params.get("data", {})
+    return dispatch("deliver_badge", params={
+        'folio': data.get('folio', '512-10'),
+    }, method='get', **params)
+
+
+DISPATCHER = {
+    "new_badge": new_badge,
+    "get_gafetes": get_gafetes,
+    "get_lockers": get_lockers,
+    "deliver_badge": deliver_badge,
+}
 
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv)
-    acceso_obj.console_run()
-    #-FILTROS
-    argument_option = acceso_obj.data.get('option')
-
-    data = acceso_obj.data.get('data',{})
-    option = data.get("option",'')
-    data_gafete = data.get("data_gafete",{
-        'status_gafete':'asignar_gafete',
-        'ubicacion_gafete':'Planta Durango',
-        'caseta_gafete':'Caseta Vigilancia Av 16',
-        'visita_gafete':'Leticia Hernández Hernández',
-        'gafete_id':'00001',
-        'documento_gafete':['INE'],
-    })
-    location = data.get("location")
-    area = data.get("area")
-    tipo_locker = data.get("tipo_locker")
-    status = data.get("status")
-    limit = data.get("limit",1000)
-    skip = data.get("skip",0)
-    folio = data.get("folio",'512-10')
-    gafete_id= data.get("gafete_id" , data.get('id_gafete'))
-    locker_id= data.get("locker_id" , data.get('id_locker'))
-    tipo_locker= data.get("tipo_locker")
-    tipo_movimiento= data.get("tipo_movimiento")
-    print('argument_option=', argument_option)
-    print('option=', option)
-    #-FUNCTIONS
-    #option = 'new_badge';
-    #option = 'get_badge';
-    #option = 'deliver_badge';
+    current_record = simplejson.loads(sys.argv[1])
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
+    argument_option = params.get("option")
+    option = data.get("option")
+    print('..... arranca script gafetes_lockers')
     if argument_option == 'update_status':
-        response = acceso_obj.update_gafet_status()
-    elif option == 'new_badge':
-        response = acceso_obj.create_badge(data_gafete)
-    elif option == 'get_gafetes':
-        response = acceso_obj.get_gafetes(status=status, location=location, area=area, gafete_id=gafete_id,limit=limit, skip=skip)
-    elif option == 'get_lockers':
-        response = acceso_obj.get_lockers(
-            status=status, 
-            location=location, 
-            area=area, 
-            tipo_locker=tipo_locker, 
-            locker_id=locker_id, 
-            limit=limit, 
-            skip=skip)
-    elif option == 'deliver_badge':
-        response = acceso_obj.deliver_badge(folio)
-    else :
-        response = {"msg": "Empty"}
-    acceso_obj.HttpResponse({"data":response})
+        response = update_gafet_status(current_record, params)
+    else:
+        handler = DISPATCHER.get(option)
+        if not handler:
+            response = None
+            sys.stdout.write(simplejson.dumps({"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}))
+        else:
+            response = handler(params)
+    if response is not None:
+        sys.stdout.write(simplejson.dumps(response.json()))

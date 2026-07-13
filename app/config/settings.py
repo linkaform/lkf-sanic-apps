@@ -3,8 +3,8 @@
 from linkaform_api import settings
 
 
-MODULES_PATH = '/srv/scripts/addons/modules'
-ADDONS_PATH = '/usr/local/lib/python3.12/site-packages/lkf_addons/addons'
+MODULES_PATH = '/srv/lkf-sanic-app/modules'
+ADDONS_PATH = '/usr/local/lib/python3.12/site-packages/lkf_addons/'
 
 config = {
     'COLLECTION' : 'form_answer',
@@ -25,6 +25,7 @@ config.update({
 
 
 settings.config.update(config)
+
 
 
 from .enviorment import *
@@ -52,4 +53,7 @@ settings.ENV = ENV
 
 def get_lkf_settings():
     print('>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<')
+    return settings
+
+def get_settings():
     return settings

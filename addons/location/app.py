@@ -53,7 +53,8 @@ class Location(Base):
             'area_state':'663e5e4bf5b8a7ce8211ed14',
             'area_status':'663e5e4bf5b8a7ce8211ed15',
             'area_qr_code':'663e5e4bf5b8a7ce8211ed13',
-            'new_city': '6654187fc85ce22aaf8bb070'
+            'new_city': '6654187fc85ce22aaf8bb070',
+            'area_salida':'663fb45992f2c5afcfe97ca8'
         }
         )
 
@@ -168,16 +169,25 @@ class Location(Base):
         return area_address
         
     def get_areas_by_location(self, location_name):
-        options={}
-        if location_name:
-            options = {
-                'startkey': [location_name],
-                'endkey': [f"{location_name}\n",{}],
-                'group_level':2
-            }
-        catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
-        form_id = self.PASE_ENTRADA
-        return self.catalogo_view(catalog_id, form_id, options)
+        """
+        Obtiene todas las areas de una ubicacion
+        return:
+        lista de areas
+        """
+        match_query = {
+            "deleted_at": {"$exists": False},
+            "form_id": self.AREAS_DE_LAS_UBICACIONES,
+        }
+        if type(location_name) == str:
+            match_query[f"answers.{self.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}"] = location_name
+        elif type(location_name) == list:
+            match_query[f"answers.{self.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}"] = {"$in": location_name}
+
+        area_path = f"answers.{self.f['area']}"
+        data = self.format_cr(self.cr.find(match_query, {area_path: 1}).sort(area_path, 1), ids_label_dct={'area': self.f['area']})
+        result = set(x.get('area') for x in data if x.get('area'))
+        result = list(result)
+        return result
 
     def get_areas_by_location_salidas(self, location_name):
         options={}

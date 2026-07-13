@@ -1,39 +1,60 @@
+#!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
-from linkaform_api import settings
-from account_settings import *
+import sys, simplejson, lkf_addons
+from middleware.auth import dispatch
 
-from accesos_utils import Accesos
 
-class Accesos(Accesos):
-    pass
+def new_notes(params):
+    data = params.get("data", {})
+    return dispatch("new_notes", params={
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'data_notes': data.get('data_notes', {}),
+    }, method='post', **params)
+
+def get_notes(params):
+    data = params.get("data", {})
+    return dispatch("get_notes", params={
+        'location': data.get('location', ''),
+        'area': data.get('area', ''),
+        'status': data.get('status', 'abierto'),
+        'limit': data.get('limit', 10),
+        'offset': data.get('offset', 0),
+        'dateFrom': data.get('dateFrom', ''),
+        'dateTo': data.get('dateTo', ''),
+    }, method='get', **params)
+
+def update_note(params):
+    data = params.get("data", {})
+    return dispatch("update_note", params={
+        'data_update': data.get('data_update', {}),
+        'folio': data.get('folio', '588-10'),
+    }, method='post', **params)
+
+def delete_note(params):
+    # Deshabilitado intencionalmente: sin permisos para borrar notas (igual que en el legacy).
+    return {"error": "No hay permisos para borrar notas"}
+
+
+DISPATCHER = {
+    "new_notes": new_notes,
+    "get_notes": get_notes,
+    "update_note": update_note,
+    "delete_note": delete_note,
+}
+
 if __name__ == "__main__":
-    acceso_obj = Accesos(settings, sys_argv=sys.argv)
-    acceso_obj.console_run()
-    #-FILTROS
-    data = acceso_obj.data.get('data',{})
-    option = data.get("option",'')
-    limit = data.get("limit", 10)
-    offset = data.get("offset", 0)
-    dateFrom = data.get("dateFrom", "")
-    dateTo = data.get("dateTo", "")
-
-    data_notes = data.get("data_notes",{})
-    data_update = data.get("data_update",{})
-    location = data.get("location", '')
-    area = data.get("area", '')
-    status = data.get("status",'abierto')
-    folio = data.get("folio",'588-10')
-    #-FUNCTIONS
-    if option == 'new_notes':
-        response = acceso_obj.create_note(location, area, data_notes)
-    elif option == 'get_notes':
-        response = acceso_obj.get_list_notes(location, area, status=status, limit=limit, offset=offset, dateFrom=dateFrom, dateTo=dateTo)
-    elif option == 'update_note':
-        response = acceso_obj.update_notes(data_update, folio)
-    elif option == 'delete_note':
-        response = acceso_obj.LKFException({'msg':'No hay permisos para borrar notas'})
-        #response = acceso_obj.delete_notes(folio)
-    else :
-        response = {"msg": "Empty"}
-    acceso_obj.HttpResponse({"data":response})
+    params = simplejson.loads(sys.argv[2])
+    data = params.get("data", {})
+    option = data.get("option")
+    print('..... arranca script notes')
+    handler = DISPATCHER.get(option)
+    if not handler:
+        response = {"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}
+        sys.stdout.write(simplejson.dumps(response))
+    else:
+        response = handler(params)
+        if option == "delete_note":
+            sys.stdout.write(simplejson.dumps(response))
+        else:
+            sys.stdout.write(simplejson.dumps(response.json()))
