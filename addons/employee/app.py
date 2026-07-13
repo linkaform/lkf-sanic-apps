@@ -178,9 +178,9 @@ class Employee(Base):
             user_id = kwargs['user_id']
         else:
             if hasattr(self, 'user'):
-                user_id = self.user.get('id')
+                user_id = self.user.get('user_id')
             else:
-                user_id = self.kwargs.get('user',{}).get('id')
+                user_id = self.kwargs.get('user',{}).get('user_id')
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.CONF_AREA_EMPLEADOS,

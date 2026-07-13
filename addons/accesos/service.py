@@ -9432,7 +9432,7 @@ class Accesos(OcrMixin, AccesosModel):
         if kwargs.get('user_id'):
             user_id = kwargs['user_id']
         else:
-            user_id = self.user.get('id')
+            user_id = self.user.get('user_id')
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.CHECKIN_CASETAS,
@@ -9456,6 +9456,11 @@ class Accesos(OcrMixin, AccesosModel):
                 unwind_query.update({f"answers.{self.f['guard_group']}.{self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID}.{self.f['user_id_jefes']}": user_ids })
         query += [ {'$match': unwind_query }]
         query += [
+            {'$addFields': {
+                'priority': {
+                    '$cond': [{'$eq': [f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}", 'entrada']}, 1, 0]
+                }
+            }},
             {'$project':
                 {'_id': 1,
                     'folio': "$folio",
@@ -9468,20 +9473,25 @@ class Accesos(OcrMixin, AccesosModel):
                     'checkout_date': f"$answers.{self.f['guard_group']}.{self.f['checkout_date']}",
                     'checkin_status': f"$answers.{self.f['guard_group']}.{self.f['checkin_status']}",
                     'checkin_position': f"$answers.{self.f['guard_group']}.{self.f['checkin_position']}",
+                    'nombre_suplente': f"$answers.{self.f['guard_group']}.{self.checkin_fields['nombre_suplente']}",
+                    'priority': '$priority',
                     }
             },
-            {'$sort':{'updated_at':-1}},
+            {'$sort':{'priority':-1, 'created_at':-1}},
             {'$group':{
                 '_id':{
                     'user_id':'$user_id',
                     },
-                'name':{'$last':'$name'},
-                'location':{'$last':'$location'},
-                'area':{'$last':'$area'},
-                'checkin_date':{'$last':'$checkin_date'},
-                'checkout_date':{'$last':'$checkout_date'},
-                'checkin_status':{'$last':'$checkin_status'},
-                'checkin_position':{'$last':'$checkin_position'},
+                'name':{'$first':'$name'},
+                'location':{'$first':'$location'},
+                'area':{'$first':'$area'},
+                'checkin_date':{'$first':'$checkin_date'},
+                'checkout_date':{'$first':'$checkout_date'},
+                'checkin_status':{'$first':'$checkin_status'},
+                'checkin_position':{'$first':'$checkin_position'},
+                'folio':{'$first':'$folio'},
+                'id_register':{'$first':'$_id'},
+                'nombre_suplente':{'$first':'$nombre_suplente'},
 
             }},
             {'$project':{
@@ -9492,8 +9502,11 @@ class Accesos(OcrMixin, AccesosModel):
                 'area':'$area',
                 'checkin_date':'$checkin_date',
                 'checkout_date':'$checkout_date',
-                'checkin_status': {'$cond': [ {'$eq':['$checkin_status','entrada']},'in','out']}, 
+                'checkin_status': {'$cond': [ {'$eq':['$checkin_status','entrada']},'in','out']},
                 'checkin_position':'$checkin_position',
+                'folio':'$folio',
+                'id_register':'$id_register',
+                'nombre_suplente':'$nombre_suplente',
 
             }}
             ]
@@ -9505,12 +9518,15 @@ class Accesos(OcrMixin, AccesosModel):
             res[int(user_id)] = {
                 'status':status,
                 'name': rec.get('name'),
+                'folio': rec.get('folio'),
+                '_id': str(rec.get('id_register')),
                 'user_id': rec.get('user_id'),
                 'location':rec.get('location'),
                 'area':rec.get('area'),
                 'checkin_date':rec.get('checkin_date'),
                 'checkout_date':rec.get('checkout_date'),
-                'checkin_position':rec.get('checkin_position')
+                'checkin_position':rec.get('checkin_position'),
+                'nombre_suplente':rec.get('nombre_suplente',"")
                 }
         return res
 
@@ -11222,13 +11238,13 @@ class Accesos(OcrMixin, AccesosModel):
         for clave in ["guardia_de_apoyo", "guardia_lider"]:
             if location_employees.get(clave):
                 for usuario in location_employees[clave]:
-                    if usuario.get("user_id") == self.user.get('id'):
+                    if usuario.get("user_id") == self.user.get('user_id'):
                         location_guards = location_employees[clave]
-                
+
         location_employees = location_guards
 
         for employee in location_employees:
-            if employee.get('user_id', 0) == self.user.get('id'):
+            if employee.get('user_id', 0) == self.user.get('user_id'):
                     return employee
         self.LKFException(f"El usuario con id {self.user['id']}, no se ecuentra configurado como guardia")
 

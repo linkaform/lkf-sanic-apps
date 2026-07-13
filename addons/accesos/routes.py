@@ -993,8 +993,8 @@ async def get_catalogo_area_empleado_incidencias(request: Request):
 
 @accesos_bp.get("/catalogo_incidencias")
 async def get_catalogo_incidencias(request: Request):
-    cat = request.args.get("cat", "")
-    sub_cat = request.args.get("sub_cat", "")
+    cat = request.args.get("cat")
+    sub_cat = request.args.get("sub_cat")
     records = service.catalogo_incidencias(cat=cat, sub_cat=sub_cat)
     return json({"data": records}, status=200)
 
