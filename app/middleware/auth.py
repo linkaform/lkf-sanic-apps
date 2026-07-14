@@ -73,6 +73,13 @@ def get_jwt_from_api_key(api_key):
     en vez de requerir el JWT de un usuario logeado, se autentica con el
     API key de la cuenta (que el cliente puede elegir por llamada).
     """
+    import warnings
+    # linkaform_api importa couchdb, que en este proceso (subprocess fresco del
+    # CLI wrapper, no el proceso persistente de Sanic) emite un UserWarning de
+    # pkg_resources en cada invocacion -- el runner de Django trata cualquier
+    # escritura a stderr como fallo (success=False, HTTP 400) aunque la
+    # respuesta sea correcta.
+    warnings.filterwarnings('ignore', category=UserWarning, module='couchdb')
     from linkaform_api import settings, utils
     lkf_api = utils.Cache(settings)
     return lkf_api.get_jwt(api_key=api_key)

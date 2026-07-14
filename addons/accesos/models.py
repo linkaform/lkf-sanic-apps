@@ -1365,6 +1365,7 @@ class AccesosModel(Base):
             'procedencia': '6a3193dccf1326ad4b7a9a52',
             'tipo_de_vehiculo': '6a3193dccf1326ad4b7a9a53',
             'placas_de_vehiculo': '6a31921f07fb9cb5840d1f24',
+            'placas_de_vehiculo_tarjeta_circulacion': '6a5018081d7498e16bbb4b75',
             'marca_vehiculo': '6a4415c7b7ce8af39efb3aa8',
             'year_vehiculo': '6a4415c7b7ce8af39efb3aa9',
             'color_vehiculo': '6a4415c7b7ce8af39efb3aaa',

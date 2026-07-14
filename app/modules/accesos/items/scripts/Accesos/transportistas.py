@@ -1,5 +1,11 @@
 #!/usr/local/bin/python
 # coding: utf-8
+import warnings
+# couchdb (importado transitivamente por lkf_addons/linkaform_api) emite un
+# UserWarning de pkg_resources en el import -- el runner de Django trata
+# cualquier escritura a stderr como fallo (success=False, HTTP 400) aunque
+# la respuesta sea correcta. Debe ir ANTES de cualquier otro import.
+warnings.filterwarnings('ignore', category=UserWarning, module='couchdb')
 import sys, simplejson, lkf_addons
 from linkaform_api import settings
 from account_settings import *
