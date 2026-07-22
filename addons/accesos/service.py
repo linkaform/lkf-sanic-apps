@@ -3498,11 +3498,14 @@ class Accesos(OcrMixin, AccesosModel):
                 f"answers.{self.Location.f['area']}": {"$in": areas_list},
             }},
             {"$project": {
-                "_id": 0,
+                "folio": 1,
                 "area": f"$answers.{self.Location.f['area']}",
                 "geolocation": f"$answers.{self.f['geolocalizacion_area_ubicacion']}",
                 "image": f"$answers.{self.f['foto_area']}",
                 "tag_id": f"$answers.{self.f['area_tag_id']}",
+                "tipo_de_area": f"$answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}",
+                "area_state": f"$answers.{self.Location.f['area_state']}",
+                "area_status": f"$answers.{self.Location.f['area_status']}",
             }}
         ]
         response = self.format_cr(self.cr.aggregate(query))
@@ -3555,6 +3558,8 @@ class Accesos(OcrMixin, AccesosModel):
             areas_formateadas = []
             for r in response:
                 areas_formateadas.append({
+                    "folio": r.get("folio", ""),
+                    "record_id": r.get("_id", ""),
                     "rondin_area": r.get("area", ""),
                     "geolocalizacion_area_ubicacion": [
                         {
@@ -3563,7 +3568,10 @@ class Accesos(OcrMixin, AccesosModel):
                         }
                     ],
                     "area_tag_id": [r.get("tag_id", "")],
-                    "foto_area": r.get("image", [])
+                    "foto_area": r.get("image", []),
+                    "tipo_de_area": r.get("tipo_de_area", ""),
+                    "area_state": r.get("area_state", ""),
+                    "area_status": r.get("area_status", ""),
                 })
             return areas_formateadas
         else:
@@ -6648,7 +6656,7 @@ class Accesos(OcrMixin, AccesosModel):
                 if isinstance(guard.get('usuario_id'), list):
                     empl_cat[self.f['user_id_b']] = [(guard.get('usuario_id', [])[0]),]
                 else:
-                    empl_cat[self.f['user_id_b']] = [guard.get('user_id'),]
+                    empl_cat[self.f['user_id_b']] = [guard.get('user_id', guard.get('user_id_id')),]
                 guard_data = {
                         self.Employee.CONF_AREA_EMPLEADOS_AP_CAT_OBJ_ID : empl_cat,
                         self.checkin_fields['checkin_position']:'guardiad_de_apoyo',
@@ -6671,8 +6679,9 @@ class Accesos(OcrMixin, AccesosModel):
             self.f['boot_checkin_date'] : now_datetime,
             self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID : {
                 self.f['location']: location,
-                self.f['area']: area, 
+                self.f['area']: area,
                 self.f['worker_name']: employee.get('worker_name'),
+                self.f['user_id']: self.unlist(employee.get('user_id_id', employee.get('usuario_id', ''))),
             },
 
         }
@@ -8387,6 +8396,7 @@ class Accesos(OcrMixin, AccesosModel):
             row['nombre_articulo'] = r.get(self.mf['nombre_articulo'],'')
             row['tipo_equipo'] = r.get(self.mf['tipo_equipo'],'Computo').title()
             row['color_articulo'] = r.get(self.mf['color_articulo'],'').title()
+            row['foto_equipo'] = r.get('foto_equipo', r.get(self.mf['foto_equipo'],[])) or []
             res.append(row)
         return res
 
@@ -8444,6 +8454,7 @@ class Accesos(OcrMixin, AccesosModel):
             row['marca_vehiculo'] = v.get(self.mf['marca_vehiculo'],'')
             row['modelo_vehiculo'] = v.get(self.mf['modelo_vehiculo'],'')
             row['nombre_estado'] = v.get('state','')
+            row['foto_vehiculo'] = v.get('foto_vehiculo','') or []
             res.append(row)
         return res
 
@@ -10085,12 +10096,12 @@ class Accesos(OcrMixin, AccesosModel):
             'comentarios':f"$answers.{self.bitacora_fields['grupo_comentario']}",
             'fecha_salida':f"$answers.{self.mf['fecha_salida']}",
             'fecha_entrada':f"$answers.{self.mf['fecha_entrada']}",
-            'foto_url': {"$arrayElemAt": [f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['foto']}.file_url", 0]},
+            'fotografia': f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['foto']}",
             'equipos':f"$answers.{self.mf['grupo_equipos']}",
             'grupo_areas_acceso': f"$answers.{self.mf['grupo_areas_acceso']}",
             'id_gafet': f"$answers.{self.GAFETES_CAT_OBJ_ID}.{self.gafetes_fields['gafete_id']}",
             'id_locker': f"$answers.{self.LOCKERS_CAT_OBJ_ID}.{self.lockers_fields['locker_id']}",
-            'identificacion':  {"$first":f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['identificacion']}"},
+            'identificacion':  f"$answers.{self.PASE_ENTRADA_OBJ_ID}.{self.mf['identificacion']}",
             'pase_id':{"$toObjectId":f"$answers.{self.mf['codigo_qr']}"},
             'motivo_visita':f"$answers.{self.CONFIG_PERFILES_OBJ_ID}.{self.mf['motivo']}",
             'nombre_area_salida':f"$answers.{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
@@ -11485,9 +11496,9 @@ class Accesos(OcrMixin, AccesosModel):
 
     def set_boot_status(self, checkin_type):
         if checkin_type == 'in':
-            set_boot_status = 'apertura'
+            set_boot_status = 'abierta'
         elif checkin_type == 'out':
-            set_boot_status = 'cierre'
+            set_boot_status = 'cerrada'
         return set_boot_status
 
     def set_employee_pic(self, employees):
@@ -12484,8 +12495,55 @@ class Accesos(OcrMixin, AccesosModel):
         qr_code= folio
         _folio= pass_selected.get("folio")
         answers={}
+        acompanantes_a_actualizar = []
         for key, value in access_pass.items():
             if not self.pase_entrada_fields.get(key):
+                continue
+            if key == 'grupo_acompanantes':
+                # El API solo permite mezclar respuestas de un grupo existente usando
+                # la posición (0-based) que ya ocupa ese elemento en el arreglo guardado.
+                # Los índices negativos siempre se interpretan como "agregar nuevo".
+                stored_acompanantes = pass_selected.get('acompanantes_grupo') or []
+                posicion_por_qr = {
+                    a.get('qr_code'): idx
+                    for idx, a in enumerate(stored_acompanantes)
+                    if a.get('qr_code')
+                }
+                acompanantes_previos = {
+                    a.get('qr_code'): a
+                    for a in stored_acompanantes
+                    if a.get('qr_code')
+                }
+                grupo_answers = {}
+                for acompanante in value:
+                    qr_code_acomp = acompanante.get('qr_code', '')
+                    posicion = posicion_por_qr.get(qr_code_acomp)
+                    if posicion is None:
+                        continue
+                    nombre = acompanante.get('nombre', '')
+                    email = acompanante.get('email', '')
+                    telefono = acompanante.get('telefono', '')
+                    foto = acompanante.get('foto', [])
+                    previo = acompanantes_previos.get(qr_code_acomp, {})
+                    cambios = {}
+                    if nombre != previo.get('nombre_acompanante', ''):
+                        cambios[self.pase_entrada_fields['nombre_acompanante']] = nombre
+                    if email != previo.get('email_acompanante', ''):
+                        cambios[self.pase_entrada_fields['email_acompanante']] = email
+                    if telefono != previo.get('telefono_acompanante', ''):
+                        cambios[self.pase_entrada_fields['telefono_acompanante']] = telefono
+                    if cambios:
+                        grupo_answers[posicion] = cambios
+                    if cambios or (foto or None) != (previo.get('foto') or None):
+                        acompanantes_a_actualizar.append({
+                            'qr_code': qr_code_acomp,
+                            'nombre': nombre,
+                            'email': email,
+                            'telefono': telefono,
+                            'foto': foto,
+                        })
+                if grupo_answers:
+                    answers[self.pase_entrada_fields['acompanantes_grupo']] = grupo_answers
                 continue
             if key == 'grupo_vehiculos':
                 answers[self.mf['grupo_vehiculos']]={}
@@ -12566,6 +12624,8 @@ class Accesos(OcrMixin, AccesosModel):
 
             res= self.lkf_api.patch_multi_record( answers = answers, form_id=self.PASE_ENTRADA, record_id=[qr_code])
             if res.get('status_code') == 201 or res.get('status_code') == 202 and folio:
+                if acompanantes_a_actualizar:
+                    self._patch_acompanantes_pases(acompanantes_a_actualizar)
                 pdf = getattr(self, 'pdf', self.lkf_api.get_pdf_record(qr_code, name_pdf='Pase de Entrada', send_url=True))
                 res['json'].update({'qr_pase':pass_selected.get("qr_pase")})
                 res['json'].update({'telefono':pass_selected.get("telefono")})
@@ -12583,6 +12643,19 @@ class Accesos(OcrMixin, AccesosModel):
                 return res
         else:
             self.LKFException('No se mandarón parametros para actualizar')
+
+    def _patch_acompanantes_pases(self, acompanantes_a_actualizar):
+        for item in acompanantes_a_actualizar:
+            child_answers = {
+                self.mf['nombre_pase']: item['nombre'],
+                self.pase_entrada_fields['email']: item['email'],
+                self.mf['telefono_pase']: item['telefono'],
+                self.pase_entrada_fields['walkin_fotografia']: item['foto'],
+            }
+            try:
+                self.lkf_api.patch_multi_record(answers=child_answers, form_id=self.PASE_ENTRADA, record_id=[item['qr_code']])
+            except Exception as e:
+                print(f"Error actualizando pase de acompañante {item.get('qr_code')}: {e}")
 
     def update_pass_img(self, qr_code=None):
         self.pdf = getattr(self, 'pdf', self.lkf_api.get_pdf_record(qr_code, name_pdf='Pase de Entrada', send_url=True))

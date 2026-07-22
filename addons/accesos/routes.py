@@ -65,10 +65,8 @@ async def get_acceso(request: Request):
 
 @accesos_bp.get("/get_config_accesos")
 async def get_config_accesos(request: Request):
-    print('route.... /get_config_accesos')
     res = service.get_config_accesos()
-    print('route.... /get_config_accesos222',res)
-    return json(res, status=201)
+    return json({"data": res}, status=201)
 
 @accesos_bp.post("/incidentes")
 async def post_incidente(request: Request):
@@ -131,6 +129,20 @@ async def get_list_bitacora(request: Request):
     prioridades = request.args.getlist("prioridades")
     if prioridades:
         filters['prioridades'] = prioridades
+    if filters.get('limit') is not None:
+        filters['limit'] = int(filters['limit'])
+    if filters.get('offset') is not None:
+        filters['offset'] = int(filters['offset'])
+    records = service.get_list_bitacora(**filters)
+    return json({"data": records}, status=200)
+
+@accesos_bp.post("/list_bitacora")
+async def post_list_bitacora(request: Request):
+    # POST porque dynamic_filters es una lista de dicts -- no cabe de forma
+    # confiable en query string (a diferencia de prioridades, que sí via getlist).
+    payload = _ocr_payload(request)
+    allowed_params = ["location", "area", "dateFrom", "dateTo", "limit", "offset", "filterDate", "prioridades", "dynamic_filters"]
+    filters = {k: payload.get(k) for k in allowed_params if payload.get(k) is not None}
     if filters.get('limit') is not None:
         filters['limit'] = int(filters['limit'])
     if filters.get('offset') is not None:

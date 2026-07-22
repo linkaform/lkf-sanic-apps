@@ -334,16 +334,20 @@ class Base(base.LKF_Base):
         crea la base de datos en CouchDB si no existe.
         """
         try:
+            # Intentar acceder a la DB (si existe, regresa la instancia)
             db = self.lkf_api.couch.set_db(db_name)
         except ResourceNotFound:
+            # La DB no existe, crearla
             try:
                 user_id = db_name.split('_')[-1]
-                response = self.lkf_api.create_user_couch_db(user_id, db_name)
+                db_type , user_id = db_name.split('_')
+                response = self.lkf_api.create_user_couch_db(user_id, db_type)
                 db = self.lkf_api.couch.set_db(db_name)
             except Exception as e:
-                self.LKFException(f'Error al crear la base de datos {db_name}: {str(e)}')
+                self.LKFException(f'Error al crear la base de datos {db_name}: Exception: {str(e)}')
         except Exception as e:
-            self.LKFException(f'Error inesperado al acceder a la base de datos {db_name}: {str(e)}')
+            self.LKFException(f'Error inesperado al acceder a la base de datos {db_name}: Exception: {str(e)}')
+
         return db
 
     def strip_special_characters(self, value, underscore = False, remove_spaces=True):
