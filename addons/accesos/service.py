@@ -776,11 +776,11 @@ class Accesos(OcrMixin, AccesosModel):
                 resp_create.update({'registro_de_asistencia': 'Error'})
         return resp_create
 
-    def do_checkout_aux_guard(self, checkin_id=None, location=None, area=None, guards=[], forzar=False, comments=False):
+    def do_checkout_aux_guard(self, user_id=None, checkin_id=None, location=None, area=None, guards=[], forzar=False, comments=False, fotografia=[]):
         """
         Realiza el checkout de los guardias auxiliares especificados en guards.
         """
-        employee = self.Employee.get_employee_data(email=self.user.get('email'), get_one=True)
+        employee = self.Employee.get_employee_data(user_id=user_id, get_one=True)
         timezone = employee.get('cat_timezone', employee.get('timezone', 'America/Monterrey'))
         now_datetime = self.today_str(timezone, date_format='datetime')
         last_chekin = {}
@@ -792,7 +792,7 @@ class Accesos(OcrMixin, AccesosModel):
 
         if not checkin_id:
             self.LKFException({
-                "msg": "No encontramos un checking valido del cual podemos hacer checkout...", 
+                "msg": "No encontramos un checking valido del cual podemos hacer checkout...",
                 "title": "Una Disculpa!!!"
             })
 
@@ -805,6 +805,20 @@ class Accesos(OcrMixin, AccesosModel):
         checkin_answers = self.check_in_out_employees('out', now_datetime, checkin=checkin_answers, employee_list=guards)
         data['answers'] = checkin_answers
         response = self.lkf_api.patch_record(data=data, record_id=checkin_id)
+        if response.get('status_code') in [200, 201, 202]:
+            if employee:
+                record_id = self.search_guard_asistance(location, area, self.unlist(employee.get('usuario_id')))
+                asistencia_answers = {
+                    self.f['foto_cierre_turno']: fotografia,
+                    self.checkin_fields['checkin_type']: 'cerrar_turno',
+                }
+                res = self.lkf_api.patch_multi_record(answers=asistencia_answers, form_id=self.REGISTRO_ASISTENCIA, record_id=record_id)
+                if res.get('status_code') in [200, 201, 202]:
+                    response.update({'registro_de_asistencia': 'Correcto'})
+                else:
+                    response.update({'registro_de_asistencia': 'Error'})
+        elif response.get('status_code') == 401:
+            return self.LKFException({"title": "Advertencia", "msg":"El guardia NO tiene permisos sobre el formulario de cierre de casetas"})
         return response
 
     # ============================================

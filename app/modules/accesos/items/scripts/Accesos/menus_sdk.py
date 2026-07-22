@@ -23,8 +23,12 @@ DISPATCHER = {
 }
 
 
+def console_run(self):
+    print(f"python { self.argv[0].split('/')[-1]} '{ self.argv[1]}' '{ self.argv[2]}'")
+
 if __name__ == "__main__":
     params = simplejson.loads(sys.argv[2])
+    console_run(sys)
     data = params.get("data", {})
     option = data.get("option") or params.get('option', '')
     print('..... arranca script menus')

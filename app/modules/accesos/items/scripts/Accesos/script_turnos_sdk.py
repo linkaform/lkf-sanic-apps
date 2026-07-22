@@ -35,6 +35,8 @@ def assing_gafete(params):
 
 def list_bitacora(params):
     data = params.get("data", {})
+    # POST porque dynamic_filters es una lista de dicts -- no cabe de forma
+    # confiable en query string (a diferencia de prioridades, que sí).
     return dispatch("list_bitacora", params={
         'location': data.get('location', ''),
         'area': data.get('area', ''),
@@ -45,7 +47,7 @@ def list_bitacora(params):
         'offset': data.get('offset', 0),
         'filterDate': data.get('filterDate', ''),
         'dynamic_filters': data.get('dynamic_filters', []),
-    }, **params)
+    }, method='post', **params)
 
 def get_user_booths(params):
     data = params.get("data", {})

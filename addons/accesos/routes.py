@@ -122,8 +122,15 @@ async def assing_gafete(request: Request):
 
 @accesos_bp.get("/list_bitacora")
 async def get_list_bitacora(request: Request):
-    allowed_params = ["location", "area", "prioridades", "dateFrom", "dateTo", "limit", "offset", "filterDate"]
+    allowed_params = ["location", "area", "dateFrom", "dateTo", "limit", "offset", "filterDate"]
     filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
+    # prioridades es una lista (usada con $in en el match_query) -- con
+    # request.args.get() solo llega el primer valor como string suelto,
+    # rompiendo el $in de Mongo ("$in needs an array"). getlist() reconstruye
+    # la lista completa de los parametros repetidos que manda requests.get().
+    prioridades = request.args.getlist("prioridades")
+    if prioridades:
+        filters['prioridades'] = prioridades
     if filters.get('limit') is not None:
         filters['limit'] = int(filters['limit'])
     if filters.get('offset') is not None:

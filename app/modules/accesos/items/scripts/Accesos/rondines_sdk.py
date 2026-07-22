@@ -1,11 +1,8 @@
 #!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson, lkf_addons
+import sys, simplejson
 from middleware.auth import dispatch
 
-
-def console_run(self):
-    print(f"python { self.argv[0].split('/')[-1]} '{ self.argv[1]}' '{ self.argv[2]}'")
 
 def _as_list(value):
     if isinstance(value, list):
@@ -143,6 +140,12 @@ def get_catalog_areas_formatted(params):
         'ubicacion': data.get('ubicacion', ''),
     }, method='get', **params)
 
+def get_area_pdf(params):
+    data = params.get("data", {})
+    return dispatch("get_pdf", params={
+        'qr_code': data.get('qr_code', ''),
+    }, method='get', **params)
+
 def catalago_grupos_recorridos(params):
     return dispatch("catalago_grupos_recorridos", params={}, method='get', **params)
 
@@ -201,6 +204,7 @@ DISPATCHER = {
     "get_check_by_id": get_check_by_id,
     "get_bitacora_by_id": get_bitacora_by_id,
     "get_catalog_areas_formatted": get_catalog_areas_formatted,
+    "get_area_pdf": get_area_pdf,
     "catalago_grupos_recorridos": catalago_grupos_recorridos,
     "catalogo_inspecciones": catalogo_inspecciones,
     "pause_or_play_rondin": pause_or_play_rondin,
@@ -213,9 +217,8 @@ DISPATCHER = {
 
 if __name__ == "__main__":
     params = simplejson.loads(sys.argv[2])
-    console_run(sys)
     data = params.get("data", {})
-    option = data.get("option")
+    option = data.get("option", "")
     handler = DISPATCHER.get(option)
     if not handler:
         response = {"error": f"Option '{option}' not supported", "valid_options": list(DISPATCHER.keys())}
