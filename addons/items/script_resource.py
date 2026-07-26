@@ -73,7 +73,7 @@ class ScriptResource(items.Items):
         """
         data_file = []
         form_file = {}
-        default_image = 'linkaform/addons:latest'
+        default_image = 'linkaform/sanic-app:latest'
         
         # Process each file in the list
         for file in all_items:

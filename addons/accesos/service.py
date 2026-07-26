@@ -3483,20 +3483,34 @@ class Accesos(OcrMixin, AccesosModel):
         response = self.unlist(response)
         return response
 
-    def get_areas_details(self, areas_list: list):
+    def get_areas_details(self, areas_list: list, dynamic_filters=None):
         """
         Obtiene los detalles necesarios de las áreas proporcionadas.
         Args:
             areas_list (list): Lista de áreas.
+            dynamic_filters (list): Lista de {key, value} a aplicar como $match
+                adicional (mismo shape que list_bitacora) -- keys soportadas:
+                tipo, estado, disponibilidad.
         Returns:
             list: Lista de áreas con su geolocalización y foto.
         """
+        match_query = {
+            "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
+            "deleted_at": {"$exists": False},
+            f"answers.{self.Location.f['area']}": {"$in": areas_list},
+        }
+        if dynamic_filters:
+            for item in dynamic_filters:
+                if item.get('key') == 'tipo':
+                    match_query[f"answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}"] = {"$in": item.get('value')}
+                elif item.get('key') == 'estado':
+                    match_query[f"answers.{self.Location.f['area_state']}"] = {"$in": item.get('value')}
+                elif item.get('key') == 'disponibilidad':
+                    match_query[f"answers.{self.Location.f['area_status']}"] = {"$in": item.get('value')}
+                else:
+                    continue
         query = [
-            {"$match": {
-                "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
-                "deleted_at": {"$exists": False},
-                f"answers.{self.Location.f['area']}": {"$in": areas_list},
-            }},
+            {"$match": match_query},
             {"$project": {
                 "folio": 1,
                 "area": f"$answers.{self.Location.f['area']}",
@@ -3542,7 +3556,7 @@ class Accesos(OcrMixin, AccesosModel):
         form_id = self.CONFIGURACION_RECORRIDOS_FORM
         return self.catalogo_view(catalog_id, form_id)
 
-    def get_catalog_areas_formatted(self, ubicacion=""):
+    def get_catalog_areas_formatted(self, ubicacion="", dynamic_filters=None):
         #Obtener areas disponibles para rondin
         if ubicacion:
             options = {
@@ -3554,7 +3568,7 @@ class Accesos(OcrMixin, AccesosModel):
             catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
             form_id = self.CONFIGURACION_RECORRIDOS_FORM
             areas = self.catalogo_view(catalog_id, form_id, options)
-            response = self.get_areas_details(areas)
+            response = self.get_areas_details(areas, dynamic_filters=dynamic_filters)
             areas_formateadas = []
             for r in response:
                 areas_formateadas.append({
@@ -3576,6 +3590,81 @@ class Accesos(OcrMixin, AccesosModel):
             return areas_formateadas
         else:
             raise Exception("Ubicacion is required.")
+
+    def get_area_by_id(self, record_id):
+        """
+        Obtiene el detalle de una sola área por su record_id (mismo shape que
+        cada item de get_catalog_areas_formatted, más `ubicacion`) -- pensado
+        para la pantalla de detalle de área a la que llega el QR físico
+        (.../areas/<record_id>).
+        """
+        if not record_id:
+            raise Exception("Record ID is required to get area details.")
+
+        query = [
+            {"$match": {
+                "_id": ObjectId(record_id),
+                "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
+                "deleted_at": {"$exists": False},
+            }},
+            {"$project": {
+                "folio": 1,
+                "area": f"$answers.{self.Location.f['area']}",
+                "ubicacion": f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
+                "geolocation": f"$answers.{self.f['geolocalizacion_area_ubicacion']}",
+                "image": f"$answers.{self.f['foto_area']}",
+                "tag_id": f"$answers.{self.f['area_tag_id']}",
+                "tipo_de_area": f"$answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}",
+                "area_state": f"$answers.{self.Location.f['area_state']}",
+                "area_status": f"$answers.{self.Location.f['area_status']}",
+            }}
+        ]
+        r = self.format_cr(self.cr.aggregate(query), get_one=True)
+        if not r:
+            return None
+        return {
+            "folio": r.get("folio", ""),
+            "record_id": r.get("_id", ""),
+            "rondin_area": r.get("area", ""),
+            "ubicacion": r.get("ubicacion", ""),
+            "geolocalizacion_area_ubicacion": [
+                {
+                    "latitude": r.get("latitude", 0.0),
+                    "longitude": r.get("longitude", 0.0)
+                }
+            ],
+            "area_tag_id": [r.get("tag_id", "")],
+            "foto_area": r.get("image", []),
+            "tipo_de_area": r.get("tipo_de_area", ""),
+            "area_state": r.get("area_state", ""),
+            "area_status": r.get("area_status", ""),
+        }
+
+    def update_area_estado(self, record_id, estado):
+        """
+        Activa/Desactiva un área (campo "Estatus": Activa/Inactiva) por su
+        record_id -- ya lo conocemos de get_catalog_areas_formatted, no hace
+        falta resolverlo por nombre.
+        """
+        answers = {self.Location.f['area_state']: estado}
+        return self.lkf_api.patch_multi_record(
+            answers=answers,
+            form_id=self.Location.AREAS_DE_LAS_UBICACIONES,
+            record_id=[record_id],
+        )
+
+    def update_area_disponibilidad(self, record_id, disponibilidad):
+        """
+        Cambia la disponibilidad de un área (campo "Estatus del Area":
+        abierta/cerrada/clausurada/mantenimiento/disponible/ocupada) por su
+        record_id.
+        """
+        answers = {self.Location.f['area_status']: disponibilidad}
+        return self.lkf_api.patch_multi_record(
+            answers=answers,
+            form_id=self.Location.AREAS_DE_LAS_UBICACIONES,
+            record_id=[record_id],
+        )
 
     def get_incidencias_rondines(self, location=None, area=None, date_from=None, date_to=None, limit=20, offset=0):
         """Lista las incidencias de los rondines según los filtros proporcionados.
@@ -5137,6 +5226,55 @@ class Accesos(OcrMixin, AccesosModel):
             },
         ]
 
+    @_get_mongo_distinct_list
+    def get_areas_tipo(self):
+        return {
+            "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
+            "field": f"answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}"
+        }
+
+    @_get_mongo_distinct_list
+    def get_areas_estado(self):
+        return {
+            "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
+            "field": f"answers.{self.Location.f['area_state']}"
+        }
+
+    @_get_mongo_distinct_list
+    def get_areas_disponibilidad(self):
+        return {
+            "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
+            "field": f"answers.{self.Location.f['area_status']}"
+        }
+
+    def get_filters_areas(self):
+        tipos = self.get_areas_tipo()
+        estados = self.get_areas_estado()
+        disponibilidad = self.get_areas_disponibilidad()
+        return [
+            {
+                "defaultDisplayOpen": True,
+                "key": "estado",
+                "label": "Estatus",
+                "type": "multiple",
+                "options": [{"label": i.capitalize(), "value": i} for i in estados]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "tipo",
+                "label": "Tipo de área",
+                "type": "multiselect",
+                "options": [{"label": i, "value": i} for i in tipos]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "disponibilidad",
+                "label": "Disponibilidad",
+                "type": "multiple",
+                "options": [{"label": i.capitalize(), "value": i} for i in disponibilidad]
+            },
+        ]
+
     def do_checkout(self, checkin_id=None, location=None, area=None, guards=[], forzar=False, comments=False, fotografia=[], guard_id=None):
         """
         Se encarga de hacer el check out de un empleado.
@@ -6500,6 +6638,78 @@ class Accesos(OcrMixin, AccesosModel):
         res = self.format_cr(self.cr.aggregate(query))
         return True if res else False
 
+    def update_area(self, data):
+        ubicacion = data.get('ubicacion', '')
+        area = data.get('area', '')
+        if not ubicacion:
+            self.LKFException({'msg': 'La ubicacion no puede estar vacia.', 'title': 'Ubicacion vacia'})
+            return
+        area_ubicacion_data = self.get_area_ubicacion_record(ubicacion=ubicacion, area=area)
+        if not area_ubicacion_data:
+            self.LKFException({'msg': 'No se encontro el area especificada.', 'title': 'Area no encontrada'})
+            return
+        folio = area_ubicacion_data.get('folio', '')
+        record_id = area_ubicacion_data.get('_id', '')
+
+        answers = {}
+        geolocation_especific = {
+            'latitude': area_ubicacion_data.get('latitude'),
+            'longitude': area_ubicacion_data.get('longitude')
+        }
+
+        for key, value in area_ubicacion_data.items():
+            if key == 'area':
+                answers[self.configuracion_area['area']] = value
+            elif key == 'ubicacion':
+                answers[self.Location.UBICACIONES_CAT_OBJ_ID] = {
+                    self.configuracion_area['ubicacion']: value,
+                }
+            elif key == 'tipo_area':
+                answers[self.Location.TIPO_AREA_OBJ_ID] = {
+                    self.f['tipo_de_area']: value
+                }
+            elif key == 'nombre_direccion':
+                answers[self.CONTACTO_CAT_OBJ_ID] = {
+                    self.f['nombre_direccion']: value,
+                    self.f['pais_area']: area_ubicacion_data.get('pais_area', []),
+                    self.f['ciudad_area']: area_ubicacion_data.get('ciudad_area', []),
+                    self.f['colonia_area']: area_ubicacion_data.get('colonia_area', []),
+                    self.f['direccion_area']: area_ubicacion_data.get('direccion_area', []),
+                    self.f['geolocalizacion_area']: area_ubicacion_data.get('geolocalizacion_area', [])
+                }
+            elif key == 'estatus_area':
+                answers[self.f['estatus_area']] = value
+            elif key == 'estatus':
+                answers[self.f['estatus_config_area']] = value
+            elif key == 'tag_id_area':
+                answers[self.f['area_tag_id']] = data.get('qr_area') or value
+            elif key == 'qr_area':
+                answers[self.f['qr_area']] = value
+            elif key == 'foto_area':
+                answers[self.f['area_foto']] = data.get('foto_area') or value
+            elif key == 'latitude' or key == 'longitude':
+                answers[self.f['geolocalizacion_area_ubicacion']] = geolocation_especific
+            else:
+                pass
+
+        if answers:
+            metadata = self.lkf_api.get_metadata(form_id=self.Location.AREAS_DE_LAS_UBICACIONES)
+            metadata.update({
+                'properties': {
+                    "device_properties":{
+                        "system": "Addons",
+                        "process":"Actualizacion de Area",
+                        "accion":'update_area',
+                        "folio": folio,
+                        "archive": "incidencias.py"
+                    }
+                },
+                'answers': answers,
+                '_id': record_id
+            })
+            response = self.net.patch_forms_answers(metadata)
+            return response
+
     def create_new_area(self, data, geolocation_area=None):
         exists = self.exists_area(data.get('ubicacion', {}), data.get('nombre_nueva_area', ''))
         if exists:
@@ -6942,6 +7152,81 @@ class Accesos(OcrMixin, AccesosModel):
         res =self.lkf_api.send_sms(phone_to, mensaje, use_api_key=True)
         if res:
             return {'status_code':200}
+
+    def send_pase_sms(self, qr_code=None, pre_sms=False, account=''):
+        query = [
+            {'$match': {
+                "deleted_at": {"$exists": False},
+                "form_id": self.PASE_ENTRADA,
+                "_id": ObjectId(qr_code)
+            }},
+            {'$project': {
+                '_id': 0,
+                'answers': '$answers'
+            }},
+            {'$limit': 1}
+        ]
+        result = self.format_cr_result(self.cr.aggregate(query))
+        if not result:
+            self.LKFException({'msg': 'No se encontró el pase.', 'status_code': 404})
+        answers = result[0].get('answers', {})
+
+        telefono_invitado = answers.get(self.mf['telefono_pase'], '')
+        nombre_invitado = answers.get(self.mf['nombre_pase'], '')
+        link_completar_pase = answers.get(self.pase_entrada_fields['link'], '')
+        grupo_visitados = answers.get(self.mf['grupo_visitados'], [])
+        nombre_visita_a = ''
+        for visita_a in grupo_visitados:
+            vista_catalog = visita_a.get(self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID, {})
+            nombre = vista_catalog.get(self.mf['nombre_empleado'])
+            if nombre:
+                if len(nombre_visita_a) > 0:
+                    nombre_visita_a += ', '
+                nombre_visita_a += nombre
+
+        ubicaciones_list = []
+        ubicaciones_group = answers.get(self.mf['grupo_ubicaciones_pase'], '')
+        for item in ubicaciones_group:
+            ubicacion = item.get(self.Location.UBICACIONES_CAT_OBJ_ID, {}).get(self.Location.f['location'], '')
+            ubicaciones_list.append(ubicacion)
+
+        if len(ubicaciones_list) == 1:
+            ubicaciones_str = ubicaciones_list[0]
+        elif len(ubicaciones_list) == 2:
+            ubicaciones_str = f"{ubicaciones_list[0]} y {ubicaciones_list[1]}"
+        elif len(ubicaciones_list) > 2:
+            ubicaciones_str = f"{ubicaciones_list[0]}, {ubicaciones_list[1]} y {len(ubicaciones_list) - 2} más"
+        else:
+            ubicaciones_str = ''
+
+        ubicacion = ubicaciones_str
+
+        fecha_desde = answers.get(self.mf['fecha_desde_visita'], '')
+        fecha_hasta = answers.get(self.mf['fecha_desde_hasta'], '')
+
+        data_cel_msj = {
+            'numero': telefono_invitado,
+            'nombre': nombre_invitado,
+            'link': link_completar_pase,
+            'visita_a': nombre_visita_a,
+            'ubicacion': ubicacion,
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta,
+            'qr_code': qr_code,
+            'pre_sms': pre_sms
+        }
+
+        seleccion_de_visitante = answers.get(self.pase_entrada_fields['tipo_visita'])
+
+        if seleccion_de_visitante == 'Buscar visitantes registrados':
+            visitante_registrado = answers.get(self.pase_entrada_fields['catalogo_visitante_registrado'], {})
+            nombre_visitante_registrado = visitante_registrado.get(self.pase_entrada_fields['nombre_visitante_registrado'], '')
+            telefono_vistante_registrado = visitante_registrado.get(self.mf['telefono_visita'], [])[0][0]
+
+            data_cel_msj['nombre'] = nombre_visitante_registrado
+            data_cel_msj['numero'] = telefono_vistante_registrado
+
+        return self.send_msj_pase(data_cel_msj=data_cel_msj, pre_sms=pre_sms, account=account)
 
     def format_pass_sms(self, data_cel_msj=None, pre_sms=False, account=''):
         fecha_str_desde = data_cel_msj.get('fecha_desde', '')

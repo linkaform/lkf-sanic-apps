@@ -363,6 +363,16 @@ async def post_pase_enviar_correo(request: Request):
     records = service.create_enviar_correo(folio=payload.get("folio"), envio=payload.get("envio", []))
     return json({"data": records}, status=200)
 
+@accesos_bp.post("/send_pase_sms")
+async def post_send_pase_sms(request: Request):
+    payload = _ocr_payload(request)
+    records = service.send_pase_sms(
+        qr_code=payload.get("qr_code"),
+        pre_sms=payload.get("pre_sms", False),
+        account=payload.get("cuenta", ""),
+    )
+    return json({"data": records}, status=200)
+
 @accesos_bp.get("/get_pass")
 async def get_get_pass(request: Request):
     qr_code = request.args.get("qr_code")
@@ -1792,6 +1802,17 @@ async def get_get_catalog_areas_formatted(request: Request):
     response = service.get_catalog_areas_formatted(ubicacion=request.args.get("ubicacion", ""))
     return json({"data": response}, status=200)
 
+@accesos_bp.post("/get_catalog_areas_formatted")
+async def post_get_catalog_areas_formatted(request: Request):
+    # POST porque dynamic_filters es una lista de dicts -- no cabe de forma
+    # confiable en query string (mismo motivo que list_bitacora).
+    payload = _ocr_payload(request)
+    response = service.get_catalog_areas_formatted(
+        ubicacion=payload.get("ubicacion", ""),
+        dynamic_filters=payload.get("dynamic_filters"),
+    )
+    return json({"data": response}, status=200)
+
 @accesos_bp.get("/catalago_grupos_recorridos")
 async def get_catalago_grupos_recorridos(request: Request):
     response = service.catalago_grupos_recorridos()
@@ -1881,6 +1902,33 @@ async def get_filters_in_and_out(request: Request):
 @accesos_bp.get("/filters_pases")
 async def get_filters_pases(request: Request):
     return json({"data": service.get_filters_pases()}, status=200)
+
+@accesos_bp.get("/filters_areas")
+async def get_filters_areas(request: Request):
+    return json({"data": service.get_filters_areas()}, status=200)
+
+@accesos_bp.get("/get_area_by_id")
+async def get_get_area_by_id(request: Request):
+    response = service.get_area_by_id(record_id=request.args.get("record_id", ""))
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/update_area_estado")
+async def post_update_area_estado(request: Request):
+    payload = _ocr_payload(request)
+    response = service.update_area_estado(
+        record_id=payload.get("record_id", ""),
+        estado=payload.get("estado", ""),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/update_area_disponibilidad")
+async def post_update_area_disponibilidad(request: Request):
+    payload = _ocr_payload(request)
+    response = service.update_area_disponibilidad(
+        record_id=payload.get("record_id", ""),
+        disponibilidad=payload.get("disponibilidad", ""),
+    )
+    return json({"data": response}, status=200)
 
 @accesos_bp.get("/filters_paqueteria")
 async def get_filters_paqueteria(request: Request):

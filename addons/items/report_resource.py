@@ -72,7 +72,7 @@ class ReportResource(items.Items):
     def get_report_modules(self, all_items, parent_path=None):
         data_file = []
         form_file = {}
-        default_image='linkaform/addons:latest'
+        default_image='linkaform/sanic-app:latest'
         for file in all_items:
             if type(file) == dict:
                 path = list(file.keys())[0]
