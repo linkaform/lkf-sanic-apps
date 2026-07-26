@@ -16,6 +16,7 @@ DISPATCHER = {
     "concesionados": "filters_concesionados",
     "perdidos": "filters_perdidos",
     "notas": "filters_notas",
+    "areas": "filters_areas",
 }
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/local/bin/python
 # coding: utf-8
 import sys, simplejson, lkf_addons
-from middleware.auth import dispatch
+from middleware.auth import dispatch, console_run
 
 def get_menus(params):
     data = params.get("data", {})
@@ -22,9 +22,6 @@ DISPATCHER = {
     "set_permissions": set_permissions,
 }
 
-
-def console_run(self):
-    print(f"python { self.argv[0].split('/')[-1]} '{ self.argv[1]}' '{ self.argv[2]}'")
 
 if __name__ == "__main__":
     params = simplejson.loads(sys.argv[2])

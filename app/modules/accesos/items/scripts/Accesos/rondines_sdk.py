@@ -1,8 +1,7 @@
 #!/usr/local/bin/python
 # coding: utf-8
-import sys, simplejson
+import sys, simplejson, lkf_addons
 from middleware.auth import dispatch
-
 
 def _as_list(value):
     if isinstance(value, list):
@@ -138,6 +137,13 @@ def get_catalog_areas_formatted(params):
     data = params.get("data", {})
     return dispatch("get_catalog_areas_formatted", params={
         'ubicacion': data.get('ubicacion', ''),
+        'dynamic_filters': data.get('dynamic_filters', []),
+    }, method='post', **params)
+
+def get_area_by_id(params):
+    data = params.get("data", {})
+    return dispatch("get_area_by_id", params={
+        'record_id': data.get('record_id', ''),
     }, method='get', **params)
 
 def get_area_pdf(params):
@@ -145,6 +151,20 @@ def get_area_pdf(params):
     return dispatch("get_pdf", params={
         'qr_code': data.get('qr_code', ''),
     }, method='get', **params)
+
+def update_area_estado(params):
+    data = params.get("data", {})
+    return dispatch("update_area_estado", params={
+        'record_id': data.get('record_id', ''),
+        'estado': data.get('estado', ''),
+    }, method='post', **params)
+
+def update_area_disponibilidad(params):
+    data = params.get("data", {})
+    return dispatch("update_area_disponibilidad", params={
+        'record_id': data.get('record_id', ''),
+        'disponibilidad': data.get('disponibilidad', ''),
+    }, method='post', **params)
 
 def catalago_grupos_recorridos(params):
     return dispatch("catalago_grupos_recorridos", params={}, method='get', **params)
@@ -204,7 +224,10 @@ DISPATCHER = {
     "get_check_by_id": get_check_by_id,
     "get_bitacora_by_id": get_bitacora_by_id,
     "get_catalog_areas_formatted": get_catalog_areas_formatted,
+    "get_area_by_id": get_area_by_id,
     "get_area_pdf": get_area_pdf,
+    "update_area_estado": update_area_estado,
+    "update_area_disponibilidad": update_area_disponibilidad,
     "catalago_grupos_recorridos": catalago_grupos_recorridos,
     "catalogo_inspecciones": catalogo_inspecciones,
     "pause_or_play_rondin": pause_or_play_rondin,
@@ -213,6 +236,7 @@ DISPATCHER = {
     "asignar_recorrido": asignar_recorrido,
     "run_rondin": run_cron,
     "run_cron": run_cron,
+    "get_area_by_id": get_area_by_id,
 }
 
 if __name__ == "__main__":
