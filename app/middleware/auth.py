@@ -98,6 +98,16 @@ def dispatch_with_api_key(end_point, api_key, module='accesos', params={}, metho
     return dispatch(end_point, module=module, params=params, method=method, **kwargs)
 
 
+def console_run(sys_module):
+    """
+    Imprime el comando python para reproducir a mano la llamada actual del
+    script (sys_module.argv[0..2]). Antes se copiaba/pegaba en cada script
+    standalone de items/scripts/*/*.py; ahora vive aqui una sola vez.
+    """
+    argv = sys_module.argv
+    print(f"python {argv[0].split('/')[-1]} '{argv[1]}' '{argv[2]}'")
+
+
 def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
     headers = {
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
