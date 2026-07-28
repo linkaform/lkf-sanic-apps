@@ -1737,6 +1737,10 @@ async def get_get_all_checks(request: Request):
     response = service.get_all_checks(
         ubicacion=request.args.get("ubicacion", ""),
         nombre_rondin=request.args.get("nombre_rondin", ""),
+        area=request.args.get("area", ""),
+        date_from=request.args.get("date_from"),
+        date_to=request.args.get("date_to"),
+        limit=int(request.args.get("limit", 100)),
     )
     return json({"data": response}, status=200)
 

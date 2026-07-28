@@ -76,6 +76,10 @@ def get_all_checks(params):
     return dispatch("get_all_checks", params={
         'ubicacion': data.get('ubicacion', ''),
         'nombre_rondin': data.get('nombre_rondin', ''),
+        'area': data.get('area', ''),
+        'date_from': data.get('date_from', ''),
+        'date_to': data.get('date_to', ''),
+        'limit': data.get('limit', 500),
     }, method='get', **params)
 
 def get_rondin_by_id(params):

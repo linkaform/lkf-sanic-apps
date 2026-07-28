@@ -56,12 +56,9 @@ def setup_auth(app: Sanic):
         # ejemplo ultra-simple
         expected = app.config.get("API_KEY")
         received = request.headers.get("X-API-KEY")
-        print('request... URL',request.headers)
         if expected and expected != received:
             return json({"error": "Unauthorized"}, status=401)
         auth_header = request.headers.get("Authorization")
-        print('atuh_header',auth_header)
-        print('TODO: Validar JWT....')
 
 
 

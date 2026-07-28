@@ -3935,17 +3935,31 @@ class Accesos(OcrMixin, AccesosModel):
             format_response = self.format_check_by_id(response, record_id, timezone=timezone)
         return format_response
 
-    def get_all_checks(self, ubicacion: str = "", nombre_rondin: str = ""):
-        año = datetime.now().year
+    def get_all_checks(self, ubicacion: str = "", nombre_rondin: str = "", area: str = "", date_from=None, date_to=None, limit: int = 100):
         match_filters = {
             "deleted_at": {"$exists": False},
             "form_id": self.CHECK_UBICACIONES,
-            "$expr": {
-                "$eq": [{"$year": "$created_at"}, año]
-            }
         }
+        created_at_filter = {}
+        if date_from:
+            try:
+                created_at_filter["$gte"] = datetime.fromisoformat(date_from)
+            except (TypeError, ValueError):
+                pass
+        if date_to:
+            try:
+                created_at_filter["$lte"] = datetime.fromisoformat(date_to)
+            except (TypeError, ValueError):
+                pass
+        if created_at_filter:
+            match_filters["created_at"] = created_at_filter
+        else:
+            año = datetime.now().year
+            match_filters["$expr"] = {"$eq": [{"$year": "$created_at"}, año]}
         if ubicacion:
             match_filters[f"answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}"] = ubicacion
+        if area:
+            match_filters[f"answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['rondin_area']}"] = area
 
         query = [
             {"$match": match_filters},
@@ -3960,6 +3974,7 @@ class Accesos(OcrMixin, AccesosModel):
                 "check_status": f"$answers.{self.f['check_status']}",
                 "fecha_inspeccion_area": f"$answers.{self.f['fecha_inspeccion_area']}",
                 "url_rondin": f"$answers.{self.f['url_rondin']}",
+                "url_inspeccion": f"$answers.{self.f['url_inspeccion']}",
                 "rondin_area": f"$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['rondin_area']}",
                 "tipo_de_area": f"$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['tipo_de_area']}",
                 "incidente_location": f"$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['location']}",
@@ -4034,7 +4049,7 @@ class Accesos(OcrMixin, AccesosModel):
                 "rondin": {"$arrayElemAt": ["$rondin_info", 0]}
             }},
             {"$sort": {"created_at": -1}},
-            {"$limit": 100}
+            {"$limit": limit}
         ]
 
         response = self.format_cr(self.cr.aggregate(query))
@@ -4051,12 +4066,15 @@ class Accesos(OcrMixin, AccesosModel):
                     inc.setdefault('incidencia', inc.pop('tipo_de_incidencia'))
                 if 'incidente_comentario' in inc:
                     inc.setdefault('incidente_accion', inc.pop('incidente_comentario'))
+                if 'sub_categoria' in inc:
+                    inc.setdefault('subcategoria', inc.pop('sub_categoria'))
             result.append({
                 "id": str(record.get("_id", "")),
                 "folio": record.get("folio", ""),
                 "created_at": str(record.get("created_at", "")),
                 "updated_at": str(record.get("updated_at", "")),
                 "url_rondin": record.get("url_rondin", ""),
+                "url_inspeccion": record.get("url_inspeccion", ""),
                 "rondin_area": record.get("rondin_area", []),
                 "area_tag_id": record.get("area_tag_id", ""),
                 "tipo_de_area": record.get("tipo_de_area", []),

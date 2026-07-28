@@ -6,12 +6,14 @@ from loader import extend_routes
 #### Subscribir aqui routas de modulos a cargar
 from lkf_addons.accesos.routes import accesos_bp
 from lkf_addons.employee.routes import employee_bp
+from lkf_addons.location.routes import location_bp
 
 ### Extend routes de modulos
 
 blueprints = [
-    'Accesos', 
-    'Employee'
+    'Accesos',
+    'Employee',
+    'Location'
     ]
 
 

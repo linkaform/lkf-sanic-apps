@@ -51,7 +51,7 @@ def find_module_file(base_paths, class_name, filenames=[]):
     return None, None
 
 def extend_routes(module_bp, module_name):
-    print('Cargando Rutas de Modulo: ', module_name)
+    print('*** Cargando Rutas de Modulo: ', module_name)
     custom_file, filename  = find_module_file(CUSTOM_MODULE_PATHS, module_name, filenames=[f'{module_name.lower()}_routes.py'])
     if custom_file:
         custom_bp = load_blueprint_from_file(custom_file)
@@ -183,7 +183,7 @@ def get_module_class(class_name):
     Returns:
         Clase Accesos cargada
     """
-    print('>>>  Buscan do clase...', class_name)
+    print('>>> Buscan do clase...', class_name)
     
     # 1. Intentar cargar desde rutas personalizadas
     filenames = [f'{class_name.lower()}_service.py', 'service.py']
@@ -210,9 +210,9 @@ def get_module_class(class_name):
 
         print('>>> Intentando cargar desde módulo local (.app)')
         # from lkf_addons.accesos.app import Accesos
-        print('>>> ✓ Usando clase Accesos del módulo local')
+        print(f'>>> ✓ Usando clase {class_name} del módulo local')
         return ThisClass
     except ImportError as e:
-        print(f'>>> ERROR: No se pudo cargar clase Accesos desde módulo local: {str(e)}')
-        raise ImportError('No se pudo cargar la clase Accesos desde ninguna ubicación')
+        print(f'>>> ERROR: No se pudo cargar clase {class_name} desde módulo local: {str(e)}')
+        raise ImportError(f'No se pudo cargar la clase {class_name} desde ninguna ubicación')
 
