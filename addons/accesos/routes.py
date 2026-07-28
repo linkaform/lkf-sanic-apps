@@ -1916,6 +1916,23 @@ async def get_get_area_by_id(request: Request):
     response = service.get_area_by_id(record_id=request.args.get("record_id", ""))
     return json({"data": response}, status=200)
 
+@accesos_bp.post("/create_area")
+async def post_create_area(request: Request):
+    # Ruta directa (sin el envoltorio de workflow-hook de /update_area) para
+    # crear un area dado {ubicacion, nombre, tipo_de_area} desde el front --
+    # ver create_new_area más abajo, requiere tipo_de_area (catalogo
+    # tipo_de_areas, ver /filters_areas para valores vistos en uso).
+    payload = _ocr_payload(request)
+    data = {
+        'ubicacion': payload.get('ubicacion', ''),
+        'nombre_nueva_area': payload.get('nombre', ''),
+        'tipo_de_area': payload.get('tipo_de_area', ''),
+        'foto_area': payload.get('foto_area', []),
+        'qr_area': payload.get('qr_area', ''),
+    }
+    response = service.create_new_area(data, geolocation_area=payload.get('geolocalizacion'))
+    return json({"data": response}, status=200)
+
 @accesos_bp.post("/update_area_estado")
 async def post_update_area_estado(request: Request):
     payload = _ocr_payload(request)

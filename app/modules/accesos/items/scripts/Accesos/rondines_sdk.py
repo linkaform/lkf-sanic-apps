@@ -170,6 +170,20 @@ def update_area_disponibilidad(params):
         'disponibilidad': data.get('disponibilidad', ''),
     }, method='post', **params)
 
+def create_area(params):
+    data = params.get("data", {})
+    return dispatch("create_area", params={
+        'ubicacion': data.get('ubicacion', ''),
+        'nombre': data.get('nombre', ''),
+        'tipo_de_area': data.get('tipo_de_area', ''),
+        'foto_area': data.get('foto_area', []),
+        'qr_area': data.get('qr_area', ''),
+        'geolocalizacion': data.get('geolocalizacion'),
+    }, method='post', **params)
+
+def filters_areas(params):
+    return dispatch("filters_areas", params={}, method='get', **params)
+
 def catalago_grupos_recorridos(params):
     return dispatch("catalago_grupos_recorridos", params={}, method='get', **params)
 
@@ -232,6 +246,8 @@ DISPATCHER = {
     "get_area_pdf": get_area_pdf,
     "update_area_estado": update_area_estado,
     "update_area_disponibilidad": update_area_disponibilidad,
+    "create_area": create_area,
+    "filters_areas": filters_areas,
     "catalago_grupos_recorridos": catalago_grupos_recorridos,
     "catalogo_inspecciones": catalogo_inspecciones,
     "pause_or_play_rondin": pause_or_play_rondin,
