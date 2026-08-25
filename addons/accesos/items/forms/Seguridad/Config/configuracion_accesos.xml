@@ -14,8 +14,8 @@
         <message>¡Su información fue capturada!</message>
         <redirect_url>default</redirect_url>
     </confirmation>
-    <created_at>1732584431.0</created_at>
-    <description>version: 1739383297</description>
+    <created_at>1786741800.0</created_at>
+    <description>version: 1786759419</description>
     <edit_public_records>True</edit_public_records>
     <edit_registers>True</edit_registers>
     <element_ids>[]</element_ids>
@@ -197,7 +197,7 @@
                         <watermark_config>None</watermark_config>
                         <watermark_enable>False</watermark_enable>
                     </properties>
-                    <required>False</required>
+                    <required>True</required>
                     <rules>[]</rules>
                     <show_for_rule>True</show_for_rule>
                     <validations>{}</validations>
@@ -210,7 +210,7 @@
                         <catalog_field_id>{{ catalog.empleados.obj_id }}</catalog_field_id>
                         <catalog_id>{{ catalog.empleados.id }}</catalog_id>
                         <field_type>integer</field_type>
-                        <filters />
+                        <filters>None</filters>
                         <geofence>None</geofence>
                         <last>False</last>
                         <related_catalog>{}</related_catalog>
@@ -274,7 +274,7 @@
                         <watermark_config>None</watermark_config>
                         <watermark_enable>False</watermark_enable>
                     </properties>
-                    <required>False</required>
+                    <required>True</required>
                     <rules>[]</rules>
                     <show_for_rule>True</show_for_rule>
                     <validations>{}</validations>
@@ -525,7 +525,7 @@
                     <default>False</default>
                     <default_value />
                     <descriptor>None</descriptor>
-                    <fav>False</fav>
+                    <fav>True</fav>
                     <field_id>6722472f162366c38ebe1c64</field_id>
                     <field_type>checkbox</field_type>
                     <grading_criteria>{}</grading_criteria>
@@ -582,6 +582,12 @@
                             <points>None</points>
                             <selected>False</selected>
                             <value>turnos</value>
+                        </item>
+                        <item>
+                            <label>Reportes</label>
+                            <points>None</points>
+                            <selected>False</selected>
+                            <value>reportes</value>
                         </item>
                     </options>
                     <properties>
@@ -649,7 +655,7 @@
     </notification>
     <process_ids>[]</process_ids>
     <public>True</public>
-    <resource_uri>/api/infosync/form/126562/</resource_uri>
+    <resource_uri>/api/infosync/form/164680/</resource_uri>
     <send_on_foreground>False</send_on_foreground>
     <start_event_id>None</start_event_id>
     <template_conf>
@@ -670,5 +676,5 @@
         <seconds_to_expire>None</seconds_to_expire>
         <welcome_text>None</welcome_text>
     </timer_config>
-    <updated_at>1739383297.0</updated_at>
+    <updated_at>1786759362.0</updated_at>
 </lkf>

@@ -18,8 +18,8 @@
         <message>¡Su información fue capturada!</message>
         <redirect_url>default</redirect_url>
     </confirmation>
-    <created_at>1718032585.0</created_at>
-    <description>version: 1742329732</description>
+    <created_at>1770655534.0</created_at>
+    <description>version: 1779470421</description>
     <edit_public_records>False</edit_public_records>
     <edit_registers>True</edit_registers>
     <element_ids>[]</element_ids>
@@ -136,7 +136,7 @@
                         <catalog_field_id>{{ catalog.clientes.obj_id }}</catalog_field_id>
                         <catalog_id>{{ catalog.clientes.id }}</catalog_id>
                         <field_type>text</field_type>
-                        <filters>None</filters>
+                        <filters />
                         <geofence>None</geofence>
                         <last>False</last>
                         <related_catalog>{}</related_catalog>
@@ -148,7 +148,7 @@
                     <default>False</default>
                     <default_value />
                     <descriptor>None</descriptor>
-                    <fav>True</fav>
+                    <fav>False</fav>
                     <field_id>667468e3e577b8b98c852aaa</field_id>
                     <field_type>catalog-select</field_type>
                     <grading_criteria>{}</grading_criteria>
@@ -1333,7 +1333,7 @@
     </notification>
     <process_ids>[]</process_ids>
     <public>False</public>
-    <resource_uri>/api/infosync/form/119803/</resource_uri>
+    <resource_uri>/api/infosync/form/146915/</resource_uri>
     <send_on_foreground>False</send_on_foreground>
     <start_event_id>None</start_event_id>
     <template_conf>
@@ -1354,5 +1354,5 @@
         <seconds_to_expire>None</seconds_to_expire>
         <welcome_text>None</welcome_text>
     </timer_config>
-    <updated_at>1742329732.0</updated_at>
+    <updated_at>1779470421.0</updated_at>
 </lkf>
