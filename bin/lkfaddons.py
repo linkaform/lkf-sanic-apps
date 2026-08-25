@@ -154,7 +154,7 @@ def do_load_modules(load_modules, **kwargs):
                     install_order = forms.install_order
                 except:
                     install_order = []
-                form_dict = form_resource.instalable_forms(install_order)
+                form_dict = form_resource.instalable_forms(install_order, **kwargs)
                 ###forms
                 response += form_resource.install_forms(form_dict, **kwargs)
 
@@ -441,5 +441,6 @@ if __name__ == '__main__':
                         script_id = set_value(input("Reports id to download:"))
                         download_items.update({'reports':{script_id:None}})
                 download_modules(load_modules, options, items_ids=download_items, download_related=download_related, **kwargs)
-
+            else:
+                print('Command NOT FOUND ', command[0])
 
