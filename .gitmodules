@@ -1,0 +1,4 @@
+[submodule "modules"]
+	path = app/modules
+	url = git@github.com:linkaform/sdk-modules-sanic.git
+	branch = master
