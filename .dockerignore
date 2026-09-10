@@ -1,0 +1,17 @@
+# El stage `prod` del Dockerfile hace `COPY ./ /srv/lkf-sanic-app/`, o sea mete el repo
+# entero en una imagen que se publica. Sin estas reglas las credenciales se hornean ahi.
+#
+# OJO: se excluyen archivos uno por uno, NO el directorio secrets/ completo, porque
+# secrets/lkf_jwt_key.pub si se necesita en build time (Dockerfile, stage sanic-base).
+#
+# Tampoco se excluye config/local_settings.py: con el loader del ini ya no contiene
+# secretos, y settings.py lo importa incondicionalmente, asi que la imagen lo necesita.
+secrets/accounts.ini
+secrets/accounts.ini.bak-*
+secrets/current_domain
+secrets/current_env
+
+.git
+.trees
+**/__pycache__
+*.py[cod]

@@ -4,6 +4,10 @@ set -e
 set -u
 #set -o pipefail
 
+# el script usa rutas relativas (cd docker, cd test/docker),
+# asi que siempre trabajamos desde el directorio del propio script
+cd "$(dirname "$(readlink -f "$0")")"
+
 _usage(){
   APP=$(basename "$0")
       echo
@@ -25,6 +29,11 @@ _usage(){
       echo "      $APP restart <preprod|prod> <account_id>  [depricated] use update"
       echo "      $APP update <preprod|prod> <account_id>  Update a given account sanic-app containers image on given environment"
       echo "      $APP test                    Runs all tests"
+      echo "      $APP workwith <domain_name>  Elige la cuenta activa y deja app/modules en su rama"
+      echo "      $APP workwith                Muestra la cuenta actual y los dominios disponibles"
+      echo "      $APP workon <preprod|prod>   Elige el environment activo"
+      echo "      $APP workon                  Muestra el environment actual y los disponibles"
+      echo "      $APP setup                   Instala los git hooks del repo (una vez por clon)"
       echo
       echo
       exit 1
@@ -112,7 +121,7 @@ _run_sanic(){
       echo "container ID" $containerID
       if [ -z "$containerID" ]; then
         echo "creating new container"
-        docker stop lkf-sanic-app && docker rm lkf-sanic-app
+        docker rm -f lkf-sanic-app >/dev/null 2>&1 || true
         if [[ $2 == 0 ]] ; then
           echo 'arranca'
           cd docker
@@ -129,6 +138,11 @@ _run_sanic(){
         docker exec -it $containerID bash ;
       fi
      ;;
+    *)
+      echo "ERROR: ambiente desconocido: '$1'"
+      echo "       usa: $(basename "$0") sanic <start|stop>"
+      _usage
+     ;;
   esac
 
 }
@@ -137,11 +151,11 @@ _start_sanic(){
   echo "the command for was " $1
   case $1 in
     test)
-      cd docker
+      cd test/docker
       containerID=$(docker ps | grep lkf-sanic-test | awk '{print $1}')
       if [ -z "$containerID" ]; then
-        echo "creating new TEST container" 
-        docker stop lkf-sanic-test && docker rm lkf-sanic-test
+        echo "creating new TEST container"
+        docker rm -f lkf-sanic-test >/dev/null 2>&1 || true
         docker compose up -d lkf-sanic-test && \
         docker exec -it lkf-sanic-test bash
       else
@@ -155,7 +169,7 @@ _start_sanic(){
       echo "container ID" $containerID
       if [ -z "$containerID" ]; then
         echo "creating new container"
-        docker stop lkf-sanic-app && docker rm lkf-sanic-app
+        docker rm -f lkf-sanic-app >/dev/null 2>&1 || true
         if [[ $2 == 0 ]] ; then
           echo 'arranca'
           cd docker
@@ -171,6 +185,11 @@ _start_sanic(){
         echo "Joinign existing"
         docker exec -it $containerID bash ;
       fi
+     ;;
+    *)
+      echo "ERROR: ambiente desconocido: '$1'"
+      echo "       usa: $(basename "$0") start <sanic|test>"
+      _usage
      ;;
   esac
 
@@ -303,7 +322,7 @@ _udpate_container(){
 _run_tests(){
   echo "the command for was " $1
   cd ~/lkf/test/docker
-  docker stop lkf-do-test && docker rm lkf-do-test
+  docker rm -f lkf-do-test >/dev/null 2>&1 || true
   docker compose up lkf-do-test
 }
 
@@ -331,6 +350,48 @@ echo "Action", $Acction
 
 case "$Acction" in
 
+
+  setup)
+    # Corre en el HOST: instala los hooks versionados en .githooks/. core.hooksPath
+    # vive en .git/config, o sea es local por clon y no se versiona -- por eso cada
+    # quien tiene que correr esto una vez despues de clonar, o los hooks no corren.
+    if [[ ! -d ".githooks" ]]; then
+      echo "x No existe .githooks, no hay hooks que instalar."
+      exit 1
+    fi
+    git config core.hooksPath .githooks
+    echo "OK: core.hooksPath -> .githooks"
+    for hook in .githooks/*; do
+      [[ -f "$hook" ]] || continue
+      # Si el clon tiene core.filemode=false el bit ejecutable se pierde en el
+      # checkout, y git se salta el hook sin decir nada.
+      chmod +x "$hook"
+      echo "  - $(basename "$hook")"
+    done
+    exit 0
+  ;;
+
+  workwith)
+    # Corre en el HOST a proposito: app/modules es un submodulo cuyo .git real no
+    # esta montado en el contenedor, asi que git no funciona ahi adentro.
+    if [[ "$Service" == "0" ]]; then
+      python3 bin/workwith.py
+    else
+      python3 bin/workwith.py "$Service"
+    fi
+    exit $?
+  ;;
+
+  workon)
+    # Solo escribe secrets/current_env; app/config/enviorment.py lo lee al arrancar, asi
+    # que no hace falta reiniciar el contenedor, solo relanzar la app.
+    if [[ "$Service" == "0" ]]; then
+      python3 bin/workon.py
+    else
+      python3 bin/workon.py "$Service"
+    fi
+    exit $?
+  ;;
 
   sanic)
     echo "Sanic > > > >" $API_VOL

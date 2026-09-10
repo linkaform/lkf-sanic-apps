@@ -8069,20 +8069,24 @@ class Accesos(OcrMixin, AccesosModel):
             metadata.update({'answers': pass_answers})
             return self.lkf_api.post_forms_answers(metadata)
 
-        url_by_email = {}
+        #---El url del hijo se guarda en la posicion que ocupa su acompanante en el
+        #   grupo, no por email: los acompanantes pueden venir sin email o repetirlo
+        #   y todos terminarian apuntando al mismo pase.
+        url_by_index = {}
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
-                executor.submit(create_single_pass, acompanante, parent_id): acompanante
-                for acompanante in acompanantes_grupo
+                executor.submit(create_single_pass, acompanante, parent_id): idx
+                for idx, acompanante in enumerate(acompanantes_grupo)
             }
             for future in as_completed(futures):
-                acompanante = futures[future]
+                idx = futures[future]
+                acompanante = acompanantes_grupo[idx]
                 try:
                     result = future.result()
                     child_id = result.get('json', {}).get('id')
                     if child_id:
                         child_url = f"{self.settings.config.get('WEB_PROTOCOL','https')}://{self.settings.config.get('WEB_HOST','app.linkaform.com')}/#/records/detail/{child_id}"
-                        url_by_email[acompanante.get('email', '')] = child_url
+                        url_by_index[idx] = child_url
                 except Exception as e:
                     print(f"Error creating pass for {acompanante.get('nombre')}: {e}")
 
@@ -8091,9 +8095,9 @@ class Accesos(OcrMixin, AccesosModel):
                 self.pase_entrada_fields['nombre_acompanante']: acompanante.get('nombre', ''),
                 self.pase_entrada_fields['email_acompanante']: acompanante.get('email', ''),
                 self.pase_entrada_fields['telefono_acompanante']: acompanante.get('telefono', ''),
-                self.pase_entrada_fields['url_hijo']: url_by_email.get(acompanante.get('email', ''), ''),
+                self.pase_entrada_fields['url_hijo']: url_by_index.get(idx, ''),
             }
-            for acompanante in acompanantes_grupo
+            for idx, acompanante in enumerate(acompanantes_grupo)
         ]
 
         if child_group:

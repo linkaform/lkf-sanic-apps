@@ -1,10 +1,28 @@
 # coding: utf-8
+import os
 
 from linkaform_api.settings import config
 
-ENV = 'prod' 
-#ENV = 'preprod' 
-#ENV = 'local' 
+# SECRETS_PATH lo define settings.py justo antes de importar este modulo. El import es
+# circular pero valido: cuando esta linea corre, settings.py ya lo tiene definido.
+from .settings import SECRETS_PATH
+
+
+def _env_activo():
+    """El environment activo: LKF_ENV gana sobre secrets/current_env.
+
+    El default es preprod a proposito: arrancar sin haber corrido `./lkf workon` no debe
+    pegarle a la base de datos real de los clientes.
+    """
+    env = os.environ.get('LKF_ENV', '').strip()
+    if not env:
+        current_env_file = os.path.join(SECRETS_PATH, 'current_env')
+        if os.path.exists(current_env_file):
+            env = open(current_env_file, encoding='utf-8').read().strip()
+    return env if env in ('preprod', 'prod') else 'preprod'
+
+
+ENV = _env_activo()
 
 print('=================== LODING SETTINGS FOR ENVIOIRMENT: {} ==================='.format(ENV))
 mongo_hosts = config.get('mongo_hosts')
@@ -33,18 +51,11 @@ config.update({
         'HOST' : HOST,
         'MONGODB_PORT':27017,
         'MONGODB_HOST': mongo_hosts,
-        # 'COUCH_ENV':COUCH_ENV,
-        #'MONGODB_URI': MONGODB_URI,
         'COUCH_ENV':COUCH_ENV,
-        'AIRFLOW_PROTOCOL' : 'https', #http or https
-        'AIRFLOW_HOST' : 'bob.linkaform.com',
         'AIRFLOW_PROTOCOL' : 'http', #http or https
-        #'AIRFLOW_HOST' : '192.168.0.25',
-        #'AIRFLOW_PROTOCOL' : 'http', #http or https
-        'AIRFLOW_PORT' : 5000, #http or https
         'AIRFLOW_HOST' : 'airflow.linkaform.com',
-        'ENV':ENV
-
+        'AIRFLOW_PORT' : 5000,
+        'ENV':ENV,
     })
 
 def update_settings(settings):

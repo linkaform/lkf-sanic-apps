@@ -14,7 +14,22 @@ if APP_ROOT not in sys.path:
     sys.path.insert(0, APP_ROOT)
     print(f'>>> Ruta agregada a sys.path: {APP_ROOT}')
 
-account_id = os.getenv("ACCOUNT_ID", 126)
+def _account_id():
+    """La cuenta activa. ACCOUNT_ID de entorno gana; si no, la que resolvio el login.
+
+    Antes esto era `os.getenv("ACCOUNT_ID", 126)`: el 126 quedaba fijo aunque
+    trabajaras con otra cuenta, y CUSTOM_MODULE_PATHS terminaba buscando los scripts
+    de la cuenta equivocada. La cuenta real la deja config.uts.update_settings() en
+    settings.config['ACCOUNT_ID'] a partir del JWT.
+    """
+    del_entorno = os.getenv('ACCOUNT_ID', '').strip()
+    if del_entorno:
+        return del_entorno
+    from config.settings import get_settings
+    return get_settings().config.get('ACCOUNT_ID')
+
+
+account_id = _account_id()
 
 print('account_id', account_id)
 # Rutas de búsqueda para la clase Accesos

@@ -64,11 +64,29 @@ async def post_check_invitacion(request: Request):
     return json({"data": response}, status=200)
 
 
+# NO hay ruta /check_username, y es a proposito: un endpoint publico que
+# responde "ese usuario existe" es un oraculo de enumeracion (y, pasando por el
+# script-runner de Django, un proceso nuevo por cada tecla). La disponibilidad
+# la resuelve el alta: si rebota, crear_cuenta_contratista devuelve
+# username_ocupado + sugerencias y el front reintenta.
+
 @contratistas_bp.post("/crear_cuenta_contratista")
 async def post_crear_cuenta_contratista(request: Request):
-    """FASE 2. Hoy responde 501 -- ver service.crear_cuenta_contratista."""
+    """Alta del contratista. Los kwargs se listan uno por uno a proposito:
+    con **payload, una llave inesperada en el body reventaria en TypeError
+    (un 500 con traceback) en vez de ignorarse."""
     payload = _payload(request)
-    response = service.crear_cuenta_contratista(**payload)
+    response = service.crear_cuenta_contratista(
+        record_id=payload.get("record_id", ""),
+        email=payload.get("email", ""),
+        username=payload.get("username", ""),
+        password=payload.get("password", ""),
+        password2=payload.get("password2", ""),
+        nombre=payload.get("nombre", ""),
+        apellidos=payload.get("apellidos", ""),
+        telefono=payload.get("telefono", ""),
+        puesto=payload.get("puesto", ""),
+    )
     return json({"data": response}, status=200)
 
 

@@ -21,7 +21,9 @@ Se permite la redistribución y el uso en formas de código fuente y binario, co
 # El account_id NUNCA se toma del payload: sale del claim `parent_id` del JWT
 # del contratista, verificado con firma RS256 (ver _caller_from_jwt).
 
+import random
 import re
+import unicodedata
 
 import jwt as pyjwt
 from bson import ObjectId
@@ -141,6 +143,30 @@ class Contratistas(Base):
             raise self.LKFException({
                 'msg': 'El correo no tiene un formato válido.', 'status_code': 400})
         return email
+
+    # De cara al contratista este valor NO es un "nombre de usuario": es su
+    # DOMINIO, y la pantalla se lo muestra como <valor>.clave10.com. En la
+    # plataforma sigue viajando como `username` (es lo que pide create_user),
+    # igual que el producto se llama clave10 aunque atras sea otra cosa.
+    #
+    # Por eso la regla es la de una etiqueta de host, no la de un usuario:
+    # sin punto (haria un subdominio de mas: juan.perez.clave10.com) y sin
+    # guion bajo (no es valido en un hostname). Minimo 3 porque los dominios
+    # de empresa suelen ser cortos. Empieza y termina en alfanumerico.
+    USERNAME_RE = re.compile(r'^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$')
+
+    def _clean_username(self, username):
+        username = (username or '').strip().lower().rstrip('.')
+        # Tolera que peguen el dominio completo: vitro.clave10.com -> vitro
+        if username.endswith('.clave10.com'):
+            username = username[:-len('.clave10.com')]
+        if not self.USERNAME_RE.match(username):
+            raise self.LKFException({
+                'msg': 'El dominio debe tener entre 3 y 30 caracteres, solo '
+                       'letras, números y guiones, y no puede empezar ni '
+                       'terminar con guion.',
+                'status_code': 400})
+        return username
 
     def _oid(self, record_id):
         try:
@@ -324,6 +350,69 @@ class Contratistas(Base):
                 pendientes.append(label)
         return pendientes
 
+    # Cuantas alternativas se ofrecen cuando el username rebota en el alta.
+    N_SUGERENCIAS = 3
+
+    def _sugerencias_username(self, username, nombre='', apellidos=''):
+        """ Alternativas para un dominio que el alta rechazo por duplicado.
+
+        Se generan A CIEGAS, sin preguntarle a la plataforma si estan libres.
+        Ese era justo el problema del viejo endpoint publico check_username:
+        respondia "existe / no existe" a cualquiera con la liga, o sea un
+        oraculo para bajarse el padron de usuarios a fuerza de diccionario, y
+        ademas cada tecla levantaba un proceso del script-runner de Django.
+        Aqui la unica fuente de verdad es el alta: si la sugerencia tambien
+        esta ocupada, el siguiente intento lo dira y se propone otra.
+        """
+        base = re.sub(r'[^a-z0-9-]', '', (username or '').strip().lower())
+        if not base:
+            # Se pliegan los acentos en vez de borrarlos: 'Pérez' debe dar
+            # 'perez', no 'prez'.
+            partes = []
+            for parte in (nombre, apellidos):
+                plano = unicodedata.normalize('NFKD', (parte or '').strip().lower())
+                plano = re.sub(r'[^a-z0-9]', '', plano)
+                if plano:
+                    partes.append(plano)
+            base = '-'.join(partes)
+        # Se quita el sufijo anterior para NO encadenar
+        # vitro-12 -> vitro-12-874: se reemplaza, no se acumula.
+        stem = re.sub(r'-?\d+$', '', base).strip('-') or 'contratista'
+        stem = stem[:25]  # 25 + '-' + 4 digitos = 30, el maximo exacto
+        sugerencias = []
+        intentos = 0
+        while len(sugerencias) < self.N_SUGERENCIAS and intentos < 30:
+            intentos += 1
+            # Guion y no pegado: 'vitro-482.clave10.com' se lee como dominio,
+            # 'vitro482.clave10.com' se lee como un usuario numerado.
+            candidato = '{}-{}'.format(stem, random.randint(10, 9999))
+            if self.USERNAME_RE.match(candidato) and candidato not in sugerencias:
+                sugerencias.append(candidato)
+        return sugerencias
+
+    def _colision_de_alta(self, res):
+        """ Traduce el error de create_user a 'username', 'email' o None.
+
+        Django no da un contrato estable de errores aqui, asi que se inspecciona
+        el payload como texto. La regla de desempate es lo importante: el correo
+        YA se verifico libre unas lineas antes (_find_platform_user), y ademas
+        el contratista lo trae de la invitacion, no lo escogio. El username si
+        lo escogio a ciegas. Entonces un duplicado que no dice de que campo es,
+        se atribuye al username: es el unico de los dos que el usuario puede
+        corregir, y equivocarse hacia ese lado solo cuesta un reintento,
+        mientras que equivocarse hacia 'email' lo manda a un login imposible.
+        """
+        detalle = str(res.get('json', res)).lower()
+        if not any(k in detalle for k in
+                   ('already', 'exist', 'unique', 'duplicate', 'duplicad',
+                    'ya existe', 'ya esta', 'ya está')):
+            return None
+        menciona_username = 'username' in detalle or 'usuario' in detalle
+        menciona_email = 'email' in detalle or 'correo' in detalle
+        if menciona_email and not menciona_username:
+            return 'email'
+        return 'username'
+
     # ============================================
     # Rutas publicas (sin JWT del contratista)
     # ============================================
@@ -347,24 +436,106 @@ class Contratistas(Base):
             'user_exists': bool(self._find_platform_user(email)),
         }
 
-    def crear_cuenta_contratista(self, **kwargs):
-        """ FASE 2 -- crear la cuenta del contratista desde la pagina.
+    def crear_cuenta_contratista(self, record_id='', email='', username='',
+                                 password='', password2='', nombre='',
+                                 apellidos='', telefono='', puesto=''):
+        """ Da de alta al contratista y lo deja listo para iniciar sesion.
 
-        Bloqueado a proposito: no existe endpoint de alta de cuenta
-        independiente. `linkaform_api/urls.py` get_users_url() solo expone
-        create_user (POST /api/infosync/user_admin/), que crea un SUB-USUARIO
-        de la cuenta dueña del APIKEY -- el modelo equivocado, porque aqui el
-        contratista tiene que ser dueño de su propia cuenta para poder servir a
-        varios clientes.
+        El username NO se pre-valida: se intenta el alta y, si rebota por
+        duplicado, se responde username_ocupado + sugerencias para que el
+        contratista reintente. Eso quita el oraculo de enumeracion que era
+        check_username y de paso mata el TOCTOU entre "esta libre" y "lo tomo":
+        el arbitro es el indice unico de la base, no una consulta previa.
 
-        Cuando la plataforma exponga el alta de cuenta, este es el UNICO metodo
-        que cambia: debe devolver {'account_id': <int>} y nada mas.
-        Mientras, el front manda al signup de LinkaForm y regresa a la liga.
+        LIMITACION CONOCIDA, importante: `lkf_api.create_user` pega a
+        POST /api/infosync/user_admin/ autenticado con el APIKEY de la cuenta
+        del cliente, asi que el usuario nace COLGADO DE ESA CUENTA, no como
+        cuenta independiente. El modelo de producto quiere que el contratista
+        sea dueño de su cuenta para poder servir a varios clientes; eso necesita
+        un endpoint de alta de cuenta que la plataforma no expone hoy
+        (revisado: no hay signup/register/create_account en linkaform_api ni en
+        el backend Sanic). Cuando exista, lo unico que cambia es la llamada de
+        abajo: el resto de las validaciones ya queda probado.
+
+        OJO con el copy: de cara al contratista el producto es clave10. Ni el
+        nombre LinkaForm ni sus ligas deben aparecer en ningun 'msg'.
         """
-        raise self.LKFException({
-            'msg': 'El registro en línea todavía no está disponible. '
-                   'Crea tu cuenta en LinkaForm y vuelve a abrir esta invitación.',
-            'status_code': 501})
+        email = self._clean_email(email)
+        username = self._clean_username(username)
+        record = self._get_record(record_id)
+        self._assert_invitado(record, email)
+
+        if record.get('id_cuenta'):
+            # Ya la acepto alguien: no crear otro usuario, mandar a iniciar sesion.
+            return {'created': False, 'already_exists': True, 'user_id': None}
+        if not nombre or not nombre.strip():
+            raise self.LKFException({
+                'msg': 'Escribe tu nombre.', 'status_code': 400})
+        if not password or password != password2:
+            raise self.LKFException({
+                'msg': 'Las contraseñas no coinciden.', 'status_code': 400})
+        if len(password) < 8:
+            raise self.LKFException({
+                'msg': 'La contraseña debe tener al menos 8 caracteres.',
+                'status_code': 400})
+        if self._find_platform_user(email):
+            return {'created': False, 'already_exists': True, 'user_id': None}
+
+        body_request = {
+            'first_name': nombre.strip(),
+            'last_name': (apellidos or '').strip(),
+            'username': username,
+            'email': email,
+            'password': password,
+            'password2': password2,
+            'position': (puesto or 'Contratista').strip(),
+            'phone': str(telefono or '').strip(),
+            'permissions': [],
+            'company': record.get('razon_social') or '',
+            'send_welcome': False,
+        }
+        # NUNCA imprimir body_request: lleva la contraseña en claro y este
+        # proceso escribe a un stdout que el runner de Django captura.
+        # (lkf_addons/base/app.py si lo imprime -- no copiar ese patron.)
+        res = self.lkf_api.create_user(body_request)
+
+        if res.get('status_code') not in (200, 201):
+            colision = self._colision_de_alta(res)
+            if colision == 'email':
+                return {'created': False, 'already_exists': True, 'user_id': None}
+            if colision == 'username':
+                # NO es un error de la peticion: es el flujo normal de
+                # "escoge otro". Va como 200 con bandera, igual que
+                # already_exists, para que el front lo trate como un reintento
+                # y no como un toast rojo.
+                return {
+                    'created': False,
+                    'already_exists': False,
+                    'username_ocupado': True,
+                    'username': username,
+                    'sugerencias': self._sugerencias_username(
+                        username, nombre, apellidos),
+                    'user_id': None,
+                }
+            raise self.LKFException({
+                'msg': 'No pudimos crear tu cuenta. Verifica tus datos '
+                       'e intenta de nuevo.',
+                'status_code': 400})
+
+        user_id = (res.get('json') or {}).get('id')
+        if telefono:
+            # El telefono es campo requerido de la solicitud y ya lo capturo aqui.
+            try:
+                self.lkf_api.patch_multi_record(
+                    answers={self.contratista_fields['telefono_contratista']:
+                             str(telefono).strip()},
+                    form_id=self.CONTRATISTAS,
+                    record_id=[record['record_id']],
+                    jwt_settings_key=self.JWT_CLIENTE)
+            except Exception:
+                pass  # el alta ya ocurrio; no tumbar el flujo por esto
+        return {'created': True, 'already_exists': False,
+                'user_id': user_id, 'username': username}
 
     # ============================================
     # Rutas con JWT del contratista

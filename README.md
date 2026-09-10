@@ -59,24 +59,70 @@ docker network create -d bridge --gateway 172.23.0.1 --subnet 172.23.0.0/16 link
 
 ```
 
-### Configuring you Addons Settings
+### Cuenta activa y environment: `workwith` / `workon`
 
-On the `config` folder there is a file called `settings.py` here are the baisc settings are ment to stay as they are. They are for basic configuration or for explanation purposes. You should create a file called `local_settings.py` on the same folder, this file is NOT uploaded to the repo, and here is where you place you sesitive information, this information is designe to live only on your local computer. All other sesitive information that you like will go here
+Las credenciales ya no se editan a mano en `app/config/local_settings.py`. El catalogo de
+cuentas vive en `secrets/accounts.ini` (fuera de git) y hay dos punteros que dicen con que
+cuenta y contra que ambiente estas trabajando:
 
-`local_settings.py`
-```python
-# coding: utf-8
-from  settings import * 
-print('loading settings')
+| archivo | que guarda | quien lo escribe |
+|---|---|---|
+| `secrets/accounts.ini` | el catalogo de cuentas | a mano (hoy es un symlink al de `addons`) |
+| `secrets/current_domain` | la cuenta activa | `./lkf workwith` |
+| `secrets/current_env` | el environment activo | `./lkf workon` |
 
+```bash
+./lkf workwith                # que cuenta esta activa y que dominios hay
+./lkf workwith seguridad      # cambia de cuenta y deja app/modules en su rama
+./lkf workon                  # que environment esta activo
+./lkf workon prod             # cambia de environment (preprod | prod)
+./lkf setup                   # instala los git hooks (una vez por clon)
+```
 
-config.update({
-            'USERNAME' : 'your_likaform_username@here.com',
-            'APIKEY': 'your_APIKEY_HERE', 
-})
+`workwith` y `workon` corren en el HOST, no dentro del contenedor: `app/modules` es un
+submodulo cuyo `.git` real no esta montado adentro. Los cambios se ven de inmediato en el
+contenedor (via el volumen de `secrets/`); basta relanzar la app, no hace falta rebuild.
 
+Si la rama de la cuenta todavia no existe, `workwith` la crea desde `origin/master` y te
+avisa que falta publicarla con `git push -u origin <rama>`.
 
-``` 
+`LKF_ENV` y `LKF_SECRETS_PATH` ganan sobre los archivos, para un comando suelto sin mover
+el estado guardado:
+
+```bash
+LKF_ENV=prod python main.py
+```
+
+#### Formato de `secrets/accounts.ini`
+
+Cada seccion es un `domain_name` (lo que tecleas en `workwith`, y el nombre de la rama en
+`app/modules`). **Toda llave de una seccion se sube a `config` en MAYUSCULAS**
+(`username` -> `USERNAME`), asi que agregar una nueva no requiere tocar codigo. Las unicas
+que no viajan a `config` son `branch_name` y `account_id`. La seccion `[global]` se aplica
+siempre, antes de la del dominio.
+
+```ini
+[global]
+couch_user     = admin
+couch_password = ...
+
+[seguridad]
+username   = seguridad@linkaform.com
+apikey     = ...
+account_id = 10
+```
+
+Ver `secrets/accounts.ini.example`. El `ACCOUNT_ID` real no sale del ini: lo deriva el
+login (`app/config/uts.py`).
+
+> Mientras dura la migracion, `secrets/accounts.ini` es un symlink a
+> `~/lkf/addons/secrets/accounts.ini` para no mantener dos copias de los mismos secretos.
+> Necesitas el repo `addons` clonado como hermano de este. Cuando `addons` se retire,
+> reemplaza el symlink por un archivo real y borra el volumen `/srv/addons/secrets` de
+> `docker/docker-compose.yml`.
+
+Nada de `secrets/` se versiona salvo `README.md`, `lkf_jwt_key.pub` y los `*.example`
+(lista blanca en `.gitignore`, mas el hook `pre-commit` como segunda red).
 
 
 ### Enableing Bash History

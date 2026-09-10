@@ -5,6 +5,13 @@ volumes:
 networks:
   sanic:
     external: true
+  # Las dos que usa el runner real: 'scripts' es la que start_container le pone
+  # al contenedor por cuenta (scripts/tasks.py), 'linkaform' es donde viven
+  # backend, mongodb y redis.
+  scripts:
+    external: true
+  linkaform:
+    external: true
 
 services:
   lkf-sanic-app-base:
@@ -24,8 +31,18 @@ services:
       - ../bin/download_module.py:/usr/local/bin/download_module.py
       - ../bin/json_xml.py:/usr/local/bin/json_xml.py
       - ../bin/xml_2_json.py:/usr/local/bin/xml_2_json.py
-      - ../config:/srv/lkf-sanic-app/config
-      - ../modules:/srv/lkf-sanic-app/modules
+      # ../config y ../modules no existen: viven en app/. Apuntados a la raiz, docker
+      # creaba directorios vacios y los montaba encima del codigo.
+      - ../app/config:/srv/lkf-sanic-app/config
+      - ../app/modules:/srv/lkf-sanic-app/modules
+      # secrets/ trae current_domain y current_env, que escribe ./lkf workwith|workon
+      # EN EL HOST; el contenedor solo los lee, por eso :ro.
+      - ../secrets:/srv/lkf-sanic-app/secrets:ro
+      # secrets/accounts.ini es un symlink a ../../addons/secrets/accounts.ini. Dentro
+      # del contenedor ese target relativo resuelve a /srv/addons/secrets/accounts.ini,
+      # asi que hay que montar ahi el directorio real o el symlink queda colgado.
+      # Cuando addons se retire y accounts.ini sea un archivo normal, borra esta linea.
+      - ../../addons/secrets:/srv/addons/secrets:ro
       - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
       - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
     command: sleep infinity
@@ -56,6 +73,14 @@ services:
       - ../app/config:/srv/lkf-sanic-app/config
       - ../app/modules:/srv/lkf-sanic-app/modules
       - ../app/middleware:/srv/lkf-sanic-app/middleware
+      # secrets/ trae current_domain y current_env, que escribe ./lkf workwith|workon
+      # EN EL HOST; el contenedor solo los lee, por eso :ro.
+      - ../secrets:/srv/lkf-sanic-app/secrets:ro
+      # secrets/accounts.ini es un symlink a ../../addons/secrets/accounts.ini. Dentro
+      # del contenedor ese target relativo resuelve a /srv/addons/secrets/accounts.ini,
+      # asi que hay que montar ahi el directorio real o el symlink queda colgado.
+      # Cuando addons se retire y accounts.ini sea un archivo normal, borra esta linea.
+      - ../../addons/secrets:/srv/addons/secrets:ro
       - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
       - ../../lkf/infosync_scripts/:/srv/infosync_scripts
       - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
@@ -64,3 +89,5 @@ services:
     command: "/docker/main_entrypoint.sh"
     stdin_open: true
     tty: true
+
+ 
