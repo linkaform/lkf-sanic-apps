@@ -7,7 +7,7 @@ __pycache__/
 #Linkaform Exlcudes
 local_settings.py
 account_settings.py
-lkfpowd.py
+lkfpwd.py
 # secrets/ va por lista blanca: cualquier archivo nuevo ahi queda fuera por defecto,
 # en vez de depender de acordarse de agregar la regla.
 secrets/*
@@ -136,3 +136,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Config de Claude Code por instalacion: que plugins habilita cada quien y
+# sus permisos locales. No se versiona - es decision de quien instala.
+.claude/settings.json
+.claude/settings.local.json
+
+# Suite de pruebas local: arrastra conf/ y config/ con credenciales de
+# entornos reales, ademas de caches. Se trabaja en disco, no se versiona.
+test/
