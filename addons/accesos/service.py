@@ -3556,40 +3556,68 @@ class Accesos(OcrMixin, AccesosModel):
         form_id = self.CONFIGURACION_RECORRIDOS_FORM
         return self.catalogo_view(catalog_id, form_id)
 
-    def get_catalog_areas_formatted(self, ubicacion="", dynamic_filters=None):
-        #Obtener areas disponibles para rondin
-        if ubicacion:
+    def get_catalog_areas_formatted(self, locations=[], limit=25, skip=0, search="", search_fields=[], dynamic_filters=[]):
+  
+        ubicaciones = [u for u in locations if u]
+        if not ubicaciones:
+            raise Exception("Ubicacion is required.")
+
+        catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
+        form_id = self.CONFIGURACION_RECORRIDOS_FORM
+        areas = []
+        for u in ubicaciones:
             options = {
-                'startkey': [ubicacion],
-                'endkey': [f"{ubicacion}\n",{}],
+                'startkey': [u],
+                'endkey': [f"{u}\n",{}],
                 'group_level':2
             }
+            areas += self.catalogo_view(catalog_id, form_id, options)
+       
+        areas = list(dict.fromkeys(areas))
+        response = self.get_areas_details(areas, dynamic_filters=dynamic_filters)
 
-            catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
-            form_id = self.CONFIGURACION_RECORRIDOS_FORM
-            areas = self.catalogo_view(catalog_id, form_id, options)
-            response = self.get_areas_details(areas, dynamic_filters=dynamic_filters)
-            areas_formateadas = []
-            for r in response:
-                areas_formateadas.append({
-                    "folio": r.get("folio", ""),
-                    "record_id": r.get("_id", ""),
-                    "rondin_area": r.get("area", ""),
-                    "geolocalizacion_area_ubicacion": [
-                        {
-                            "latitude": r.get("latitude", 0.0),
-                            "longitude": r.get("longitude", 0.0)
-                        }
-                    ],
-                    "area_tag_id": [r.get("tag_id", "")],
-                    "foto_area": r.get("image", []),
-                    "tipo_de_area": r.get("tipo_de_area", ""),
-                    "area_state": r.get("area_state", ""),
-                    "area_status": r.get("area_status", ""),
-                })
-            return areas_formateadas
-        else:
-            raise Exception("Ubicacion is required.")
+        por_ubicacion = {}
+        for r in response:
+            por_ubicacion.setdefault(r.get('ubicacion', ''), []).append(r)
+
+        response = []
+        for areas_de_ubicacion in por_ubicacion.values():
+            marcadas = [r for r in areas_de_ubicacion if 'rondines' in (r.get('usos') or [])]
+            response.extend(marcadas if marcadas else areas_de_ubicacion)
+
+        response = sorted(response, key=lambda r: r.get('area', ''))
+        total_records = len(response)
+        total_pages = (total_records + limit - 1) // limit if limit else 1
+        current_page = (skip // limit) + 1 if limit else 1
+        page_items = response[skip:skip + limit] if limit else response[skip:]
+
+        areas_formateadas = []
+        for r in page_items:
+            areas_formateadas.append({
+                "folio": r.get("folio", ""),
+                "record_id": r.get("_id", ""),
+                "rondin_area": r.get("area", ""),
+                "ubicacion": r.get("ubicacion", ""),
+                "geolocalizacion_area_ubicacion": [
+                    {
+                        "latitude": r.get("latitude", 0.0),
+                        "longitude": r.get("longitude", 0.0)
+                    }
+                ],
+                "area_tag_id": [r.get("tag_id", "")],
+                "foto_area": r.get("image", []),
+                "tipo_de_area": r.get("tipo_de_area", ""),
+                "area_state": r.get("area_state", ""),
+                "area_status": r.get("area_status", ""),
+            })
+
+        return {
+            'records': areas_formateadas,
+            'total_records': total_records,
+            'total_pages': total_pages,
+            'actual_page': current_page,
+            'records_on_page': len(areas_formateadas),
+        }
 
     def get_area_by_id(self, record_id):
         """
