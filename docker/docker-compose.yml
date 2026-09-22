@@ -82,7 +82,6 @@ services:
       # Cuando addons se retire y accounts.ini sea un archivo normal, borra esta linea.
       - ../../addons/secrets:/srv/addons/secrets:ro
       - ../../linkaform_api/linkaform_api:/usr/local/lib/python3.12/site-packages/linkaform_api/ 
-      - ../../lkf/infosync_scripts/:/srv/infosync_scripts
       - ../../../.bash_lkf_history:/srv/lkf-sanic-app/.bash_history
       - ./:/docker/
     #command: sleep infinity
