@@ -10593,13 +10593,14 @@ class Accesos(OcrMixin, AccesosModel):
                 r.pop('falla_grupo_seguimiento', None)
         return result
 
-    def get_list_incidences(self, location, area, prioridades=[], dateFrom="", dateTo="", filterDate="", folio=None):
+    def get_list_incidences(self, locations, area, prioridades=[], dateFrom="", dateTo="", filterDate="", folio=None):
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.BITACORA_INCIDENCIAS,
         }
-        if location:
-             match_query[f"answers.{self.incidence_fields['ubicacion_incidencia_catalog']}.{self.incidence_fields['ubicacion_incidencia']}"] = location
+        locations = [loc for loc in (locations or []) if loc]
+        if locations:
+             match_query[f"answers.{self.incidence_fields['ubicacion_incidencia_catalog']}.{self.incidence_fields['ubicacion_incidencia']}"] = {"$in": locations}
         if area:
              match_query[f"answers.{self.incidence_fields['area_incidencia_catalog']}.{self.incidence_fields['area_incidencia']}"] = area
         if prioridades:
@@ -12128,7 +12129,7 @@ class Accesos(OcrMixin, AccesosModel):
         folio: Folio de la incidencia a actualizar.
         incidencia_grupo_seguimiento: Lista de diccionarios con los datos del seguimiento.
         """
-        incidence_selected = self.get_list_incidences(location, area, folio=folio)
+        incidence_selected = self.get_list_incidences([location] if location else [], area, folio=folio)
         if incidence_selected:
             incidence_selected = incidence_selected[0]
         else:

@@ -982,12 +982,12 @@ async def post_nueva_incidencia(request: Request):
 
 @accesos_bp.get("/get_incidences")
 async def get_get_incidences(request: Request):
-    location = request.args.get("location", "")
     area = request.args.get("area", "")
     prioridades = request.args.getlist("prioridades")
+    locations = request.args.getlist("locations")
     allowed_params = ["dateFrom", "dateTo", "filterDate", "folio"]
     filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
-    records = service.get_list_incidences(location, area, prioridades=prioridades, **filters)
+    records = service.get_list_incidences(locations, area, prioridades=prioridades, **filters)
     return json({"data": records}, status=200)
 
 @accesos_bp.post("/update_incidence")
