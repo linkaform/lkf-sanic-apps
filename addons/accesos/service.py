@@ -3507,6 +3507,16 @@ class Accesos(OcrMixin, AccesosModel):
                     match_query[f"answers.{self.Location.f['area_state']}"] = {"$in": item.get('value')}
                 elif item.get('key') == 'disponibilidad':
                     match_query[f"answers.{self.Location.f['area_status']}"] = {"$in": item.get('value')}
+                elif item.get('key') == 'tipo_identificador':
+                    # Tag = el área tiene area_tag_id capturado; QR = no lo tiene
+                    # (toda área se puede checar por el QR de su record_id).
+                    # Con ambas opciones o ninguna no se filtra.
+                    tipos_identificador = set(item.get('value') or [])
+                    tag_field = f"answers.{self.f['area_tag_id']}"
+                    if tipos_identificador == {'tag'}:
+                        match_query[tag_field] = {"$exists": True, "$nin": [None, "", []]}
+                    elif tipos_identificador == {'qr'}:
+                        match_query[tag_field] = {"$in": [None, "", []]}
                 else:
                     continue
         query = [
@@ -3555,6 +3565,134 @@ class Accesos(OcrMixin, AccesosModel):
         catalog_id = self.CATALOGO_FORMAS_CAT_ID
         form_id = self.CONFIGURACION_RECORRIDOS_FORM
         return self.catalogo_view(catalog_id, form_id)
+
+    def get_incidencias_by_area(self, area_id="", limit=25, skip=0):
+        """Dado el record_id de un área (mismo id que get_rondines_by_area),
+        regresa las incidencias reportadas durante el check de esa área
+        específica dentro de rondines ejecutados (bitacora_rondin_incidencias
+        en BITACORA_RONDINES; ver format_incidencias_rondines).
+
+        No incluye incidencias creadas vía create_incidencia_by_rondin, que
+        se guardan como registros independientes en BITACORA_INCIDENCIAS sin
+        referencia de vuelta al rondín que las originó.
+        """
+        if not area_id:
+            raise Exception("area_id is required.")
+
+        area = self.get_area_by_id(area_id)
+        nombre_area = area.get('rondin_area', '')
+        ubicacion = area.get('ubicacion', '')
+
+        match = {
+            "form_id": self.BITACORA_RONDINES,
+            "deleted_at": {"$exists": False},
+            f"answers.{self.f['bitacora_rondin_incidencias']}.{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}": nombre_area,
+        }
+        if ubicacion:
+            match[f"answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.Location.f['location']}"] = ubicacion
+
+        query = [
+            {"$match": match},
+            {"$sort": {"created_at": -1}},
+            {"$project": {
+                "_id": 1,
+                "folio": 1,
+                "ubicacion": f"$answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.Location.f['location']}",
+                "nombre_recorrido": f"$answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.mf['nombre_del_recorrido']}",
+                "incidencias_rondin": f"$answers.{self.f['bitacora_rondin_incidencias']}",
+                "link": f"$answers.{self.rondin_keys['link']}",
+            }},
+        ]
+        response = self.format_cr(self.cr.aggregate(query))
+        incidencias = self.format_incidencias_rondines(response, nombre_area) if response else []
+
+        total_records = len(incidencias)
+        total_pages = (total_records + limit - 1) // limit if limit else 1
+        current_page = (skip // limit) + 1 if limit else 1
+        page_items = incidencias[skip:skip + limit] if limit else incidencias[skip:]
+
+        return {
+            'records': page_items,
+            'total_records': total_records,
+            'total_pages': total_pages,
+            'actual_page': current_page,
+            'records_on_page': len(page_items),
+        }
+
+    def get_rondines_by_area(self, area_id="", limit=25, skip=0):
+        """Dado el record_id de un área (el mismo que regresa
+        get_catalog_areas_formatted/get_area_by_id), regresa los rondines
+        ya iniciados (registros de BITACORA_RONDINES) que la incluyen.
+
+        La bitácora guarda las áreas del recorrido en areas_del_rondin como
+        copia del catálogo de áreas (solo el nombre), no el record_id del
+        área — por eso se resuelve primero el nombre real y la ubicación del
+        área vía get_area_by_id, y se busca por esos datos.
+        """
+        if not area_id:
+            raise Exception("area_id is required.")
+
+        area = self.get_area_by_id(area_id)
+        nombre_area = area.get('rondin_area', '')
+        ubicacion = area.get('ubicacion', '')
+
+        match_query = {
+            "form_id": self.BITACORA_RONDINES,
+            "deleted_at": {"$exists": False},
+            f"answers.{self.f['areas_del_rondin']}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.f['nombre_area']}": nombre_area,
+        }
+        if ubicacion:
+            match_query[f"answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.Location.f['location']}"] = ubicacion
+
+        count_result = self.format_cr(self.cr.aggregate([
+            {"$match": match_query},
+            {"$count": "total"},
+        ]))
+        total_records = count_result[0]['total'] if count_result else 0
+
+        query = [
+            {"$match": match_query},
+            {"$sort": {"created_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$project": {
+                "_id": 1,
+                "folio": 1,
+                "nombre_recorrido": f"$answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.mf['nombre_del_recorrido']}",
+                "ubicacion": f"$answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.Location.f['location']}",
+                "asignado_a": f"$answers.{self.USUARIOS_OBJ_ID}.{self.mf['nombre_usuario']}",
+                "estatus_rondin": f"$answers.{self.f['estatus_del_recorrido']}",
+                "fecha_programacion": f"$answers.{self.f['fecha_programacion']}",
+                "fecha_inicio": f"$answers.{self.f['fecha_inicio_rondin']}",
+                "fecha_fin": f"$answers.{self.f['fecha_hora_fin']}",
+            }},
+        ]
+        response = self.format_cr(self.cr.aggregate(query))
+
+        records = []
+        for r in response:
+            records.append({
+                "record_id": str(r.get("_id", "")),
+                "folio": r.get("folio", ""),
+                "nombre_recorrido": r.get("nombre_recorrido", ""),
+                "ubicacion": r.get("ubicacion", ""),
+                "asignado_a": r.get("asignado_a", ""),
+                "estatus_rondin": r.get("estatus_rondin", ""),
+                "fecha_programacion": r.get("fecha_programacion", ""),
+                "fecha_inicio": r.get("fecha_inicio", ""),
+                "fecha_fin": r.get("fecha_fin", ""),
+            })
+
+        total_pages = (total_records + limit - 1) // limit if limit else 1
+        current_page = (skip // limit) + 1 if limit else 1
+
+        return {
+            'records': records,
+            'total_records': total_records,
+            'total_pages': total_pages,
+            'actual_page': current_page,
+            'records_on_page': len(records),
+        }
 
     def get_catalog_areas_formatted(self, locations=[], limit=25, skip=0, search="", search_fields=[], dynamic_filters=[]):
   
@@ -5318,6 +5456,16 @@ class Accesos(OcrMixin, AccesosModel):
                 "label": "Disponibilidad",
                 "type": "multiple",
                 "options": [{"label": i.capitalize(), "value": i} for i in disponibilidad]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "tipo_identificador",
+                "label": "Tipo",
+                "type": "multiple",
+                "options": [
+                    {"label": "Tag", "value": "tag"},
+                    {"label": "QR", "value": "qr"},
+                ]
             },
         ]
 

@@ -1808,7 +1808,6 @@ async def get_get_catalog_areas_formatted(request: Request):
 
 @accesos_bp.post("/get_catalog_areas_formatted")
 async def post_get_catalog_areas_formatted(request: Request):
-    print(1)
     # POST porque dynamic_filters es una lista de dicts -- no cabe de forma
     # confiable en query string (mismo motivo que list_bitacora).
     payload = _ocr_payload(request)
@@ -1819,6 +1818,26 @@ async def post_get_catalog_areas_formatted(request: Request):
         search= payload.get('search', ''),
         search_fields= payload.get('search_fields',[]),
         dynamic_filters= payload.get('dynamic_filters', []),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_rondines_by_area")
+async def post_get_rondines_by_area(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_rondines_by_area(
+        area_id= payload.get('area_id', []),
+        limit= payload.get('limit', 25),
+        skip= payload.get('offset',0),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_incidencias_by_area")
+async def post_get_incidencias_by_area(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_incidencias_by_area(
+        area_id= payload.get('area_id', []),
+        limit= payload.get('limit', 25),
+        skip= payload.get('offset',0),
     )
     return json({"data": response}, status=200)
 
