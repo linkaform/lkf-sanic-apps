@@ -6,6 +6,8 @@ import sys
 import importlib.util
 from pathlib import Path
 
+from config.settings import ACCOUNT_SCRIPTS_DIR
+
 # from bin.lkfaddons import module
 
 # Agregar ruta de la app al path para imports
@@ -34,7 +36,7 @@ account_id = _account_id()
 print('account_id', account_id)
 # Rutas de búsqueda para la clase Accesos
 CUSTOM_MODULE_PATHS = [
-    f'/srv/backend.linkaform.com/infosync-api/backend/media/uploads/public-client-{account_id}/scripts/',
+    ACCOUNT_SCRIPTS_DIR.format(account_id),
     f'/srv/lkf-sanic-app/app/modules/accesos/items/scripts/CLASS_NAME',
     '/usr/local/lib/python3.12/site-packages/lkf_addons',
 ]
