@@ -982,12 +982,12 @@ async def post_nueva_incidencia(request: Request):
 
 @accesos_bp.get("/get_incidences")
 async def get_get_incidences(request: Request):
-    location = request.args.get("location", "")
     area = request.args.get("area", "")
     prioridades = request.args.getlist("prioridades")
+    locations = request.args.getlist("locations")
     allowed_params = ["dateFrom", "dateTo", "filterDate", "folio"]
     filters = {k: request.args.get(k) for k in allowed_params if request.args.get(k) is not None}
-    records = service.get_list_incidences(location, area, prioridades=prioridades, **filters)
+    records = service.get_list_incidences(locations, area, prioridades=prioridades, **filters)
     return json({"data": records}, status=200)
 
 @accesos_bp.post("/update_incidence")
@@ -1812,8 +1812,32 @@ async def post_get_catalog_areas_formatted(request: Request):
     # confiable en query string (mismo motivo que list_bitacora).
     payload = _ocr_payload(request)
     response = service.get_catalog_areas_formatted(
-        ubicacion=payload.get("ubicacion", ""),
-        dynamic_filters=payload.get("dynamic_filters"),
+        locations= payload.get('locations', []),
+        limit= payload.get('limit', 25),
+        skip= payload.get('offset',0),
+        search= payload.get('search', ''),
+        search_fields= payload.get('search_fields',[]),
+        dynamic_filters= payload.get('dynamic_filters', []),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_rondines_by_area")
+async def post_get_rondines_by_area(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_rondines_by_area(
+        area_id= payload.get('area_id', []),
+        limit= payload.get('limit', 25),
+        skip= payload.get('offset',0),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_incidencias_by_area")
+async def post_get_incidencias_by_area(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_incidencias_by_area(
+        area_id= payload.get('area_id', []),
+        limit= payload.get('limit', 25),
+        skip= payload.get('offset',0),
     )
     return json({"data": response}, status=200)
 
