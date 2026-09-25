@@ -21,7 +21,11 @@ services:
     image: linkaform/sanic-app:base
     ports:
       - "5001:5000"
-    build:    
+    environment:
+      # local_settings.py necesita secrets/accounts.ini (./lkf workwith), que solo
+      # existe en dev. En produccion se deja sin setear.
+      USE_LOCAL_SETTINGS: ${USE_LOCAL_SETTINGS:-1}
+    build:
      context: ../
      dockerfile: ./Dockerfile
      target: sanic-base
@@ -59,7 +63,11 @@ services:
     ports:
       - "8888:8000"
       # - "5001:5000"
-    build:    
+    environment:
+      # local_settings.py necesita secrets/accounts.ini (./lkf workwith), que solo
+      # existe en dev. En produccion se deja sin setear.
+      USE_LOCAL_SETTINGS: ${USE_LOCAL_SETTINGS:-1}
+    build:
      context: ../
      dockerfile: ./Dockerfile
      target: develop

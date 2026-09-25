@@ -66,21 +66,15 @@ from .enviorment import update_settings
 print('ENV DE enviorment', ENV)
 
 settings = update_settings(settings)
-
-# try:
-print("Loading local settings...")
-
-# try:
-if True:
+# local_settings.py resuelve la cuenta activa via secrets/accounts.ini (./lkf workwith).
+# Solo existe en dev, asi que el default es NO cargarlo -- en produccion
+# account_settings.py ya trae todo y secrets/accounts.ini ni siquiera esta ahi. El
+# docker-compose de desarrollo prende USE_LOCAL_SETTINGS=1 explicitamente.
+if os.environ.get('USE_LOCAL_SETTINGS', '').strip().lower() in ('1', 'true', 'yes'):
+    print("Loading local settings...")
     from .local_settings import *
-# except Exception as e:
-#     print('===='*40)
-#     print('local_settings... NOT FOUND!!!')
-#     print('create a file with you own local_settings, just import this file with from  settings import * ')
-#     print('Then update your config with your own keys')
-#     print('Error: ', e)
-#     print('Envioroment: ', ENV)
-#     print('===='*40)
+else:
+    print("USE_LOCAL_SETTINGS no esta activo: se omite local_settings.py, se usa account_settings.py")
 
 settings.ENV = ENV
 
