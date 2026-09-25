@@ -56,18 +56,21 @@ class Contratistas(Base):
     # Identidad con la que se leen/escriben los datos DEL CLIENTE.
     #
     # Es obligatorio pasarla explicitamente en cada llamada a lkf_api: por
-    # default esos metodos usan config['JWT_KEY'], y el decorador @reload_user
-    # (addons/base/tools.py:20, usado por accesos/service.py) lo SOBREESCRIBE
-    # con el token de quien llama sobre el singleton compartido y nunca lo
-    # restaura. Es decir, JWT_KEY puede traer el token de cualquier request
-    # anterior de cualquier otra ruta del contenedor.
+    # default esos metodos usan config['JWT_KEY'], que sigue siendo
+    # settings.config -- el dict compartido por TODAS las instancias de TODOS
+    # los modulos del proceso. self.user/self.user_id ya son properties
+    # aisladas por request (contextvars, linkaform_api/lkf_base/base.py), pero
+    # config['JWT_KEY'] no pasa por ahi: sigue siendo un solo valor global.
     #
     # APIKEY_JWT_KEY siempre trae el JWT del API key de la cuenta
     # (linkaform_api/lkf_base/base.py:775), asi que fijarla vuelve estas
     # operaciones inmunes a esa fuga de identidad.
     #
-    # Este modulo NO debe usar @reload_user por la misma razon; la identidad
-    # de quien llama se obtiene sin mutar nada, en _caller_from_jwt.
+    # Este modulo sigue sin depender de self.user: la identidad de quien
+    # llama se obtiene sin mutar nada, en _caller_from_jwt, porque a
+    # diferencia del middleware global (que nunca tumba el request si el JWT
+    # falta/es invalido) el flujo publico de invitacion de contratistas
+    # necesita 401 duro en ese caso.
     JWT_CLIENTE = 'APIKEY_JWT_KEY'
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):

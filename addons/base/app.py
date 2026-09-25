@@ -42,12 +42,9 @@ class Base(base.LKF_Base):
             self.mf = mf
         super().__init__(settings, sys_argv=sys_argv, use_api=use_api, **kwargs)
 
-        # self.user_id como atajo sincronizado con self.user['user_id'] --
-        # varios metodos (propios y de modulos compuestos como Employee)
-        # leen self.user_id directamente en vez de self.user.get('user_id').
-        # self.user puede no existir aqui (solo se decodifica cuando hay
-        # sys_argv, que en la arquitectura Sanic siempre es None).
-        self.user_id = getattr(self, 'user', {}).get('user_id')
+        # self.user_id ya es una property heredada de LKF_Base (resuelta por
+        # request via contextvars en Sanic, o via sys_argv en scripts
+        # standalone) -- no hace falta congelarla aqui en el __init__.
 
         # ── OpenRouter — solo si el usuario configuró su API key ──
         # El linkaform_api instalado en este proyecto (3.0) todavía no trae la

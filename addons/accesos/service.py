@@ -21,6 +21,7 @@ import time as time_module
 from copy import deepcopy
 from math import ceil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from linkaform_api.request_context import submit_with_context
 import urllib.parse
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
@@ -43,7 +44,6 @@ class MyPass(Pass):
         return data
 
 print('--------------- ACCESOS APP --------------------')
-from ..base.tools import *
 from .models import AccesosModel
 from lkf_addons.tools.OcrMixin import OcrMixin
 
@@ -8251,7 +8251,7 @@ class Accesos(OcrMixin, AccesosModel):
         url_by_index = {}
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
-                executor.submit(create_single_pass, acompanante, parent_id): idx
+                submit_with_context(executor, create_single_pass, acompanante, parent_id): idx
                 for idx, acompanante in enumerate(acompanantes_grupo)
             }
             for future in as_completed(futures):
@@ -11619,8 +11619,7 @@ class Accesos(OcrMixin, AccesosModel):
             }
         return res
 
-    @reload_user
-    def get_shift_data(self, booth_location=None, booth_area=None, search_default=True, headers=None):
+    def get_shift_data(self, booth_location=None, booth_area=None, search_default=True):
         """
         Obtiene informacion del turno del usuario logeado
         """
@@ -17070,7 +17069,7 @@ class Accesos(OcrMixin, AccesosModel):
 
         with ThreadPoolExecutor(max_workers=20) as executor:
             futures = {
-                executor.submit(self.process_single_check_for_rondin, cr_db, rec, results, results_lock): rec
+                submit_with_context(executor, self.process_single_check_for_rondin, cr_db, rec, results, results_lock): rec
                 for rec in check_records
             }
 
@@ -17324,7 +17323,7 @@ class Accesos(OcrMixin, AccesosModel):
                 futures = {}
                 for rec in rondin_records:
                     rondin_id = rec.get('_id')
-                    futures[executor.submit(self.sync_rondin_to_lkf, cr_db, rondin_id, rec)] = rec
+                    futures[submit_with_context(executor, self.sync_rondin_to_lkf, cr_db, rondin_id, rec)] = rec
 
                 for future in as_completed(futures):
                     rec = futures[future]
@@ -17370,7 +17369,7 @@ class Accesos(OcrMixin, AccesosModel):
         else:
             with ThreadPoolExecutor(max_workers=10) as executor:
                 futures = {
-                    executor.submit(self.sync_rondin_to_lkf, cr_db, rondin_id): rondin_id
+                    submit_with_context(executor, self.sync_rondin_to_lkf, cr_db, rondin_id): rondin_id
                     for rondin_id in checks_by_rondin
                 }
 
@@ -18107,7 +18106,7 @@ class Accesos(OcrMixin, AccesosModel):
 
         with ThreadPoolExecutor(max_workers=30) as executor:
             futures = [
-                executor.submit(self._process_attachment_upload_universal, cr_db, record['_id'], item['node'])
+                submit_with_context(executor, self._process_attachment_upload_universal, cr_db, record['_id'], item['node'])
                 for item in pending_nodes
             ]
 
@@ -18229,7 +18228,7 @@ class Accesos(OcrMixin, AccesosModel):
             return stage_results
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(handler, rec): rec for rec in records}
+            futures = {submit_with_context(executor, handler, rec): rec for rec in records}
 
             for future in as_completed(futures):
                 rec = futures[future]

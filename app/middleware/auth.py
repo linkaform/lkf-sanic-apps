@@ -1,12 +1,18 @@
 #!/usr/local/bin/python
 # coding: utf-8
 # middlewares/auth.py
+import logging
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from sanic import Sanic
 from sanic.request import Request
 from sanic.response import json
+
+from linkaform_api.jwt_utils import decode_jwt_token
+from linkaform_api.request_context import set_current_user, clear_current_user
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionClient(object):
@@ -59,6 +65,25 @@ def setup_auth(app: Sanic):
         if expected and expected != received:
             return json({"error": "Unauthorized"}, status=401)
         auth_header = request.headers.get("Authorization")
+        user = {}
+        if auth_header:
+            try:
+                user = decode_jwt_token(auth_header)
+            except Exception as e:
+                # JWT invalido/expirado: no tumba el request -- hoy ninguna
+                # ruta depende de auth por JWT, y forzar 401 aqui seria un
+                # cambio de comportamiento global no pedido (rompería health
+                # checks y rutas protegidas solo por X-API-KEY).
+                logger.warning("JWT invalido/expirado en %s: %s", request.path, e)
+                user = {}
+        set_current_user(user, raw_jwt=auth_header)
+
+    @app.middleware("response")
+    async def clear_user_context(request: Request, response):
+        # Defensa en profundidad: el middleware de request de arriba ya
+        # vuelve a llamar set_current_user() en cada request nueva; esto solo
+        # evita dejar basura si algun path de error lo saltara.
+        clear_current_user()
 
 
 
