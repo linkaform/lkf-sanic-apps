@@ -2,6 +2,15 @@
 # coding: utf-8
 # middlewares/auth.py
 import logging
+import warnings
+
+# linkaform_api importa couchdb, que emite un UserWarning de pkg_resources al
+# importarse. Los scripts *_sdk.py corren como subprocess y el runner de
+# produccion trata cualquier escritura a stderr como fallo (success=False,
+# HTTP 400) aunque el stdout traiga la respuesta correcta. Debe ir antes de
+# importar linkaform_api.
+warnings.filterwarnings('ignore', category=UserWarning, module='couchdb')
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
