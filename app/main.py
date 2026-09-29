@@ -140,14 +140,19 @@ async def health(request):
 # ============================================
 
 if __name__ == "__main__":
+    # debug/auto_reload solo en dev: en un contenedor de cuenta real (ENV=='prod', ver
+    # config/settings.py) Sanic vigila con el reloader el __file__ de TODO sys.modules,
+    # incluidos los scripts de cuenta cargados por importlib en loader.py -- con eso
+    # prendido, cada sync de un script (lsyncd) reinicia el proceso solo a mitad de
+    # trafico, repitiendo el login real contra la API y la reconexion a Mongo.
+    es_prod = settings.config.get('ENV') == 'prod'
     print('>>>>>>>>>>> INICIANDO SERVIDOR SANIC <<<<<<<<<<<<')
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
         access_log=True,
-        debug=True,#bool(os.getenv("DEBUG", True)),
-        #debug=False,#bool(os.getenv("DEBUG", True)),
-        auto_reload=True,
+        debug=not es_prod,
+        auto_reload=not es_prod,
         workers=int(os.getenv("WORKERS", 1))  # Múltiples workers para concurrencia
     )
 

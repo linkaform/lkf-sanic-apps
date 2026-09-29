@@ -18,6 +18,32 @@ ACCOUNT_SCRIPTS_DIR = (
 )
 
 
+def _real_account_settings_file():
+    """Ruta al account_settings.py real de la cuenta activa (ACCOUNT_ID por env), si
+    existe. En produccion cada contenedor es de UNA cuenta y lo trae en la carpeta de
+    scripts sincronizada -- es señal mas confiable de "esto es produccion real" que
+    LKF_ENV/secrets/current_env, que ahi nunca se setean (son para ./lkf workon en dev).
+    """
+    account_id = os.environ.get('ACCOUNT_ID', '').strip()
+    if not account_id:
+        return None
+    custom_file = os.path.join(
+        ACCOUNT_SCRIPTS_DIR.format(account_id), 'account_settings.py')
+    return custom_file if os.path.exists(custom_file) else None
+
+
+_REAL_ACCOUNT_SETTINGS_FILE = _real_account_settings_file()
+
+# Produccion real no setea LKF_ENV ni secrets/current_env (eso es cosa de ./lkf workon en
+# dev), asi que enviorment.py caeria a 'preprod' por default y con eso COUCH_ENV='dev' --
+# apuntando rondines/inbox/catalogos de una cuenta real al CouchDB de dev. Si detectamos
+# cuenta real y nadie seteo LKF_ENV a mano, forzamos 'prod' antes de que enviorment.py
+# resuelva ENV.
+if _REAL_ACCOUNT_SETTINGS_FILE and not os.environ.get('LKF_ENV', '').strip():
+    print('Cuenta real de produccion detectada, forzando LKF_ENV=prod')
+    os.environ['LKF_ENV'] = 'prod'
+
+
 def _find_secrets():
     """Raiz de secrets/ (accounts.ini, current_domain, current_env).
 
@@ -95,17 +121,13 @@ def _load_account_settings():
     para que pise USERNAME/APIKEY/ACCOUNT_ID/etc. Si no existe (dev, o sin
     ACCOUNT_ID), no hace nada -- se sigue con lo que haya dejado local_settings.py.
     """
-    account_id = os.environ.get('ACCOUNT_ID', '').strip()
-    if not account_id:
-        return
-    custom_file = os.path.join(
-        ACCOUNT_SCRIPTS_DIR.format(account_id), 'account_settings.py')
-    if not os.path.exists(custom_file):
-        print('No hay account_settings.py real de cuenta en', custom_file)
+    if not _REAL_ACCOUNT_SETTINGS_FILE:
+        print('No hay account_settings.py real de cuenta (ACCOUNT_ID sin setear, o no existe el archivo)')
         return
     import importlib.util
-    print('Cargando account_settings real de cuenta desde', custom_file)
-    spec = importlib.util.spec_from_file_location('real_account_settings', custom_file)
+    print('Cargando account_settings real de cuenta desde', _REAL_ACCOUNT_SETTINGS_FILE)
+    spec = importlib.util.spec_from_file_location(
+        'real_account_settings', _REAL_ACCOUNT_SETTINGS_FILE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     print('USERNAME activo tras account_settings real:', settings.config.get('USERNAME'))
