@@ -17,31 +17,7 @@ ACCOUNT_SCRIPTS_DIR = (
     'public-client-{}/scripts/'
 )
 
-
-def _real_account_settings_file():
-    """Ruta al account_settings.py real de la cuenta activa (ACCOUNT_ID por env), si
-    existe. En produccion cada contenedor es de UNA cuenta y lo trae en la carpeta de
-    scripts sincronizada -- es señal mas confiable de "esto es produccion real" que
-    LKF_ENV/secrets/current_env, que ahi nunca se setean (son para ./lkf workon en dev).
-    """
-    account_id = os.environ.get('ACCOUNT_ID', '').strip()
-    if not account_id:
-        return None
-    custom_file = os.path.join(
-        ACCOUNT_SCRIPTS_DIR.format(account_id), 'account_settings.py')
-    return custom_file if os.path.exists(custom_file) else None
-
-
-_REAL_ACCOUNT_SETTINGS_FILE = _real_account_settings_file()
-
-# Produccion real no setea LKF_ENV ni secrets/current_env (eso es cosa de ./lkf workon en
-# dev), asi que enviorment.py caeria a 'preprod' por default y con eso COUCH_ENV='dev' --
-# apuntando rondines/inbox/catalogos de una cuenta real al CouchDB de dev. Si detectamos
-# cuenta real y nadie seteo LKF_ENV a mano, forzamos 'prod' antes de que enviorment.py
-# resuelva ENV.
-if _REAL_ACCOUNT_SETTINGS_FILE and not os.environ.get('LKF_ENV', '').strip():
-    print('Cuenta real de produccion detectada, forzando LKF_ENV=prod')
-    os.environ['LKF_ENV'] = 'prod'
+_USE_LOCAL_SETTINGS = os.environ.get('USE_LOCAL_SETTINGS', '').strip().lower() in ('1', 'true', 'yes')
 
 
 def _find_secrets():
@@ -54,6 +30,7 @@ def _find_secrets():
     se busca hacia arriba hasta encontrar el directorio.
 
     LKF_SECRETS_PATH lo fuerza, para casos donde secrets/ vive fuera del arbol.
+    TODO CORREGIR ESTO...MONTAR CORRECTAMNTE
     """
     forzado = os.environ.get('LKF_SECRETS_PATH', '').strip()
     if forzado:
@@ -98,7 +75,6 @@ settings.config.update(config)
 
 from .enviorment import *
 from .enviorment import update_settings
-print('ENV DE enviorment', ENV)
 
 settings = update_settings(settings)
 # local_settings.py resuelve la cuenta activa via secrets/accounts.ini (./lkf workwith).
@@ -106,7 +82,6 @@ settings = update_settings(settings)
 # account_settings.py ya trae todo y secrets/accounts.ini ni siquiera esta ahi. El
 # docker-compose de desarrollo prende USE_LOCAL_SETTINGS=1 explicitamente.
 if os.environ.get('USE_LOCAL_SETTINGS', '').strip().lower() in ('1', 'true', 'yes'):
-    print("Loading local settings...")
     from .local_settings import *
 else:
     print("USE_LOCAL_SETTINGS no esta activo: se omite local_settings.py, se usa account_settings.py")
@@ -121,13 +96,17 @@ def _load_account_settings():
     para que pise USERNAME/APIKEY/ACCOUNT_ID/etc. Si no existe (dev, o sin
     ACCOUNT_ID), no hace nada -- se sigue con lo que haya dejado local_settings.py.
     """
-    if not _REAL_ACCOUNT_SETTINGS_FILE:
+    if _USE_LOCAL_SETTINGS:
         print('No hay account_settings.py real de cuenta (ACCOUNT_ID sin setear, o no existe el archivo)')
         return
     import importlib.util
-    print('Cargando account_settings real de cuenta desde', _REAL_ACCOUNT_SETTINGS_FILE)
-    spec = importlib.util.spec_from_file_location(
-        'real_account_settings', _REAL_ACCOUNT_SETTINGS_FILE)
+    print('Cargando account_settings real de cuenta desde user scripts')
+    account_id = os.environ.get('ACCOUNT_ID', '').strip()
+    if not account_id:
+        #TODO RAISE con elegacia
+        print('TODO, remplazar con un raise con elegacia, diciendo que no encontro el account_id')
+    custom_file = os.path.join(ACCOUNT_SCRIPTS_DIR.format(account_id), 'account_settings.py')
+    spec = importlib.util.spec_from_file_location('account_settings', custom_file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     print('USERNAME activo tras account_settings real:', settings.config.get('USERNAME'))
@@ -138,7 +117,6 @@ _load_account_settings()
 settings.ENV = ENV
 
 def get_lkf_settings():
-    print('>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<')
     return settings
 
 def get_settings():

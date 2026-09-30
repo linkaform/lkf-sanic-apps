@@ -86,11 +86,11 @@ contenedor (via el volumen de `secrets/`); basta relanzar la app, no hace falta 
 Si la rama de la cuenta todavia no existe, `workwith` la crea desde `origin/master` y te
 avisa que falta publicarla con `git push -u origin <rama>`.
 
-`LKF_ENV` y `LKF_SECRETS_PATH` ganan sobre los archivos, para un comando suelto sin mover
-el estado guardado:
+`LKF_SECRETS_PATH` gana sobre `secrets/`, para un comando suelto sin mover el estado
+guardado:
 
 ```bash
-LKF_ENV=prod python main.py
+LKF_SECRETS_PATH=/otra/ruta python main.py
 ```
 
 #### Formato de `secrets/accounts.ini`

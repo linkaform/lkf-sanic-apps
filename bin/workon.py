@@ -9,11 +9,6 @@ volver a lanzar la app.
 
     ./lkf workon <preprod|prod>
     ./lkf workon            # muestra el environment actual y los disponibles
-
-La variable de entorno LKF_ENV, si esta puesta, gana sobre el archivo. Sirve para un
-comando suelto contra otro environment sin mover el estado guardado:
-
-    LKF_ENV=prod python main.py
 """
 import os
 import sys
@@ -39,16 +34,11 @@ class Error(Exception):
 
 
 def env_actual():
-    """El environment activo. LKF_ENV gana sobre el archivo; el default es preprod."""
-    env = os.environ.get('LKF_ENV', '').strip()
-    if not env and os.path.exists(CURRENT_ENV):
+    """El environment activo. El default es preprod."""
+    env = ''
+    if os.path.exists(CURRENT_ENV):
         env = open(CURRENT_ENV, encoding='utf-8').read().strip()
     return env if env in ENVS else DEFAULT_ENV
-
-
-def env_es_override():
-    """True si el environment viene de LKF_ENV y no del archivo."""
-    return os.environ.get('LKF_ENV', '').strip() in ENVS
 
 
 def descripcion(env):
@@ -58,10 +48,6 @@ def descripcion(env):
 def mostrar_estado():
     actual = env_actual()
     print('environment   : %s' % descripcion(actual))
-    if env_es_override():
-        print('                (viene de LKF_ENV, el archivo dice "%s")'
-              % (open(CURRENT_ENV, encoding='utf-8').read().strip()
-                 if os.path.exists(CURRENT_ENV) else '(nada)'))
     print('\nenvironments disponibles:')
     for env in ENVS:
         marca = '*' if env == actual else ' '
@@ -99,11 +85,6 @@ def main(argv):
         print('Lo que escribas aqui lo ven los clientes. Vuelve con:')
         print('\n    ./lkf workon preprod\n')
         print('=' * 60)
-
-    if env_es_override():
-        print('\n  LKF_ENV=%s esta puesta en tu shell y gana sobre este archivo.'
-              % os.environ['LKF_ENV'].strip())
-        print('  Quitala con:  unset LKF_ENV')
     return 0
 
 

@@ -145,14 +145,14 @@ if __name__ == "__main__":
     # incluidos los scripts de cuenta cargados por importlib en loader.py -- con eso
     # prendido, cada sync de un script (lsyncd) reinicia el proceso solo a mitad de
     # trafico, repitiendo el login real contra la API y la reconexion a Mongo.
-    es_prod = settings.config.get('ENV') == 'prod'
-    print('>>>>>>>>>>> INICIANDO SERVIDOR SANIC <<<<<<<<<<<<')
+    _USE_LOCAL_SETTINGS = os.environ.get('USE_LOCAL_SETTINGS', '').strip().lower() in ('1', 'true', 'yes')
+    
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
         access_log=True,
-        debug=not es_prod,
-        auto_reload=not es_prod,
+        debug=_USE_LOCAL_SETTINGS, 
+        auto_reload=_USE_LOCAL_SETTINGS, 
         workers=int(os.getenv("WORKERS", 1))  # Múltiples workers para concurrencia
     )
 

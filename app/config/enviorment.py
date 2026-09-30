@@ -9,37 +9,36 @@ from .settings import SECRETS_PATH
 
 
 def _env_activo():
-    """El environment activo: LKF_ENV gana sobre secrets/current_env.
+    """El environment activo: lo dice secrets/current_env.
 
     El default es preprod a proposito: arrancar sin haber corrido `./lkf workon` no debe
     pegarle a la base de datos real de los clientes.
     """
-    env = os.environ.get('LKF_ENV', '').strip()
-    if not env:
-        current_env_file = os.path.join(SECRETS_PATH, 'current_env')
-        if os.path.exists(current_env_file):
-            env = open(current_env_file, encoding='utf-8').read().strip()
+    env = ''
+    current_env_file = os.path.join(SECRETS_PATH, 'current_env')
+    if os.path.exists(current_env_file):
+        env = open(current_env_file, encoding='utf-8').read().strip()
     return env if env in ('preprod', 'prod') else 'preprod'
 
 
 ENV = _env_activo()
 
 print('=================== LODING SETTINGS FOR ENVIOIRMENT: {} ==================='.format(ENV))
-mongo_hosts = config.get('mongo_hosts')
 PROTOCOL = config.get('PROTOCOL')
 HOST = config.get('HOST')
+mongo_hosts = config.get('mongo_hosts')
 COUCH_ENV = config.get('COUCH_ENV')
 
 if ENV == 'prod':
-    mongo_hosts = 'db2.linkaform.com:27017,db3.linkaform.com:27017,db4.linkaform.com:27017'
-    HOST = 'app.linkaform.com'
     PROTOCOL = 'https'
+    HOST = 'app.linkaform.com'
+    mongo_hosts = 'db2.linkaform.com:27017,db3.linkaform.com:27017,db4.linkaform.com:27017'
     COUCH_ENV = 'prod'
 
 elif ENV == 'preprod':
-    mongo_hosts = 'dbs2.lkf.cloud:27918'
-    HOST = 'preprod.linkaform.com'
     PROTOCOL = 'https'
+    HOST = 'preprod.linkaform.com'
+    mongo_hosts = 'dbs2.lkf.cloud:27918'
     COUCH_ENV = 'dev'
 
 MAX_POOL_SIZE = 1000
