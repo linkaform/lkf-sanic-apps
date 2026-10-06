@@ -42,9 +42,35 @@ async def get_get_catalog_ubicaciones_formatted(request: Request):
     return json({"data": response}, status=200)
 
 
+@location_bp.post("/get_catalog_ubicaciones_formatted")
+async def post_get_catalog_ubicaciones_formatted(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_catalog_ubicaciones_formatted(
+        locations=payload.get("locations", []),
+        dynamic_filters=payload.get("dynamic_filters", []),
+        limit=payload.get("limit", 25),
+        skip=payload.get("offset", 0),
+        search=payload.get("search", ""),
+        search_fields=payload.get("search_fields", []),
+        ubicacion=payload.get("ubicacion", ""),
+    )
+    return json({"data": response}, status=200)
+
+
+@location_bp.get("/filters_ubicaciones")
+async def get_filters_ubicaciones(request: Request):
+    return json({"data": service.get_filters_ubicaciones()}, status=200)
+
+
 @location_bp.get("/get_ubicacion_by_id")
 async def get_get_ubicacion_by_id(request: Request):
     response = service.get_ubicacion_by_id(record_id=request.args.get("record_id", ""))
+    return json({"data": response}, status=200)
+
+
+@location_bp.get("/get_empleados_by_ubicacion")
+async def get_get_empleados_by_ubicacion(request: Request):
+    response = service.get_empleados_by_ubicacion(ubicacion=request.args.get("ubicacion", ""))
     return json({"data": response}, status=200)
 
 

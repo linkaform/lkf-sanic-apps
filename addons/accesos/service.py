@@ -3524,6 +3524,7 @@ class Accesos(OcrMixin, AccesosModel):
             {"$project": {
                 "folio": 1,
                 "area": f"$answers.{self.Location.f['area']}",
+                "ubicacion": f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
                 "geolocation": f"$answers.{self.f['geolocalizacion_area_ubicacion']}",
                 "image": f"$answers.{self.f['foto_area']}",
                 "tag_id": f"$answers.{self.f['area_tag_id']}",
@@ -3666,6 +3667,32 @@ class Accesos(OcrMixin, AccesosModel):
                 "fecha_inicio": f"$answers.{self.f['fecha_inicio_rondin']}",
                 "fecha_fin": f"$answers.{self.f['fecha_hora_fin']}",
             }},
+            # La bitácora solo guarda copia del catálogo del recorrido (nombre y
+            # ubicación), no su record_id -- se resuelve contra la configuración
+            # igual que en get_bitacora.
+            {"$lookup": {
+                "from": self.cr.name,
+                "let": {"nombre_rec": "$nombre_recorrido", "ubicacion_rec": "$ubicacion"},
+                "pipeline": [
+                    {"$match": {
+                        "$expr": {
+                            "$and": [
+                                {"$eq": ["$form_id", self.CONFIGURACION_DE_RECORRIDOS_FORM]},
+                                {"$eq": [f"$answers.{self.rondin_keys['nombre_rondin']}", "$$nombre_rec"]},
+                                {"$eq": [f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}", "$$ubicacion_rec"]},
+                                {"$not": {"$ifNull": ["$deleted_at", False]}}
+                            ]
+                        }
+                    }},
+                    {"$project": {"_id": 1}},
+                    {"$limit": 1}
+                ],
+                "as": "recorrido_config"
+            }},
+            {"$addFields": {
+                "recorrido_id": {"$toString": {"$arrayElemAt": ["$recorrido_config._id", 0]}},
+            }},
+            {"$project": {"recorrido_config": 0}},
         ]
         response = self.format_cr(self.cr.aggregate(query))
 
@@ -3673,6 +3700,7 @@ class Accesos(OcrMixin, AccesosModel):
         for r in response:
             records.append({
                 "record_id": str(r.get("_id", "")),
+                "recorrido_id": r.get("recorrido_id") or "",
                 "folio": r.get("folio", ""),
                 "nombre_recorrido": r.get("nombre_recorrido", ""),
                 "ubicacion": r.get("ubicacion", ""),
@@ -3723,7 +3751,13 @@ class Accesos(OcrMixin, AccesosModel):
             marcadas = [r for r in areas_de_ubicacion if 'rondines' in (r.get('usos') or [])]
             response.extend(marcadas if marcadas else areas_de_ubicacion)
 
-        response = sorted(response, key=lambda r: r.get('area', ''))
+        # Más recientes primero: el folio (ej. "9232-10") es consecutivo por creación.
+        def folio_num(r):
+            try:
+                return int(str(r.get('folio', '')).split('-')[0])
+            except ValueError:
+                return -1
+        response = sorted(response, key=folio_num, reverse=True)
         total_records = len(response)
         total_pages = (total_records + limit - 1) // limit if limit else 1
         current_page = (skip // limit) + 1 if limit else 1
@@ -3783,6 +3817,9 @@ class Accesos(OcrMixin, AccesosModel):
                 "tipo_de_area": f"$answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}",
                 "area_state": f"$answers.{self.Location.f['area_state']}",
                 "area_status": f"$answers.{self.Location.f['area_status']}",
+                "multiple_ubicacion": f"$answers.{self.f['multiple_ubicacion']}",
+                "nombre_direccion": f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f['nombre_direccion']}",
+                "usos": f"$answers.{self.Location.f['utilizar_area_en']}",
             }}
         ]
         r = self.format_cr(self.cr.aggregate(query), get_one=True)
@@ -3804,6 +3841,9 @@ class Accesos(OcrMixin, AccesosModel):
             "tipo_de_area": r.get("tipo_de_area", ""),
             "area_state": r.get("area_state", ""),
             "area_status": r.get("area_status", ""),
+            "multiple_ubicacion": r.get("multiple_ubicacion") or "no",
+            "direccion": r.get("nombre_direccion", ""),
+            "usos": r.get("usos") or [],
         }
 
     def update_area_estado(self, record_id, estado):
@@ -3826,6 +3866,53 @@ class Accesos(OcrMixin, AccesosModel):
         record_id.
         """
         answers = {self.Location.f['area_status']: disponibilidad}
+        return self.lkf_api.patch_multi_record(
+            answers=answers,
+            form_id=self.Location.AREAS_DE_LAS_UBICACIONES,
+            record_id=[record_id],
+        )
+
+    def update_full_area(self, record_id, data):
+        """
+        Edita un área por su record_id (modal de edición del front). Solo se
+        parchan las llaves que vienen en data; usa los mismos campos que
+        create_new_area. Las validaciones (duplicados, QR) las hace la ruta.
+
+        data admite: nombre, ubicacion, direccion (nombre_direccion del catálogo
+        de contacto), tipo_de_area, area_status, area_state, qr_area, foto_area,
+        geolocalizacion {latitude, longitude}, multiple_ubicacion ("si"/"no") y
+        usos (valores del checkbox "Utilizar Area en:").
+        qr_area "" y foto_area [] los limpian.
+        """
+        answers = {}
+        if 'nombre' in data:
+            answers[self.mf['nombre_area']] = data['nombre']
+        if 'ubicacion' in data:
+            answers[self.Location.UBICACIONES_CAT_OBJ_ID] = {
+                self.mf['nombre_ubicacion_salida']: data['ubicacion'],
+            }
+        if data.get('direccion'):
+            # nombre_direccion del catálogo de contacto (get_catalog_direcciones).
+            answers[self.CONTACTO_CAT_OBJ_ID] = self.get_area_contact_details(data['direccion'])
+        if 'tipo_de_area' in data:
+            answers[self.Location.TIPO_AREA_OBJ_ID] = {self.f['tipo_de_area']: data['tipo_de_area']}
+        if 'area_status' in data:
+            answers[self.f['estatus_area']] = data['area_status']
+        if 'area_state' in data:
+            answers[self.f['estatus_config_area']] = data['area_state']
+        if 'qr_area' in data:
+            answers[self.f['area_tag_id']] = data['qr_area']
+        if 'foto_area' in data:
+            answers[self.f['area_foto']] = data['foto_area']
+        if 'geolocalizacion' in data:
+            answers[self.f['geolocalizacion_area_ubicacion']] = data['geolocalizacion'] or {}
+        if 'multiple_ubicacion' in data:
+            answers[self.f['multiple_ubicacion']] = data['multiple_ubicacion']
+        if 'usos' in data:
+            answers[self.Location.f['utilizar_area_en']] = data['usos'] or []
+
+        if not answers:
+            return {'status_code': 400, 'json': {'error': 'No hay cambios para guardar.'}}
         return self.lkf_api.patch_multi_record(
             answers=answers,
             form_id=self.Location.AREAS_DE_LAS_UBICACIONES,
@@ -6788,6 +6875,44 @@ class Accesos(OcrMixin, AccesosModel):
             result['response'] = response
         return result
 
+    def get_catalog_direcciones(self):
+        """
+        Direcciones del catálogo "contacto" (CONTACTO_CAT_ID) para el selector
+        de dirección de los modales de área. Todos los tipos (Direccion,
+        Persona, Empresa) que estén activos -- el front muestra el tipo para
+        que el usuario elija; el nombre_direccion es el que luego resuelve
+        get_area_contact_details.
+        """
+        tipo_contacto = '663a7f67e48382c5b1230908'
+        estatus_contacto = '663a7f67e48382c5b1230909'
+        estado = '663a7dd6e48382c5b12308ff'
+        mango_query = {
+            "selector": {
+                f"answers.{self.f['nombre_direccion']}": {"$gt": None},
+            },
+            "fields": ["_id", "answers"],
+            "limit": 1000,
+        }
+        res = self.lkf_api.search_catalog(self.CONTACTO_CAT_ID, mango_query) or []
+        direcciones = []
+        for r in res:
+            if (r.get(estatus_contacto) or 'Activo') != 'Activo':
+                continue
+            geo = r.get(self.f['geolocalizacion_area']) or {}
+            direcciones.append({
+                "nombre_direccion": r.get(self.f['nombre_direccion'], ''),
+                "tipo": r.get(tipo_contacto, ''),
+                "direccion": r.get(self.f['direccion_area'], ''),
+                "ciudad": r.get(self.f['ciudad_area'], ''),
+                "estado": r.get(estado, ''),
+                "pais": r.get(self.f['pais_area'], ''),
+                "geolocalizacion": {
+                    "latitude": geo.get('latitude'),
+                    "longitude": geo.get('longitude'),
+                } if isinstance(geo, dict) and geo.get('latitude') is not None else None,
+            })
+        return sorted(direcciones, key=lambda d: d['nombre_direccion'])
+
     def get_area_contact_details(self, direccion):
         selector = {}
         selector.update({
@@ -6807,7 +6932,9 @@ class Accesos(OcrMixin, AccesosModel):
             "fields": fields,
             "limit": 1,
         }
-        res = self.lkf_api.search_catalog(131890, mango_query)
+        # Catálogo "contacto" de la cuenta (121575 en la 10); antes estaba fijo
+        # 131890, que en esta cuenta no existe y dejaba el contacto vacío.
+        res = self.lkf_api.search_catalog(self.CONTACTO_CAT_ID, mango_query)
         res = self.unlist(res)
         if res:
             res.pop('_id', None)
@@ -6904,11 +7031,15 @@ class Accesos(OcrMixin, AccesosModel):
             response = self.net.patch_forms_answers(metadata)
             return response
 
-    def create_new_area(self, data, geolocation_area=None):
+    def create_new_area(self, data, geolocation_area=None, force_id=None):
+        """Migrado de create_new_area en lkf_addons/addons/accesos/app.py.
+
+        force_id: si se proporciona, se usa como _id del registro nuevo en Mongo.
+        """
         exists = self.exists_area(data.get('ubicacion', {}), data.get('nombre_nueva_area', ''))
         if exists:
-            return {'status_comment': 'El area ya existe. Solo se actualizo la informacion rellenada.'}
-        contact_details = self.get_area_contact_details(data.get('ubicacion', {}))
+            return {'status_code': 208, 'type': 'success', 'msg': 'El area ya existe. Solo se actualizo la informacion rellenada.', 'data': {}}
+        contact_details = self.get_area_contact_details(data.get('direccion') or data.get('ubicacion', {}))
         answers = {
             self.mf['nombre_area']: data.get('nombre_nueva_area'),
             self.f['area_foto']: data.get('foto_area'),
@@ -6924,19 +7055,27 @@ class Accesos(OcrMixin, AccesosModel):
             self.f['estatus_config_area']: 'activa',
             self.f['estatus_area']: 'disponible',
         }
+        if data.get('multiple_ubicacion') in ('si', 'no'):
+            answers[self.f['multiple_ubicacion']] = data['multiple_ubicacion']
+        if data.get('usos'):
+            answers[self.Location.f['utilizar_area_en']] = data['usos']
         response = self.create_register(
             module='Accesos',
             process='Creacion de una area',
-            action='rondines',
+            action='config_area',
             file='accesos/app.py',
             form_id=self.Location.AREAS_DE_LAS_UBICACIONES,
             answers=answers,
             geolocation_area=geolocation_area,
+            force_id=force_id,
         )
         return response
 
-    def create_register(self, module, process, action, file, form_id, answers, geolocation_area=None):
-        """Crea un registro en Linkaform con los metadatos y respuestas proporcionadas."""
+    def create_register(self, module, process, action, file, form_id, answers, geolocation_area=None, force_id=None):
+        """Crea un registro en Linkaform con los metadatos y respuestas proporcionadas.
+
+        force_id: si se proporciona, se usa como _id del registro nuevo en Mongo.
+        """
         metadata = self.lkf_api.get_metadata(form_id=form_id)
         if geolocation_area:
             if isinstance(geolocation_area, dict):
@@ -6955,6 +7094,8 @@ class Accesos(OcrMixin, AccesosModel):
                 }
             },
         })
+        if force_id:
+            metadata.update({'id': force_id})
         metadata.update({'answers':answers})
         response = self.lkf_api.post_forms_answers(metadata)
         return response
@@ -12008,35 +12149,197 @@ class Accesos(OcrMixin, AccesosModel):
                     employee_ids.append(x['user_id'])
         return employees
 
-    def update_article_concessioned(self, data_articles, folio):
-        answers = {}
-        for key, value in data_articles.items():
-            if  key == 'ubicacion_concesion' or key == 'area_concesion':
-                if data_articles['ubicacion_concesion'] and not data_articles['area_concesion']:
-                    answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['ubicacion']:data_articles['ubicacion_concesion']}
-                elif data_articles['area_concesion'] and not data_articles['ubicacion_concesion']:
-                    answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['nombre_area_salida']:data_articles['area_concesion']}
-                elif data_articles['area_concesion'] and data_articles['ubicacion_concesion']: 
-                    answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['ubicacion']:data_articles['ubicacion_concesion'],
-                    self.mf['nombre_area_salida']:data_articles['area_concesion']}
-            elif  key == 'persona_nombre_concesion':
-                answers[self.cons_f['persona_catalog_concesion']] = { self.mf['nombre_guardia_apoyo'] : value}
-            elif  key == 'caseta_concesion':
-                answers[self.cons_f['area_catalog_concesion']] = { self.mf['nombre_area_salida']: value}
-            elif  key == 'area_concesion':
-                dic_prev = answers.get(self.cons_f['equipo_catalog_concesion'],{})
-                dic_prev[self.cons_f['area_concesion']] = value 
-                answers[self.cons_f['equipo_catalog_concesion']] = dic_prev
-            elif  key == 'equipo_concesion':
-                dic_prev = answers.get(self.cons_f['equipo_catalog_concesion'],{})
-                dic_prev[self.cons_f['equipo_concesion']] = value 
-                answers[self.cons_f['equipo_catalog_concesion']] = dic_prev
-            else:
-                answers.update({f"{self.cons_f[key]}":value})
-        if answers or folio:
-            return self.lkf_api.patch_multi_record( answers = answers, form_id=self.CONCESSIONED_ARTICULOS, folios=[folio])
+    def get_cantidad_pendiente(self, record, move, status):
+        # Migrado de lkf_addons/addons/accesos/app.py (get_cantidad_pendiente).
+        devluciones = record.get('grupo_equipos_devolucion',[])
+        moves_by_ids = {e['id_movimiento']:e for e in record['grupo_equipos']}
+        totals = {}
+        move_id = move['id_movimiento']
+        for dev in devluciones:
+            t_move_id = dev['id_movimiento_devolucion']
+            cant = dev['cantidad_devolucion']
+            totals[t_move_id] = totals.get(t_move_id, 0) + cant
+
+        cant_concesion = moves_by_ids[move_id]['cantidad_equipo_concesion']
+        nombre_equipo = moves_by_ids[move_id]['nombre_equipo']
+
+        if status == 'total':
+            esta_devolucion = cant_concesion - totals.get(move_id,0)
         else:
-            self.LKFException('No se mandarón parametros para actualizar')
+            esta_devolucion = move['cantidad_devuelta']
+
+        pendiente = cant_concesion - esta_devolucion - totals.get(move_id,0)
+        if pendiente < 0:
+            msg = f"Se concesionaron {cant_concesion} del equipo {nombre_equipo}. "
+            msg += f"Estas tratando de regresar: {esta_devolucion}. "
+            msg += f"Ya habias devuelto: {totals.get(move_id,0)}. "
+            msg += f"Esto te pondria en una devoluicion negativa de: {pendiente}. "
+            msg += "Revisa bien la cantidad colega."
+            self.LKFException({'msg':msg,"title":'Advertencia'})
+
+        return pendiente
+
+    def update_article_concessioned(self, data, record_id):
+        """
+            Funcion que devuelve o actualiza estado de los articulos concesionados
+            Si recive el status 'return', va a comparar con los datos que se estan enviando.
+            Y despues de consultar el folio, va a poner todos los equipos como devueltos, con la condicion general.
+            Donde status puedes ser "total" o "parcial"
+            Args:
+                record_id "str": _id del registro
+                data "json": json con la informacin de la devolucion
+                data.status (str) :
+                data.state (str) : "complete"|"lost"|"damage" es el estado del equipo global. Sirve en caso de que sea
+                data.quien_entrega (str) : Nombre de quien entrega,
+                data.identificacion_entrega (list) : lista de documentos de indtificaiocn tipo archivo
+                data.evidencia(list) : lista de fotos de envidencia de entrega
+                ** opcional
+                data.company (str) : Nombre Empresa en caso de no se ermpleado
+                data.comentarios (str) : Comentario de la entrega
+            return:
+                folio: folio acutalizado
+                update_date:
+                error:
+        """
+        answers = {}
+        if not record_id:
+            self.LKFException("Se requiere el record_id de la concesion a devolver.")
+        record = self.get_record_by_id(record_id)
+        if not record:
+            self.LKFException(f"No se encontro la concesion con id: {record_id}")
+
+        rec = self.format_cr([record,], get_one=True, ids_label_dct=self.cons_f)
+        fecha = self.today_str(tz_name=self.user.get('timezone'),date_format='datetime')
+        status = data.get('status')
+        forzar_dev = data.get('forzar_dev', False)
+        if rec['status_concesion'] == "cancelado":
+            self.LKFException(f"No es posible devolver o modifcar una concesion  {rec['folio']}")
+        if rec['status_concesion'] == "devuelto":
+            self.LKFException(f"La Conecsion con folio: {rec['folio']} ya se encuentra devuelta.")
+        if not status:
+            self.LKFException(f"Status de devolucion de proporcionada.")
+
+        # Inicializamos lista de devlucion de equipos
+        record['answers'][self.cons_f['grupo_equipos_devolucion']] = record['answers'].get(self.cons_f['grupo_equipos_devolucion'],[])
+        pendiente_by_move_id = {}
+
+        if status == "total":
+            if not data.get('state'):
+                self.LKFException(f"Para poder realizar una devolucion total hay que indicar el Estado de la devolucion.")
+            record['answers'][self.cons_f["fecha_cierre_concesion"]] = fecha
+
+
+            for eq in record['answers'].get(self.cons_f['grupo_equipos'],[]):
+                dev = {}
+                eq[self.cons_f['status_concesion_equipo']] = "devuelto"
+                eq[self.cons_f['cantidad_equipo_devuelto']]  = eq[self.cons_f['cantidad_equipo_concesion']]
+                eq[self.cons_f['cantidad_equipo_pendiente']]  = 0
+                eq[self.cons_f['se_forzo_devolucion']] = "si" if forzar_dev else "no"
+
+                #devolucion de equipos
+                dev[self.cons_f['fecha_devolucion_concesion']]  = fecha
+                dev[self.cons_f['id_movimiento_devolucion']]  = eq[self.cons_f['id_movimiento']]
+                dev[self.cons_f['cantidad_devolucion']]  = self.get_cantidad_pendiente(rec, self.format_cr([eq],get_one=True, ids_label_dct=self.cons_f), status)
+                dev[self.cons_f['estatus_equipo']]  = self.status_equipo_dict[data.get('state')]
+                dev[self.cons_f['quien_entrega']] =  data.get('quien_entrega')
+                dev[self.cons_f['quien_entrega_company']] =  data.get('quien_entrega_company', data.get('company'))
+                dev[self.cons_f['entregado_por']] =  data.get('entregado_por')
+                # En devolucion total la evidencia viene en la raiz del request, no en cada equipo
+                dev[self.cons_f['evidencia_entrega']] =  data.get('evidencia',  data.get('evidencia_entrega'))
+                dev[self.cons_f['comentario_entrega']] = data.get('comentario_entrega', data.get('comenario_entrega', data.get('comentarios')))
+                dev[self.cons_f['identificacion_entrega']] = data.get('identificacion_entrega')
+                record['answers'][self.cons_f['grupo_equipos_devolucion']].append(dev)
+        else:
+            if not data.get('equipos'):
+                self.LKFException(f"No se detecto información de equipos a devolver. Devolucion vacia!!!")
+
+            moves_by_ids = {e['id_movimiento']:e for e in rec['grupo_equipos'] if e.get('id_movimiento')}
+            return_by_move_id = {}
+            for eq in data['equipos']:
+                dev = {}
+                if not eq['id_movimiento'] in list(moves_by_ids.keys()):
+                    self.LKFException(f"ID de Movimiento {eq['id_movimiento']}, no encontrado o previamente devuelto")
+                cantidad_pendiente = self.get_cantidad_pendiente(rec, eq, status)
+                if cantidad_pendiente == 0:
+                    #Ya se devolvieron todos los productos, marcar como devuelto en el grupo de equipos
+                    for gq in record['answers'].get(self.cons_f['grupo_equipos'],[]):
+                        if gq[self.cons_f['id_movimiento']] == eq['id_movimiento']:
+                            #busca el registro del move_id en cuestion.
+                            gq[self.cons_f['status_concesion_equipo']] = "devuelto"
+                            gq[self.cons_f['cantidad_equipo_devuelto']]  = gq[self.cons_f['cantidad_equipo_concesion']]
+                            gq[self.cons_f['cantidad_equipo_pendiente']]  = 0
+                            gq[self.cons_f['se_forzo_devolucion']] = "si" if forzar_dev else "no"
+
+                pendiente_by_move_id[eq['id_movimiento']] = pendiente_by_move_id.get(eq['id_movimiento'],0)
+                cantidad_devuelta = eq['cantidad_devuelta']
+                pendiente_by_move_id[eq['id_movimiento']] += cantidad_pendiente
+                if not cantidad_devuelta:
+                    self.LKFException(f"Debes de regresar al menos 1 porducto del equipo: {eq['id_movimiento']}. ")
+                dev[self.cons_f['fecha_devolucion_concesion']]  = fecha
+                dev[self.cons_f['id_movimiento_devolucion']]  = eq['id_movimiento']
+                dev[self.cons_f['evidencia_entrega']] =  eq.get('evidencia',  eq.get('evidencia_entrega'))
+                dev[self.cons_f['comentario_entrega']] = eq.get('comentario_entrega') or eq.get('comenario_entrega') or data.get('comentario_entrega', data.get('comentarios'))
+                dev[self.cons_f['cantidad_devolucion']]  = cantidad_devuelta
+                dev[self.cons_f['estatus_equipo']]  = self.status_equipo_dict[eq['state']]
+                dev[self.cons_f['quien_entrega']] =  data.get('quien_entrega')
+                dev[self.cons_f['quien_entrega_company']] =  data.get('quien_entrega_company', data.get('company'))
+                dev[self.cons_f['entregado_por']] =  data.get('entregado_por')
+                dev[self.cons_f['identificacion_entrega']] = data.get('identificacion_entrega')
+                record['answers'][self.cons_f['grupo_equipos_devolucion']].append(dev)
+
+        # # status "se debe de calular que estatus tendra, ya sea abierta, parcial o total"
+        status_concesion = 'abierto'
+        # print('pendiente_by_move_id=',pendiente_by_move_id)
+        for x in record['answers'].get(self.cons_f['grupo_equipos'],[]):
+            move_id = x[self.cons_f['id_movimiento']]
+            pendiente = pendiente_by_move_id.get(move_id)
+            if pendiente:
+                x[self.cons_f['cantidad_equipo_devuelto']]  = x[self.cons_f['cantidad_equipo_concesion']] - pendiente
+                x[self.cons_f['cantidad_equipo_pendiente']]  = pendiente
+
+        for x in record['answers'].get(self.cons_f['grupo_equipos'],[]):
+            if x[self.cons_f['status_concesion_equipo']] != 'devuelto':
+                status_concesion = 'abierto'
+                break
+            status_concesion = 'devuelto'
+        if status_concesion == 'abierto':
+            if record['answers'].get(self.cons_f['grupo_equipos_devolucion']) and \
+                len(record['answers'][self.cons_f['grupo_equipos_devolucion']]) > 0:
+                status_concesion = 'parcial'
+
+        record['answers'][self.cons_f["status_concesion"]] = status_concesion
+        return self.lkf_api.patch_record(record)
+
+        # for key, value in data_articles.items():
+        #     if  key == 'ubicacion_concesion' or key == 'area_concesion':
+        #         if data_articles['ubicacion_concesion'] and not data_articles['area_concesion']:
+        #             answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['ubicacion']:data_articles['ubicacion_concesion']}
+        #         elif data_articles['area_concesion'] and not data_articles['ubicacion_concesion']:
+        #             answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['nombre_area_salida']:data_articles['area_concesion']}
+        #         elif data_articles['area_concesion'] and data_articles['ubicacion_concesion']:
+        #             answers[self.cons_f['ubicacion_catalog_concesion']] = {self.mf['ubicacion']:data_articles['ubicacion_concesion'],
+        #             self.mf['nombre_area_salida']:data_articles['area_concesion']}
+        #     elif  key == 'persona_nombre_concesion':
+        #         answers[self.cons_f['persona_catalog_concesion']] = { self.mf['nombre_guardia_apoyo'] : value}
+        #     elif  key == 'caseta_concesion':
+        #         answers[self.cons_f['area_catalog_concesion']] = { self.mf['nombre_area_salida']: value}
+        #     elif  key == 'area_concesion':
+        #         dic_prev = answers.get(self.cons_f['equipo_catalog_concesion'],{})
+        #         dic_prev[self.cons_f['area_concesion']] = value
+        #         answers[self.cons_f['equipo_catalog_concesion']] = dic_prev
+        #     elif  key == 'equipo_concesion':
+        #         dic_prev = answers.get(self.cons_f['equipo_catalog_concesion'],{})
+        #         dic_prev[self.cons_f['equipo_concesion']] = value
+        #         answers[self.cons_f['equipo_catalog_concesion']] = dic_prev
+        #     elif  key == 'evidencia':
+        #          answers[self.cons_f['evidencia']] = value
+        #     else:
+        #         answers.update({f"{self.cons_f[key]}":value})
+        # if answers or folio:
+        #     return self.lkf_api.patch_multi_record( answers = answers, form_id=self.CONCESSIONED_ARTICULOS, folios=[folio])
+        # else:
+        #     self.LKFException('No se mandarón parametros para actualizar')
+
 
     def update_article_lost(self, data_articles, folio):
         answers = {}
