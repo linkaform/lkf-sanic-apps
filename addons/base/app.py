@@ -74,7 +74,7 @@ class Base(base.LKF_Base):
         En `lkm` están todas las funciones generales de módulos).
         '''
 
-        self.CATALOGO_FORMAS_CAT = self.lkm.catalog_id('catalogo_de_formas')
+        self.CATALOGO_FORMAS_CAT = self.lkm.catalog_id('catalogo_de_items')
         self.CATALOGO_FORMAS_CAT_ID = self.CATALOGO_FORMAS_CAT.get('id')
         self.CATALOGO_FORMAS_CAT_OBJ_ID = self.CATALOGO_FORMAS_CAT.get('obj_id')
 
