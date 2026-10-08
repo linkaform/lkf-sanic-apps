@@ -733,10 +733,13 @@ async def get_get_articles(request: Request):
 @accesos_bp.post("/update_article")
 async def post_update_article(request: Request):
     payload = _ocr_payload(request)
-    folio = payload.get("folio", [])
-    if not isinstance(folio, list):
-        folio = [folio] if folio else []
-    records = service.update_article_concessioned(payload.get("data_article_update", {}), folio)
+    # update_article_concessioned trabaja con el _id de un solo registro; el
+    # front lo manda como record_id y el script viejo lo leia igual.
+    record_id = payload.get("record_id") or payload.get("folio")
+    if isinstance(record_id, list):
+        record_id = record_id[0] if record_id else None
+    data = payload.get("data_article_update") or payload
+    records = service.update_article_concessioned(data, record_id)
     return json({"data": records}, status=200)
 
 @accesos_bp.get("/delete_article")
@@ -1408,9 +1411,18 @@ async def post_update_area_hook(request: Request):
             data['area'] = qr_data.get('area', '')
 
     nueva_area = data.get('nombre_nueva_area') or None
+    if nueva_area and service.exists_area(data.get('ubicacion', ''), nueva_area):
+        # El usuario pudo elegir "area nueva" con un nombre que ya existe: se trata
+        # como area seleccionada (se valida y se actualiza) en vez de crearla.
+        data['area'] = nueva_area
+        nueva_area = None
 
     if nueva_area:
-        service.create_new_area(data, geolocation_area=geolocation_area)
+        res_create = service.create_new_area(data, geolocation_area=geolocation_area)
+        if isinstance(res_create, dict) and res_create.get('status_code') == 400:
+            return json({"exception": res_create.get('json')}, status=400)
+        if isinstance(res_create, dict) and res_create.get('status_code') == 208:
+            status_comment = res_create.get('msg', '')
         data['area'] = data.get('nombre_nueva_area')
     else:
         search_area = None
@@ -1440,7 +1452,10 @@ async def post_update_area_hook(request: Request):
     if exists_qr and is_a_different_area:
         return json({"exception": {"title": "QR ya asignado", "msg": "Ya se ha registrado este QR en otra area."}}, status=400)
     elif data.get('area'):
-        service.update_area_config(data)
+        result = service.update_area_config(data) or {}
+        if result.get('statuss') == 'error':
+            statuss = 'error'
+            status_comment = result.get('status_comment', status_comment)
 
     answers[service.f['status_details']] = statuss
     answers[service.f['status_details_message']] = status_comment
@@ -1931,6 +1946,10 @@ async def get_filters_in_and_out(request: Request):
 async def get_filters_pases(request: Request):
     return json({"data": service.get_filters_pases()}, status=200)
 
+@accesos_bp.get("/catalog_direcciones")
+async def get_catalog_direcciones(request: Request):
+    return json({"data": service.get_catalog_direcciones()}, status=200)
+
 @accesos_bp.get("/filters_areas")
 async def get_filters_areas(request: Request):
     return json({"data": service.get_filters_areas()}, status=200)
@@ -1953,9 +1972,104 @@ async def post_create_area(request: Request):
         'tipo_de_area': payload.get('tipo_de_area', ''),
         'foto_area': payload.get('foto_area', []),
         'qr_area': payload.get('qr_area', ''),
+        # Select de la forma con valores "si"/"no"; el front manda "no" si el switch esta apagado
+        'multiple_ubicacion': 'si' if payload.get('multiple_ubicacion') == 'si' else 'no',
+        # nombre_direccion del catálogo de contacto; si no viene se usa la de la ubicación
+        'direccion': payload.get('direccion', ''),
+        # Checkbox "Utilizar Area en:" (pases, incidencias, rondines, ...)
+        'usos': payload.get('usos') or [],
     }
+    # Mismas validaciones que el hook update_area.py de addons
+    ubicacion, nombre, qr = data['ubicacion'], data['nombre_nueva_area'], data['qr_area']
+    if not ubicacion or not nombre:
+        return json({"exception": {"title": "Datos incompletos", "msg": "La ubicación y el nombre del área son obligatorios."}}, status=400)
+    if service.exists_area(ubicacion, nombre):
+        return json({"exception": {"title": "Área duplicada", "msg": "Ya existe un área con ese nombre en esta ubicación."}}, status=400)
+    if qr:
+        qr_data = service.get_area_ubicacion_record(tag_id_area=qr)
+        if qr_data and service.unlist(qr_data.get('tag_id_area')) == qr:
+            area_qr = service.unlist(qr_data.get('area', ''))
+            ubicacion_qr = service.unlist(qr_data.get('ubicacion', ''))
+            msg = f"Ya se ha registrado este QR en el área {area_qr} ({ubicacion_qr})."
+            return json({"exception": {"title": "QR ya asignado", "msg": msg}}, status=400)
+
     response = service.create_new_area(data, geolocation_area=payload.get('geolocalizacion'))
-    return json({"data": response}, status=200)
+    if isinstance(response, dict) and response.get('status_code') == 208:
+        return json({"exception": {"title": "Área duplicada", "msg": "Ya existe un área con ese nombre en esta ubicación."}}, status=400)
+    if not isinstance(response, dict) or response.get('status_code') not in (200, 201, 202):
+        # LKF regresa los errores de campo como {field_id: {label, msg: [...]}}
+        errores = (response or {}).get('json') if isinstance(response, dict) else None
+        if isinstance(errores, dict):
+            textos = [f"{e.get('label', '')}: {', '.join(e.get('msg', []) if isinstance(e.get('msg'), list) else [str(e.get('msg', ''))])}"
+                      for e in errores.values() if isinstance(e, dict)]
+            msg = '; '.join(t for t in textos if t.strip(': ')) or str(errores)
+        else:
+            msg = str(errores or response)
+        return json({"exception": {"title": "Error al crear el área", "msg": msg}}, status=400)
+    # No se regresa la respuesta cruda de LKF: su llave "json" hace que errorMsj
+    # del front la tome como errores de campo aunque el registro sí se creó.
+    creado = response.get('json') or {}
+    return json({"data": {
+        "status": "ok",
+        "msg": "Área creada correctamente",
+        "record_id": creado.get('id', ''),
+        "folio": creado.get('folio', ''),
+    }}, status=200)
+
+@accesos_bp.post("/update_full_area")
+async def post_update_full_area(request: Request):
+    # Edición de todos los campos de un área desde el front. Solo se parchan las
+    # llaves que manda el front; mismas validaciones que /create_area, sin
+    # contar al área que se está editando.
+    payload = _ocr_payload(request)
+    record_id = payload.get('record_id', '')
+    if not record_id:
+        return json({"exception": {"title": "Datos incompletos", "msg": "Falta el record_id del área."}}, status=400)
+    actual = service.get_area_by_id(record_id)
+    if not actual:
+        return json({"exception": {"title": "Área no encontrada", "msg": "No se encontró el área a editar."}}, status=400)
+
+    campos = ('nombre', 'ubicacion', 'direccion', 'tipo_de_area', 'area_status', 'area_state',
+              'qr_area', 'foto_area', 'geolocalizacion', 'multiple_ubicacion', 'usos')
+    data = {k: payload[k] for k in campos if k in payload}
+    for k in ('nombre', 'ubicacion', 'qr_area'):
+        if isinstance(data.get(k), str):
+            data[k] = data[k].strip()
+    if 'nombre' in data and not data['nombre']:
+        return json({"exception": {"title": "Datos incompletos", "msg": "El nombre del área es obligatorio."}}, status=400)
+    if 'ubicacion' in data and not data['ubicacion']:
+        return json({"exception": {"title": "Datos incompletos", "msg": "La ubicación del área es obligatoria."}}, status=400)
+    if 'tipo_de_area' in data and not data['tipo_de_area']:
+        return json({"exception": {"title": "Datos incompletos", "msg": "El tipo de área es obligatorio."}}, status=400)
+    if 'area_state' in data and data['area_state'] not in ('activa', 'inactiva'):
+        return json({"exception": {"title": "Dato inválido", "msg": "El estado debe ser activa o inactiva."}}, status=400)
+    if 'multiple_ubicacion' in data and data['multiple_ubicacion'] not in ('si', 'no'):
+        return json({"exception": {"title": "Dato inválido", "msg": "Múltiple ubicación debe ser si o no."}}, status=400)
+
+    nombre_actual = service.unlist(actual.get('rondin_area', ''))
+    ubicacion_actual = service.unlist(actual.get('ubicacion', ''))
+    nombre = data.get('nombre', nombre_actual)
+    ubicacion = data.get('ubicacion', ubicacion_actual)
+    if (nombre, ubicacion) != (nombre_actual, ubicacion_actual) and service.exists_area(ubicacion, nombre):
+        return json({"exception": {"title": "Área duplicada", "msg": "Ya existe un área con ese nombre en esta ubicación."}}, status=400)
+
+    qr = data.get('qr_area')
+    if qr:
+        qr_data = service.get_area_ubicacion_record(tag_id_area=qr)
+        if qr_data and service.unlist(qr_data.get('tag_id_area')) == qr and str(qr_data.get('_id')) != record_id:
+            area_qr = service.unlist(qr_data.get('area', ''))
+            ubicacion_qr = service.unlist(qr_data.get('ubicacion', ''))
+            msg = f"Ya se ha registrado este QR en el área {area_qr} ({ubicacion_qr})."
+            return json({"exception": {"title": "QR ya asignado", "msg": msg}}, status=400)
+
+    response = service.update_full_area(record_id, data)
+    if not isinstance(response, dict) or response.get('status_code') not in (200, 201, 202):
+        errores = (response or {}).get('json') if isinstance(response, dict) else None
+        msg = errores.get('error') if isinstance(errores, dict) and errores.get('error') else str(errores or response)
+        return json({"exception": {"title": "Error al editar el área", "msg": msg}}, status=400)
+    # Igual que /create_area: sin la respuesta cruda de LKF (su llave "json"
+    # hace que errorMsj del front la tome como error).
+    return json({"data": {"status": "ok", "msg": "Área actualizada correctamente", "record_id": record_id}}, status=200)
 
 @accesos_bp.post("/update_area_estado")
 async def post_update_area_estado(request: Request):
