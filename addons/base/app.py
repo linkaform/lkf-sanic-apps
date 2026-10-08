@@ -2113,3 +2113,416 @@ class Schedule(Base):
                 all_users.append(x)
 
         return all_users
+
+
+class ScriptLogs(Base):
+    """
+    Consulta de la coleccion `script_log` (vive en la misma base
+    infosync_answers_client_<id> que form_answer) para la pantalla
+    "Logs de scripts" del front clave10.
+    """
+
+    LOG_PREFIXES = ('http://', 'https://')
+
+    def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
+        super().__init__(settings, sys_argv=sys_argv, use_api=use_api, **kwargs)
+        self._names_cache = {}  # {user_id: {'ts', 'maps'}}; los scripts permitidos son por usuario
+
+    @property
+    def script_log_cr(self):
+        return self.cr.database['script_log']
+
+    def _name_maps(self):
+        """
+        {'users': {id: nombre}, 'scripts': {id: nombre}} resueltos con la API
+        de linkaform y cacheados por 5 minutos (cambian poco).
+        """
+        import time
+        uid_key = self.user_id
+        cached = self._names_cache.get(uid_key)
+        if cached and time.time() - cached['ts'] < 300:
+            return cached['maps']
+        users, scripts = {}, {}
+        try:
+            for u in self.lkf_api.get_all_users() or []:
+                uid = u.get('id')
+                name = (u.get('name') or
+                        ' '.join(x for x in [u.get('first_name'), u.get('last_name')] if x) or
+                        u.get('username') or u.get('email') or '')
+                if uid is not None:
+                    users[int(uid)] = name
+        except Exception as e:
+            print('ScriptLogs: no se pudieron resolver usuarios', e)
+        try:
+            res = self.lkf_api.get_user_scripts(self.user_id) or {}
+            items = res.get('data', []) if isinstance(res, dict) else []
+            if isinstance(items, list):
+                for s in items:
+                    sid = s.get('id')
+                    name = s.get('name') or s.get('title') or s.get('file_name') or ''
+                    if sid is not None:
+                        scripts[int(sid)] = name
+        except Exception as e:
+            print('ScriptLogs: no se pudieron resolver scripts', e)
+        maps = {'users': users, 'scripts': scripts}
+        # 'scripts' = solo los scripts que el usuario puede ver (los demas no se
+        # resuelven). Si la consulta fallo (vacio) no se cachea para reintentar.
+        if scripts:
+            self._names_cache[uid_key] = {'ts': time.time(), 'maps': maps}
+        return maps
+
+    @staticmethod
+    def _to_date(value, end_of_day=False):
+        """Acepta datetime, ISO 8601 (con Z/offset -> UTC naive) o 'YYYY-MM-DD'."""
+        if not value:
+            return None
+        if isinstance(value, datetime.datetime):
+            return value
+        value = str(value).strip()
+        try:
+            if len(value) > 10:
+                d = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+                if d.tzinfo:
+                    d = d.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+                return d
+            d = datetime.datetime.strptime(value, '%Y-%m-%d')
+        except ValueError:
+            return None
+        if end_of_day:
+            d = d + timedelta(days=1) - timedelta(milliseconds=1)
+        return d
+
+    @staticmethod
+    def _as_int_list(value):
+        if value in (None, '', []):
+            return []
+        if not isinstance(value, list):
+            value = [value]
+        out = []
+        for v in value:
+            try:
+                out.append(int(v))
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    def _ids_by_name(self, names_map, text):
+        text = (text or '').strip().lower()
+        if not text:
+            return []
+        return [i for i, n in names_map.items() if text in (n or '').lower()]
+
+    def list_script_logs(self, limit=25, skip=0, status=None, script_ids=None, script_name='',
+                         user_ids=None, user_name='', date1=None, date2=None,
+                         min_duration=None, max_duration=None, run_success=None):
+        maps = self._name_maps()
+        match = {}
+        if status:
+            match['status'] = status
+        if run_success in (True, False):
+            match['run_success'] = run_success
+
+        s_ids = self._as_int_list(script_ids)
+        if script_name:
+            s_ids = (s_ids or []) + (self._ids_by_name(maps['scripts'], script_name) )
+        if s_ids:
+            match['script_id'] = {'$in': s_ids}
+
+        u_ids = self._as_int_list(user_ids)
+        if user_name:
+            u_ids = (u_ids or []) + (self._ids_by_name(maps['users'], user_name) )
+        if u_ids:
+            match['user_id'] = {'$in': u_ids}
+
+        d1, d2 = self._to_date(date1), self._to_date(date2, end_of_day=True)
+        if d1 or d2:
+            match['start_date'] = {}
+            if d1:
+                match['start_date']['$gte'] = d1
+            if d2:
+                match['start_date']['$lte'] = d2
+        dur = {}
+        if min_duration not in (None, ''):
+            dur['$gte'] = float(min_duration)
+        if max_duration not in (None, ''):
+            dur['$lte'] = float(max_duration)
+        if dur:
+            match['duration'] = dur
+
+        limit = int(limit or 25)
+        skip = int(skip or 0)
+        cr = self.script_log_cr
+        total_records = cr.count_documents(match)
+        cursor = cr.find(match).sort('start_date', -1).skip(skip).limit(limit)
+
+        records = []
+        for r in cursor:
+            tb = r.get('traceback') or ''
+            script_name =  maps['scripts'].get(r.get('script_id')) or str(r.get('script_id', ''))
+            try:
+                int(script_name)
+            except Exception as e:
+                records.append({
+                    'id': str(r['_id']),
+                    'status': r.get('status', ''),
+                    'run_success': r.get('run_success'),
+                    'script_id': r.get('script_id'),
+                    'script_name': script_name,
+                    'user_id': r.get('user_id'),
+                    'user_name': maps['users'].get(r.get('user_id')) or str(r.get('user_id', '')),
+                    'start_date': r['start_date'].isoformat() + 'Z' if r.get('start_date') else None,
+                    'end_date': r['end_date'].isoformat() + 'Z' if r.get('end_date') else None,
+                    'duration': r.get('duration'),
+                    'has_log': tb.startswith(self.LOG_PREFIXES),
+                    'log_url': tb if tb.startswith(self.LOG_PREFIXES) else '',
+                })
+        return {
+            'records': records,
+            'total_records': total_records,
+            'total_pages': (total_records + limit - 1) // limit if limit else 1,
+            'actual_page': (skip // limit) + 1 if limit else 1,
+            'records_on_page': len(records),
+        }
+
+    def get_script_log_filters(self):
+        """Opciones para los selects de script y usuario (solo los que tienen logs)."""
+        maps = self._name_maps()
+        cr = self.script_log_cr
+        script_ids = [i for i in cr.distinct('script_id', {'script_id': {'$in': list(maps['scripts'])}}) if i is not None]
+        user_ids = [i for i in cr.distinct('user_id') if i is not None]
+        return {
+            # Solo scripts con nombre resuelto: un ID suelto no le dice nada al usuario.
+            'script': sorted(
+                [{'value': i, 'label': maps['scripts'][i]} for i in script_ids if maps['scripts'].get(i)],
+                key=lambda x: x['label'].lower()),
+            'user': sorted(
+                [{'value': i, 'label': maps['users'].get(i) or str(i)} for i in user_ids],
+                key=lambda x: x['label'].lower()),
+            'status': ['running', 'done'],
+        }
+
+    LOG_HOSTS = ('backblazeb2.com',)
+
+    def get_script_log_content(self, log_url):
+        """
+        Devuelve el contenido completo del archivo de log (URL de Backblaze que
+        viene en `traceback` de script_log). Se baja del lado servidor para evitar
+        CORS; solo se aceptan URLs https de hosts de Backblaze.
+        """
+        import requests
+        from urllib.parse import urlparse
+        u = urlparse(log_url or '')
+        host = (u.hostname or '').lower()
+        if u.scheme != 'https' or not any(host == h or host.endswith('.' + h) for h in self.LOG_HOSTS):
+            return {'error': 'URL de log no valida'}
+        res = requests.get(log_url, timeout=30)
+        if res.status_code != 200:
+            return {'error': f'No se pudo descargar el log ({res.status_code})', 'log_url': log_url}
+        text = res.content.decode('utf-8', errors='replace')
+        # Los logs guardan el comando completo con el jwt del usuario: se enmascara
+        # antes de mostrarlo / permitir su descarga.
+        text = re.sub(r'Bearer\s+[A-Za-z0-9._\-]+', 'Bearer ***', text)
+        text = re.sub(r'eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*', '***jwt***', text)
+        return {'content': text, 'log_url': log_url}
+
+
+class WorkflowLogs(ScriptLogs):
+    """
+    Consulta de la coleccion `workflow_log` (una fila por ejecucion de una regla
+    de workflow sobre un registro) para la pantalla "Logs de workflows".
+    """
+
+    # workflow_rule -> accion (los nombres viven en una tabla de Django, no en Mongo)
+    RULE_LABELS = {
+        3: 'Asignar a conexiones',
+        4: 'Asignar a usuarios',
+        5: 'Enviar correo',
+        7: 'Ejecutar script',
+        9: 'Forma a catálogo',
+        12: 'Sincronizar catálogos',
+    }
+    EVENT_LABELS = {'created': 'Creado', 'edited': 'Editado', 'deleted': 'Eliminado'}
+    SCRIPT_RULE = 7
+
+    @property
+    def workflow_log_cr(self):
+        return self.cr.database['workflow_log']
+
+    def _rule_label(self, rule):
+        return self.RULE_LABELS.get(rule) or (f'Acción {rule}' if rule is not None else '')
+
+    def _user_label(self, uid, users):
+        if uid == -1:
+            return 'Sistema'
+        if uid is None:
+            return ''
+        return users.get(uid) or str(uid)
+
+    def _form_names(self):
+        """{form_id: nombre} de las formas que el usuario puede ver (cache 5 min por usuario)."""
+        import time
+        cache = self.__dict__.setdefault('_forms_cache', {})
+        cached = cache.get(self.user_id)
+        if cached and time.time() - cached['ts'] < 300:
+            return cached['names']
+        names = {}
+        try:
+            res = self.lkf_api.get_user_forms(self.user_id) or {}
+            items = res.get('data', []) if isinstance(res, dict) else []
+            if isinstance(items, list):
+                for f in items:
+                    fid = f.get('id')
+                    if fid is not None:
+                        names[int(fid)] = f.get('name') or f.get('title') or ''
+        except Exception as e:
+            print('WorkflowLogs: no se pudieron resolver formas', e)
+        if names:
+            cache[self.user_id] = {'ts': time.time(), 'names': names}
+        return names
+
+    @staticmethod
+    def _mask(text):
+        text = re.sub(r'Bearer\s+[A-Za-z0-9._\-]+', 'Bearer ***', text)
+        return re.sub(r'eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*', '***jwt***', text)
+
+    def _build_match(self, status=None, rules=None, events=None, workflow_names=None,
+                     form_ids=None, user_ids=None, date1=None, date2=None):
+        match = {}
+        if status == 'success':
+            match['workflow_sucess'] = True
+        elif status == 'error':
+            match['workflow_sucess'] = False
+        r = self._as_int_list(rules)
+        if r:
+            match['workflow_rule'] = {'$in': r}
+        if events:
+            match['record_status'] = {'$in': events if isinstance(events, list) else [events]}
+        if workflow_names:
+            match['name'] = {'$in': workflow_names if isinstance(workflow_names, list) else [workflow_names]}
+        f = self._as_int_list(form_ids)
+        if f:
+            match['form_id'] = {'$in': f}
+        u = self._as_int_list(user_ids)
+        if u:
+            match['user_id'] = {'$in': u}
+        d1, d2 = self._to_date(date1), self._to_date(date2, end_of_day=True)
+        if d1 or d2:
+            match['created_at'] = {}
+            if d1:
+                match['created_at']['$gte'] = d1
+            if d2:
+                match['created_at']['$lte'] = d2
+        return match
+
+    def list_workflow_logs(self, limit=25, skip=0, **filters):
+        match = self._build_match(**filters)
+        limit = int(limit or 25)
+        skip = int(skip or 0)
+        cr = self.workflow_log_cr
+        total_records = cr.count_documents(match)
+        pipeline = [
+            {'$match': match},
+            {'$sort': {'created_at': -1}},
+            {'$skip': skip},
+            {'$limit': limit},
+            {'$project': {
+                'workflow_sucess': 1, 'name': 1, 'workflow_rule': 1, 'workflow_rule_name': 1,
+                'record_status': 1, 'form_id': 1, 'folio': 1, 'user_id': 1, 'created_at': 1,
+                'record_id': 1, 'workflow_record_id': 1, 'workflow_record_folio': 1,
+                # solo el inicio: aqui viene la URL del log (accion "Ejecutar script") o el
+                # mensaje de error; el contenido completo se pide al abrir el detalle.
+                'response_head': {'$substrCP': [{'$ifNull': ['$workflow_response_content', '']}, 0, 400]},
+            }},
+        ]
+        users = self._name_maps()['users']
+        forms = self._form_names()
+        records = []
+        for r in cr.aggregate(pipeline):
+            rule = r.get('workflow_rule')
+            head = r.get('response_head') or ''
+            log_url = head if (rule == self.SCRIPT_RULE and head.startswith(self.LOG_PREFIXES)) else ''
+            ok = r.get('workflow_sucess')
+            records.append({
+                'id': str(r['_id']),
+                'success': ok,
+                'name': r.get('name') or '',
+                'rule': rule,
+                'rule_label': self._rule_label(rule),
+                'rule_name': r.get('workflow_rule_name') or '',
+                'event': r.get('record_status') or '',
+                'event_label': self.EVENT_LABELS.get(r.get('record_status'), r.get('record_status') or ''),
+                'form_id': r.get('form_id'),
+                'form_name': forms.get(r.get('form_id')) or str(r.get('form_id', '')),
+                'folio': r.get('folio') or '',
+                'user_id': r.get('user_id'),
+                'user_name': self._user_label(r.get('user_id'), users),
+                'created_at': r['created_at'].isoformat() + 'Z' if r.get('created_at') else None,
+                'record_id': str(r['record_id']) if r.get('record_id') else '',
+                'workflow_record_id': str(r['workflow_record_id']) if r.get('workflow_record_id') else '',
+                'has_log': bool(log_url),
+                'log_url': log_url,
+                'error': head if ok is False and not log_url else '',
+            })
+        return {
+            'records': records,
+            'total_records': total_records,
+            'total_pages': (total_records + limit - 1) // limit if limit else 1,
+            'actual_page': (skip // limit) + 1 if limit else 1,
+            'records_on_page': len(records),
+        }
+
+    def get_workflow_log_filters(self):
+        cr = self.workflow_log_cr
+        users = self._name_maps()['users']
+        forms = self._form_names()
+        return {
+            'rule': sorted(
+                [{'value': i, 'label': self._rule_label(i)} for i in cr.distinct('workflow_rule') if i is not None],
+                key=lambda x: x['label']),
+            'event': [{'value': k, 'label': v} for k, v in self.EVENT_LABELS.items()],
+            'workflow': sorted(
+                [{'value': n, 'label': n} for n in cr.distinct('name') if n],
+                key=lambda x: x['label'].lower()),
+            'form': sorted(
+                [{'value': i, 'label': forms.get(i) or str(i)} for i in cr.distinct('form_id') if i is not None],
+                key=lambda x: x['label'].lower()),
+            'user': sorted(
+                [{'value': i, 'label': self._user_label(i, users)} for i in cr.distinct('user_id') if i is not None],
+                key=lambda x: x['label'].lower()),
+        }
+
+    def get_workflow_log_detail(self, log_id):
+        """Contenido pesado (payloads y respuestas) de una ejecucion, con secretos enmascarados."""
+        import json
+        try:
+            oid = ObjectId(log_id)
+        except Exception:
+            return {'error': 'id invalido'}
+        docs = list(self.workflow_log_cr.aggregate([
+            {'$match': {'_id': oid}},
+            {'$project': {
+                'record_request_content': 1, 'record_response_content': 1,
+                'workflow_request_content': 1, 'workflow_response_content': 1,
+                'record_response_code': 1, 'responses': 1, 'email_responses': 1,
+            }},
+        ]))
+        if not docs:
+            return {'error': 'Log no encontrado'}
+        d = docs[0]
+
+        def parsed(value):
+            if not value or not isinstance(value, str):
+                return value
+            value = self._mask(value)
+            try:
+                return json.loads(value)
+            except ValueError:
+                return value
+
+        return {
+            'record_request': parsed(d.get('record_request_content')),
+            'record_response': parsed(d.get('record_response_content')),
+            'workflow_request': parsed(d.get('workflow_request_content')),
+            'workflow_response': parsed(d.get('workflow_response_content')),
+            'record_response_code': d.get('record_response_code'),
+        }

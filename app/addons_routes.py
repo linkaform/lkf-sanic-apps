@@ -8,6 +8,7 @@ from lkf_addons.accesos.routes import accesos_bp
 from lkf_addons.employee.routes import employee_bp
 from lkf_addons.location.routes import location_bp
 from lkf_addons.contratistas.routes import contratistas_bp
+from lkf_addons.base.routes import base_bp
 
 ### Extend routes de modulos
 
@@ -15,7 +16,8 @@ blueprints = [
     'Accesos',
     'Employee',
     'Location',
-    'Contratistas'
+    'Contratistas',
+    'Base'
     ]
 
 
