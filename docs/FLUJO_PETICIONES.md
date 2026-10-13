@@ -625,7 +625,7 @@ app/modules/<modulo>/items/scripts/<Modulo>/<x>_sdk.py     ← proceso nuevo
    ▼
 middleware.auth.dispatch(endpoint, module=..., params=..., method=...)
    │  auth.py:108-125
-   │  POST http://0.0.0.0:8000/<module>/<endpoint>
+   │  POST http://0.0.0.0:$PORT/<module>/<endpoint>
    ▼
 ♻ ENTRA POR EL MISMO PUERTO 8000 — vuelve al paso 5.2
 ```
@@ -638,7 +638,7 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Authorization': kwargs.get('jwt', kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = f"http://0.0.0.0:8000/{module}/{end_point}"
+    url = f"http://0.0.0.0:{PORT}/{module}/{end_point}"
     ...
 ```
 
@@ -681,7 +681,7 @@ ARRANQUE (una vez)
  9. @before_server_start → db_pool, dependencies
 10. app.blueprint(...) por cada módulo
 11. setup_error_handlers(app); setup_auth(app)
-12. app.run(0.0.0.0:8000)
+12. app.run(0.0.0.0:$PORT, default 8000)
 
 POR PETICIÓN (cada vez)
  a. Sanic parsea el Request

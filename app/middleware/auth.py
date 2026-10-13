@@ -2,6 +2,7 @@
 # coding: utf-8
 # middlewares/auth.py
 import logging
+import os
 import warnings
 
 # linkaform_api importa couchdb, que emite un UserWarning de pkg_resources al
@@ -144,7 +145,7 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = f"http://0.0.0.0:8000/{module}/{end_point}"
+    url = f"http://0.0.0.0:{os.getenv('PORT', 8000)}/{module}/{end_point}"
     print('url', url)
     if method == 'get':
         response = _connection_client.get(url, params=params, headers=headers)
