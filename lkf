@@ -31,7 +31,7 @@ _usage(){
       echo "      $APP test                    Runs all tests"
       echo "      $APP workwith <domain_name>  Elige la cuenta activa y deja app/modules en su rama"
       echo "      $APP workwith                Muestra la cuenta actual y los dominios disponibles"
-      echo "      $APP workon <preprod|prod>   Elige el environment activo"
+      echo "      $APP workon <local|preprod|prod>   Elige el environment activo"
       echo "      $APP workon                  Muestra el environment actual y los disponibles"
       echo "      $APP setup                   Instala los git hooks del repo (una vez por clon)"
       echo

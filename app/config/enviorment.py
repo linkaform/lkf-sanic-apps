@@ -12,16 +12,22 @@ def _env_activo():
     """El environment activo: lo dice secrets/current_env.
 
     El default es preprod a proposito: arrancar sin haber corrido `./lkf workon` no debe
-    pegarle a la base de datos real de los clientes.
+    pegarle a la base de datos real de los clientes. "local" apunta al
+    mongo y backend de la maquina de desarrollo (LOCAL_IP), igual que en addons.
     """
     env = ''
     current_env_file = os.path.join(SECRETS_PATH, 'current_env')
     if os.path.exists(current_env_file):
         env = open(current_env_file, encoding='utf-8').read().strip()
-    return env if env in ('preprod', 'prod') else 'preprod'
+    return env if env in ('local', 'preprod', 'prod') else 'preprod'
 
 
 ENV = _env_activo()
+
+# IP de la maquina de desarrollo, donde corren mongo (27017) y el backend (8000).
+# Es la misma que usa addons/config/local_settings.py; LKF_LOCAL_IP la cambia sin
+# editar codigo si tu maquina tiene otra.
+LOCAL_IP = os.environ.get('LKF_LOCAL_IP', '').strip() or '192.168.100.30'
 
 print('=================== LODING SETTINGS FOR ENVIOIRMENT: {} ==================='.format(ENV))
 PROTOCOL = config.get('PROTOCOL')
@@ -29,7 +35,13 @@ HOST = config.get('HOST')
 mongo_hosts = config.get('mongo_hosts')
 COUCH_ENV = config.get('COUCH_ENV')
 
-if ENV == 'prod':
+if ENV == 'local':
+    PROTOCOL = 'http'
+    HOST = '{}:8000'.format(LOCAL_IP)
+    mongo_hosts = '{}:27017'.format(LOCAL_IP)
+    COUCH_ENV = 'prod'
+
+elif ENV == 'prod':
     PROTOCOL = 'https'
     HOST = 'app.linkaform.com'
     mongo_hosts = 'db2.linkaform.com:27017,db3.linkaform.com:27017,db4.linkaform.com:27017'

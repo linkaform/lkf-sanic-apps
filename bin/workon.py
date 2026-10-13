@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # coding: utf-8
-"""workon: elige el environment activo (preprod | prod).
+"""workon: elige el environment activo (local | preprod | prod).
 
 El puntero vive en secrets/current_env, igual que la cuenta activa vive en
 secrets/current_domain. app/config/enviorment.py lo lee al arrancar, asi que cambiar de
 environment ya no requiere editar codigo ni reconstruir nada: basta correr esto y
 volver a lanzar la app.
 
-    ./lkf workon <preprod|prod>
+    ./lkf workon <local|preprod|prod>
     ./lkf workon            # muestra el environment actual y los disponibles
 """
 import os
@@ -17,13 +17,14 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRETS = os.path.join(REPO, 'secrets')
 CURRENT_ENV = os.path.join(SECRETS, 'current_env')
 
-ENVS = ('preprod', 'prod')
+ENVS = ('local', 'preprod', 'prod')
 # Si el puntero falta o trae basura se cae aqui, nunca en prod.
 DEFAULT_ENV = 'preprod'
 
 # Solo para mostrar a donde apunta cada environment. La configuracion de verdad la
 # arma app/config/enviorment.py; si cambias un HOST alla, actualizalo aqui tambien.
 DESTINOS = {
+    'local': '192.168.100.30:8000',
     'preprod': 'preprod.linkaform.com',
     'prod': 'app.linkaform.com',
 }
@@ -72,7 +73,7 @@ def main(argv):
         raise Error('No existe %s' % SECRETS)
     with open(CURRENT_ENV, 'w', encoding='utf-8') as fh:
         fh.write(env + '\n')
-    os.chmod(CURRENT_ENV, 0o600)
+    os.chmod(CURRENT_ENV, 0o644)
 
     print('workon %s' % env)
     print('  environment   : %s' % descripcion(env))
@@ -83,7 +84,7 @@ def main(argv):
         print('\n%s' % ('=' * 60))
         print('OJO: prod es la base de datos real de %s.' % DESTINOS['prod'])
         print('Lo que escribas aqui lo ven los clientes. Vuelve con:')
-        print('\n    ./lkf workon preprod\n')
+        print('\n    ./lkf workon local\n')
         print('=' * 60)
     return 0
 
