@@ -2152,6 +2152,22 @@ async def get_get_bitac_transportista_record(request: Request):
 async def get_get_bitac_transportista_records(request: Request):
     return json({"data": service.get_bitac_transportista_records()}, status=200)
 
+@accesos_bp.post("/get_bitac_transportista_records")
+async def post_get_bitac_transportista_records(request: Request):
+    # POST porque facets es una lista de dicts y los filtros son listas.
+    payload = _ocr_payload(request)
+    allowed_params = [
+        "date_from", "date_to", "tipo_de_vehiculo", "proveedor_cliente", "anden_asignado",
+        "estatus", "tipo_de_operacion", "conductor", "material", "search",
+        "skip", "limit", "pagination", "facets",
+    ]
+    filters = {k: payload.get(k) for k in allowed_params if payload.get(k) is not None}
+    if filters.get('skip') is not None:
+        filters['skip'] = int(filters['skip'])
+    if filters.get('limit') is not None:
+        filters['limit'] = int(filters['limit'])
+    return json({"data": service.get_bitac_transportista_records(**filters)}, status=200)
+
 @accesos_bp.get("/get_horarios_data")
 async def get_get_horarios_data(request: Request):
     dia = request.args.get("dia")

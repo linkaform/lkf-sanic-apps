@@ -334,7 +334,7 @@ class Location(Base):
 
         locations: nombres de las ubicaciones del top-nav ([] = todas).
         dynamic_filters: [{key, value}] con las keys de get_filters_ubicaciones
-            (estado, ciudad, pais, areas).
+            (estado, ciudad, area, areas).
         search / search_fields: búsqueda por regex (sin mayúsculas) en los campos
             de UBICACION_SEARCH_FIELDS; search_fields vacío = todos.
         ubicacion: compatibilidad con la llamada vieja de una sola ubicación.
@@ -377,9 +377,9 @@ class Location(Base):
                 'phone': contacto('phone'),
                 'email': contacto('email'),
             }},
-            # areas_count dentro de la consulta (y no después de paginar) para que
-            # el filtro con/sin áreas y los totales salgan bien. Cuenta nombres de
-            # área distintos, igual que get_areas_by_location.
+            # areas_count y area_names dentro de la consulta (y no después de
+            # paginar) para que los filtros de áreas y los totales salgan bien.
+            # Cuenta nombres de área distintos, igual que get_areas_by_location.
             {'$lookup': {
                 'from': self.cr.name,
                 'let': {'loc': '$location'},
@@ -390,11 +390,13 @@ class Location(Base):
                         '$expr': {'$eq': [loc_area, '$$loc']},
                     }},
                     {'$group': {'_id': f"$answers.{self.f['area']}"}},
-                    {'$count': 'total'},
                 ],
                 'as': 'areas_info',
             }},
-            {'$addFields': {'areas_count': {'$ifNull': [{'$first': '$areas_info.total'}, 0]}}},
+            {'$addFields': {
+                'areas_count': {'$size': '$areas_info'},
+                'area_names': '$areas_info._id',
+            }},
             {'$project': {'areas_info': 0}},
         ]
 
@@ -407,6 +409,8 @@ class Location(Base):
         pagina = [{'$sort': {'location': 1}}, {'$skip': skip}]
         if limit:
             pagina.append({'$limit': limit})
+        # area_names solo sirve para el filtro "area"; no viaja al front.
+        pagina.append({'$project': {'area_names': 0}})
         query.append({'$facet': {
             'records': pagina,
             'total': [{'$count': 'total'}],
@@ -437,6 +441,9 @@ class Location(Base):
                 continue
             if key in self.UBICACION_FILTER_FIELDS:
                 condiciones.append({self.UBICACION_FILTER_FIELDS[key]: {'$in': valores}})
+            elif key == 'area':
+                # Ubicaciones que tienen al menos una de las áreas elegidas.
+                condiciones.append({'area_names': {'$in': valores}})
             elif key == 'areas':
                 # Con ambas opciones (o ninguna) no se filtra.
                 if set(valores) == {'con'}:
@@ -590,15 +597,15 @@ class Location(Base):
             },
             {
                 "defaultDisplayOpen": False,
-                "key": "pais",
-                "label": "País",
-                "type": "multiple",
-                "options": [{"label": i, "value": i} for i in distintos(self.UBICACION_FILTER_FIELDS['pais'])]
+                "key": "area",
+                "label": "Área",
+                "type": "multiselect",
+                "options": [{"label": i, "value": i} for i in self._nombres_de_areas()]
             },
             {
                 "defaultDisplayOpen": False,
                 "key": "areas",
-                "label": "Áreas",
+                "label": "¿Contiene áreas?",
                 "type": "multiple",
                 "options": [
                     {"label": "Con áreas", "value": "con"},
@@ -606,6 +613,16 @@ class Location(Base):
                 ]
             },
         ]
+
+    def _nombres_de_areas(self):
+        """ Nombres distintos de las áreas registradas, para el filtro "area"
+        del explorador de Ubicaciones. """
+        data = self.cr.distinct(f"answers.{self.f['area']}", {
+            "deleted_at": {"$exists": False},
+            "form_id": self.AREAS_DE_LAS_UBICACIONES,
+        })
+        valores = {str(x).strip() for x in data if x is not None and str(x).strip()}
+        return sorted(valores, key=lambda v: v.lower())
 
     def exists_ubicacion(self, nombre):
         query = [
@@ -643,11 +660,19 @@ class Location(Base):
         return valores
 
     def _get_contacto_catalogo(self, nombre):
+        """ Registro del catálogo contacto con ese address_name exacto, o {}.
+        Se valida el nombre en el resultado: search_catalog puede regresar un
+        registro que no coincide (p. ej. con un nombre que no existe). """
+        if not nombre:
+            return {}
         res = self.lkf_api.search_catalog(self.CONTACTO_CAT_ID, {
             'selector': {f"answers.{self.f['address_name']}": nombre},
-            'limit': 1,
-        })
-        return self.unlist(res) if res else {}
+            'limit': 50,
+        }) or []
+        for registro in res:
+            if isinstance(registro, dict) and registro.get(self.f['address_name']) == nombre:
+                return registro
+        return {}
 
     def _lkf_error(self, response, titulo):
         """ Convierte una respuesta de error de la API de LKF en LKFException. """
@@ -661,10 +686,63 @@ class Location(Base):
         msg = '; '.join(msgs) or str(detalle)
         raise self.LKFException({'title': titulo, 'msg': msg, 'status_code': 400})
 
+    def _crear_contacto_catalogo(self, nombre, contacto, tipo='Direccion'):
+        """ Da de alta un registro en el catálogo contacto. contacto: {campo: valor}
+        de _contacto_answers. Nunca actualiza registros existentes: un PATCH a un
+        contacto viejo (_id de CouchDB) terminó creando un duplicado. """
+        catalog_answers = {
+            self.f['address_name']: nombre,
+            self.f['address_type']: tipo or 'Direccion',
+            self.CONTACTO_STATUS_FIELD: 'Activo',
+            **contacto,
+        }
+        metadata = self.lkf_api.get_catalog_metadata(catalog_id=self.CONTACTO_CAT_ID)
+        metadata.update({'answers': catalog_answers})
+        res_catalogo = self.lkf_api.post_catalog_answers(metadata)
+        if not isinstance(res_catalogo, dict) or res_catalogo.get('status_code') not in (200, 201, 202):
+            self._lkf_error(res_catalogo, 'No se pudo registrar la dirección')
+        return res_catalogo
+
+    def create_contacto(self, nombre='', tipo='Direccion', direccion='', colonia='', ciudad='',
+                        estado='', pais='', codigo_postal='', telefono='', email='',
+                        geolocalizacion=None):
+        """ Alta de un contacto (dirección) en el catálogo contacto, desde el
+        botón "+" del selector de dirección de la ubicación. """
+        nombre = (nombre or '').strip()
+        if not nombre:
+            raise self.LKFException({'msg': 'El nombre del contacto es requerido.', 'status_code': 400})
+        if self._get_contacto_catalogo(nombre):
+            raise self.LKFException({'title': 'Contacto duplicado', 'msg': f'Ya existe un contacto llamado "{nombre}".', 'status_code': 400})
+        contacto = self._contacto_answers(nombre, direccion, colonia, ciudad, estado, pais,
+                                          codigo_postal, telefono, email, geolocalizacion)
+        self._crear_contacto_catalogo(nombre, contacto, tipo)
+        return {'nombre_direccion': nombre}
+
+    def _contacto_ubicacion_desde_catalogo(self, registro):
+        """ Grupo de contacto de la ubicación a partir de un registro del
+        catálogo: address_name suelto y el resto como lista, igual que los
+        registros existentes. El estatus del contacto no va en la ubicación. """
+        omitir = {'_id', '_rev', 'created_at', 'updated_at', 'folio', self.CONTACTO_STATUS_FIELD}
+        grupo = {}
+        for campo, valor in registro.items():
+            if campo in omitir or valor in (None, '', [], {}):
+                continue
+            if campo == self.f['address_name']:
+                grupo[campo] = valor
+            else:
+                grupo[campo] = valor if isinstance(valor, list) else [valor]
+        return grupo
+
     def create_new_ubicacion(self, nombre='', direccion='', colonia='', ciudad='',
                               estado='', pais='', codigo_postal='', telefono='',
-                              email='', geolocalizacion=None):
+                              email='', geolocalizacion=None, contacto=None):
         """ Crea una ubicacion nueva en el form 'ubicaciones'.
+
+        contacto: address_name de un contacto existente del catálogo (lo que
+        manda el front, elegido en el selector o recién dado de alta con
+        create_contacto). La ubicación apunta a él y el catálogo no se toca.
+        Sin contacto se mantiene el flujo anterior: se da de alta un contacto
+        con el nombre de la ubicación y los datos de dirección recibidos.
 
         El contacto es un campo de catalogo (contacto): LKF solo acepta valores
         que existan en ese catalogo, asi que primero se crea el registro del
@@ -678,26 +756,24 @@ class Location(Base):
         if self.exists_ubicacion(nombre):
             raise self.LKFException({'title': 'Ubicación duplicada', 'msg': f'Ya existe una ubicación llamada "{nombre}".', 'status_code': 400})
 
-        contacto = self._contacto_answers(nombre, direccion, colonia, ciudad, estado, pais,
-                                          codigo_postal, telefono, email, geolocalizacion)
+        contacto = (contacto or '').strip()
+        if contacto:
+            registro = self._get_contacto_catalogo(contacto)
+            if not registro:
+                raise self.LKFException({'title': 'Contacto no encontrado', 'msg': f'No existe el contacto "{contacto}" en el catálogo.', 'status_code': 404})
+            contacto_ubicacion = self._contacto_ubicacion_desde_catalogo(registro)
+        else:
+            valores = self._contacto_answers(nombre, direccion, colonia, ciudad, estado, pais,
+                                             codigo_postal, telefono, email, geolocalizacion)
 
-        # 1) Contacto en el catalogo
-        if not self._get_contacto_catalogo(nombre):
-            catalog_answers = {
-                self.f['address_name']: nombre,
-                self.f['address_type']: 'Direccion',
-                self.CONTACTO_STATUS_FIELD: 'Activo',
-                **contacto,
-            }
-            metadata = self.lkf_api.get_catalog_metadata(catalog_id=self.CONTACTO_CAT_ID)
-            metadata.update({'answers': catalog_answers})
-            res_catalogo = self.lkf_api.post_catalog_answers(metadata)
-            if not isinstance(res_catalogo, dict) or res_catalogo.get('status_code') not in (200, 201, 202):
-                self._lkf_error(res_catalogo, 'No se pudo registrar la dirección')
+            # 1) Contacto en el catalogo
+            if not self._get_contacto_catalogo(nombre):
+                self._crear_contacto_catalogo(nombre, valores)
 
-        # 2) Ubicacion apuntando al contacto
-        contacto_ubicacion = {self.f['address_name']: nombre, self.f['address_type']: ['Direccion']}
-        contacto_ubicacion.update({k: [v] for k, v in contacto.items()})
+            # 2) Ubicacion apuntando al contacto
+            contacto_ubicacion = {self.f['address_name']: nombre, self.f['address_type']: ['Direccion']}
+            contacto_ubicacion.update({k: [v] for k, v in valores.items()})
+
         answers = {
             self.f['location']: nombre,
             self.CONTACTO_CAT_OBJ_ID: contacto_ubicacion,
@@ -720,13 +796,15 @@ class Location(Base):
             self._lkf_error(response, 'No se pudo crear la ubicación')
         return response
 
-    def update_ubicacion(self, record_id='', nombre_actual='', nombre=None,
-                          direccion=None, colonia=None, ciudad=None, estado=None,
-                          pais=None, codigo_postal=None, telefono=None, email=None,
-                          geolocalizacion=None):
-        """ Actualiza los campos de contacto (y/o nombre) de una ubicación existente.
-        Solo los kwargs distintos de None se sobreescriben; el resto conserva
-        el valor actual del registro (patch parcial).
+    def update_ubicacion(self, record_id='', nombre_actual='', nombre=None, contacto=None):
+        """ Actualiza una ubicación existente.
+
+        contacto: nombre (address_name) de un registro del catálogo contacto.
+        La ubicación solo se apunta a ese contacto; el catálogo nunca se
+        modifica desde aquí (el contacto puede ser compartido por otras
+        ubicaciones/áreas, y el PATCH a contactos viejos los duplicaba). Para
+        una dirección nueva, el front da de alta el contacto con
+        create_contacto y luego lo elige.
         """
         if not record_id and not nombre_actual:
             raise self.LKFException({'msg': 'Se requiere record_id o nombre_actual de la ubicación.', 'status_code': 400})
@@ -741,35 +819,22 @@ class Location(Base):
             raise self.LKFException({'msg': 'Ubicación no encontrada.', 'status_code': 404})
 
         answers = {}
-        if nombre and nombre != nombre_actual:
+        nombre_anterior = current.get('location') or nombre_actual
+        nombre = (nombre or '').strip()
+        if nombre and nombre != nombre_anterior:
             answers[self.f['location']] = nombre
 
-        overrides = {
-            self.f['address']: direccion,
-            self.f['address2']: colonia,
-            self.f['city']: ciudad,
-            self.f['zip_code']: codigo_postal,
-            self.f['country']: pais,
-            self.f['state']: estado,
-            self.f['phone']: telefono,
-            self.f['email']: email,
-            self.f['address_geolocation']: geolocalizacion,
-        }
-        contacto_answers = {
-            self.f['address_name']: nombre or current.get('address_name', ''),
-            self.f['address']: current.get('address', ''),
-            self.f['address2']: current.get('address2', ''),
-            self.f['city']: current.get('city', ''),
-            self.f['zip_code']: current.get('zip_code', ''),
-            self.f['country']: current.get('country', ''),
-            self.f['state']: current.get('state', ''),
-            self.f['phone']: current.get('phone', ''),
-            self.f['email']: current.get('email', ''),
-            self.f['address_geolocation']: current.get('address_geolocation', ''),
-        }
-        for field_id, value in overrides.items():
-            if value is not None:
-                contacto_answers[field_id] = value
-        answers[self.CONTACTO_CAT_OBJ_ID] = contacto_answers
+        contacto = (contacto or '').strip()
+        if contacto and contacto != current.get('address_name'):
+            registro = self._get_contacto_catalogo(contacto)
+            if not registro:
+                raise self.LKFException({'title': 'Contacto no encontrado', 'msg': f'No existe el contacto "{contacto}" en el catálogo.', 'status_code': 404})
+            answers[self.CONTACTO_CAT_OBJ_ID] = self._contacto_ubicacion_desde_catalogo(registro)
 
-        return self.lkf_api.patch_multi_record(answers=answers, form_id=self.UBICACIONES, record_id=[record_id])
+        if not answers:
+            return {'status_code': 200, 'msg': 'Sin cambios'}
+
+        response = self.lkf_api.patch_multi_record(answers=answers, form_id=self.UBICACIONES, record_id=[record_id])
+        if isinstance(response, dict) and response.get('status_code') not in (None, 200, 201, 202, 204):
+            self._lkf_error(response, 'No se pudo actualizar la ubicación')
+        return response
