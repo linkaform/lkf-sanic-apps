@@ -88,6 +88,7 @@ async def post_create_ubicacion(request: Request):
         telefono=payload.get("telefono", ""),
         email=payload.get("email", ""),
         geolocalizacion=payload.get("geolocalizacion", {}),
+        contacto=payload.get("contacto", ""),
     )
     return json({"data": response}, status=200)
 
@@ -99,13 +100,29 @@ async def post_update_ubicacion(request: Request):
         "record_id": payload.get("record_id", ""),
         "nombre_actual": payload.get("nombre_actual", ""),
     }
-    for key in (
-        "nombre", "direccion", "colonia", "ciudad", "estado",
-        "pais", "codigo_postal", "telefono", "email", "geolocalizacion",
-    ):
+    for key in ("nombre", "contacto"):
         if key in payload:
             kwargs[key] = payload.get(key)
     response = service.update_ubicacion(**kwargs)
+    return json({"data": response}, status=200)
+
+
+@location_bp.post("/create_contacto")
+async def post_create_contacto(request: Request):
+    payload = _ocr_payload(request)
+    response = service.create_contacto(
+        nombre=payload.get("nombre", ""),
+        tipo=payload.get("tipo", "Direccion"),
+        direccion=payload.get("direccion", ""),
+        colonia=payload.get("colonia", ""),
+        ciudad=payload.get("ciudad", ""),
+        estado=payload.get("estado", ""),
+        pais=payload.get("pais", ""),
+        codigo_postal=payload.get("codigo_postal", ""),
+        telefono=payload.get("telefono", ""),
+        email=payload.get("email", ""),
+        geolocalizacion=payload.get("geolocalizacion", {}),
+    )
     return json({"data": response}, status=200)
 
 

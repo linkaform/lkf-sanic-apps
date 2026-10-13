@@ -6906,6 +6906,11 @@ class Accesos(OcrMixin, AccesosModel):
                 "ciudad": r.get(self.f['ciudad_area'], ''),
                 "estado": r.get(estado, ''),
                 "pais": r.get(self.f['pais_area'], ''),
+                "colonia": r.get(self.Location.f['address2'], ''),
+                "codigo_postal": r.get(self.Location.f['zip_code'], ''),
+                # Contactos viejos guardan el teléfono como número (0 = vacío).
+                "telefono": str(r.get(self.Location.f['phone']) or ''),
+                "email": r.get(self.Location.f['email'], ''),
                 "geolocalizacion": {
                     "latitude": geo.get('latitude'),
                     "longitude": geo.get('longitude'),
