@@ -15680,20 +15680,157 @@ class Accesos(OcrMixin, AccesosModel):
         ]
         return self.format_cr(self.cr.aggregate(query), get_one=True)
 
-    def get_bitac_transportista_records(self):
+    # Buscador avanzado (facets), portado de lkf_addons/addons/accesos/app.py.
+    FACET_ACCENTS = {
+        'a': 'aáàäâAÁÀÄÂ', 'e': 'eéèëêEÉÈËÊ', 'i': 'iíìïîIÍÌÏÎ',
+        'o': 'oóòöôOÓÒÖÔ', 'u': 'uúùüûUÚÙÜÛ', 'n': 'nñNÑ',
+    }
+
+    def facet_regex(self, value):
+        """Patrón contains que ignora acentos ("lucia" encuentra "Lucía")."""
+        base = unicodedata.normalize('NFD', str(value).strip().lower())
+        base = ''.join(c for c in base if unicodedata.category(c) != 'Mn')
+        # "_" y espacio son equivalentes (muchos valores se guardan como "dia_de_la_semana").
+        return ''.join(
+            f"[{self.FACET_ACCENTS[c]}]" if c in self.FACET_ACCENTS
+            else "[ _]" if c in " _"
+            else re.escape(c)
+            for c in base
+        )
+
+    def build_facets_match(self, fields_def, facets):
+        """Regresa la lista de condiciones (para un $and) de los facets válidos."""
+        conditions = []
+        for facet in facets or []:
+            field = fields_def.get(facet.get('key'))
+            values = [v for v in (facet.get('values') or []) if str(v).strip()]
+            if not field or not values:
+                continue
+            # exact = el valor completo (opciones del panel o de un enum), sin
+            # importar mayúsculas ni acentos; si no, "contiene".
+            # 'value_match': condición propia por valor exacto (ej. "con incidencias" Si/No).
+            value_match = field.get('value_match')
+            if facet.get('exact') and value_match:
+                conds = [value_match[str(v).strip().lower()] for v in values if str(v).strip().lower() in value_match]
+                if conds:
+                    conditions.append(conds[0] if len(conds) == 1 else {'$or': conds})
+                continue
+            wrap = (lambda p: f"^{p}$") if facet.get('exact') else (lambda p: p)
+            ors = [
+                {path: {'$regex': wrap(self.facet_regex(v)), '$options': 'i'}}
+                for path in field['paths'] for v in values
+            ]
+            # 'missing': valor que el listado muestra cuando el campo viene vacío
+            # (ej. tipo_rondin vacío = "qr"); al filtrar por él también cuentan los vacíos.
+            missing = field.get('missing')
+            if facet.get('exact') and missing and any(self.facet_regex(v) == self.facet_regex(missing) for v in values):
+                ors += [{path: {'$in': [None, '']}} for path in field['paths']]
+            conditions.append(ors[0] if len(ors) == 1 else {'$or': ors})
+        return conditions
+
+    def facet_distinct_options(self, form_id, path, labels=None, order=None):
+        """Opciones de un campo enum a partir de los valores que ya existen en la forma.
+        labels: etiqueta por valor (si no, capitalizado); order: valores que van primero."""
+        values = self.cr.distinct(path, {'form_id': form_id, 'deleted_at': {'$exists': False}})
+        values = sorted({str(v) for v in values if v not in (None, '')})
+        if order:
+            values.sort(key=lambda v: (order.index(v) if v in order else len(order), v))
+        labels = labels or {}
+        return [{'value': v, 'label': labels.get(v, v.capitalize().replace('_', ' '))} for v in values]
+
+    def transportistas_search_fields(self):
         f = self.bitacora_transportista_fields
+        estatus = f'answers.{f["estatus"]}'
+        # Llaves = las del panel de filtros (filters.py, option transportistas).
+        return {
+            'folio': {'label': 'Folio', 'paths': ['folio']},
+            'placas': {'label': 'Placas', 'paths': [f'answers.{f["placas_de_vehiculo"]}']},
+            'conductor': {'label': 'Conductor', 'paths': [f'answers.{f["conductor"]}']},
+            'proveedor_cliente': {'label': 'Proveedor / cliente', 'paths': [f'answers.{f["proveedor_cliente"]}']},
+            'estatus': {
+                'label': 'Estatus',
+                'paths': [estatus],
+                'options': lambda: self.facet_distinct_options(self.BITACORA_TRANSPORTISTAS, estatus),
+            },
+            'tipo_de_operacion': {'label': 'Operación', 'paths': [f'answers.{f["tipo_de_operacion"]}']},
+            'tipo_de_vehiculo': {'label': 'Tipo de vehículo', 'paths': [f'answers.{f["tipo_de_vehiculo"]}']},
+            'anden_asignado': {'label': 'Andén', 'paths': [f'answers.{f["anden_asignado"]}']},
+            'material': {'label': 'Material', 'paths': [f'answers.{f["grupo_materiales"]}.{f["producto_material"]}']},
+        }
+
+    def transportistas_base_match(self, date_from=None, date_to=None):
+        f = self.bitacora_transportista_fields
+        match_filters = {
+            'form_id': self.BITACORA_TRANSPORTISTAS,
+            'deleted_at': {'$exists': False},
+        }
+        fecha_field = f'answers.{f["fecha_hora_ingreso"]}'
+        # El front manda el rango ya resuelto; un date_to de solo día ("AAAA-MM-DD")
+        # se extiende al final del día porque las fechas se comparan como texto.
+        if date_to and len(date_to) == 10:
+            date_to = f"{date_to} 23:59:59"
+        if date_from and date_to:
+            match_filters[fecha_field] = {'$gte': date_from, '$lte': date_to}
+        elif date_from:
+            match_filters[fecha_field] = {'$gte': date_from}
+        elif date_to:
+            match_filters[fecha_field] = {'$lte': date_to}
+        return match_filters
+
+    def get_bitac_transportista_records(self, date_from=None, date_to=None,
+                                         tipo_de_vehiculo=None, proveedor_cliente=None, anden_asignado=None,
+                                         estatus=None, tipo_de_operacion=None, conductor=None, material=None,
+                                         search=None, skip=0, limit=None, pagination=False, facets=[]):
+        f = self.bitacora_transportista_fields
+        match_filters = self.transportistas_base_match(date_from, date_to)
+        # Buscador avanzado: los filtros del panel y las búsquedas llegan como facets.
+        facet_conditions = self.build_facets_match(self.transportistas_search_fields(), facets)
+        if facet_conditions:
+            match_filters['$and'] = facet_conditions
+
+        if tipo_de_vehiculo:
+            values = tipo_de_vehiculo if isinstance(tipo_de_vehiculo, list) else [tipo_de_vehiculo]
+            match_filters[f'answers.{f["tipo_de_vehiculo"]}'] = {'$in': values}
+        if proveedor_cliente:
+            values = proveedor_cliente if isinstance(proveedor_cliente, list) else [proveedor_cliente]
+            match_filters[f'answers.{f["proveedor_cliente"]}'] = {'$in': values}
+        if anden_asignado:
+            values = anden_asignado if isinstance(anden_asignado, list) else [anden_asignado]
+            match_filters[f'answers.{f["anden_asignado"]}'] = {'$in': values}
+        if estatus:
+            values = estatus if isinstance(estatus, list) else [estatus]
+            match_filters[f'answers.{f["estatus"]}'] = {'$in': values}
+        if tipo_de_operacion:
+            values = tipo_de_operacion if isinstance(tipo_de_operacion, list) else [tipo_de_operacion]
+            match_filters[f'answers.{f["tipo_de_operacion"]}'] = {'$in': values}
+        if conductor:
+            values = conductor if isinstance(conductor, list) else [conductor]
+            match_filters[f'answers.{f["conductor"]}'] = {'$in': values}
+        if material:
+            values = material if isinstance(material, list) else [material]
+            match_filters[f'answers.{f["grupo_materiales"]}'] = {
+                '$elemMatch': {f['producto_material']: {'$in': values}}
+            }
+        if search:
+            search_regex = {'$regex': search, '$options': 'i'}
+            match_filters['$or'] = [
+                {'folio': search_regex},
+                {f'answers.{f["placas_de_vehiculo"]}': search_regex},
+                {f'answers.{f["conductor"]}': search_regex},
+                {f'answers.{f["proveedor_cliente"]}': search_regex},
+            ]
+
         query = [
-            {'$match': {
-                'form_id': self.BITACORA_TRANSPORTISTAS,
-                'deleted_at': {'$exists': False},
-            }},
+            {'$match': match_filters},
             {'$project': {
                 '_id': 1,
                 'folio':              1,
+                'anden_asignado':     f'$answers.{f["anden_asignado"]}',
                 'placas':             f'$answers.{f["placas_de_vehiculo"]}',
                 'proveedor_cliente':  f'$answers.{f["proveedor_cliente"]}',
                 'conductor':          f'$answers.{f["conductor"]}',
                 'tipo_de_operacion':  f'$answers.{f["tipo_de_operacion"]}',
+                'tipo_de_vehiculo':   f'$answers.{f["tipo_de_vehiculo"]}',
                 'estatus':            f'$answers.{f["estatus"]}',
                 'num_de_pase':        f'$answers.{f["num_de_pase"]}',
                 'fecha_hora_ingreso': f'$answers.{f["fecha_hora_ingreso"]}',
@@ -15703,10 +15840,65 @@ class Accesos(OcrMixin, AccesosModel):
                         'in': f'$$primer.{f["producto_material"]}',
                     }
                 },
+                'documentos': {
+                    '$let': {
+                        'vars': {
+                            'grupo': {'$ifNull': [f'$answers.{f["grupo_fotos_y_documentos"]}', []]},
+                        },
+                        'in': {
+                            '$map': {
+                                'input': {
+                                    '$cond': {
+                                        'if': {'$isArray': '$$grupo'},
+                                        'then': '$$grupo',
+                                        'else': {
+                                            '$map': {
+                                                'input': {'$objectToArray': '$$grupo'},
+                                                'as': 'kv',
+                                                'in': '$$kv.v',
+                                            }
+                                        },
+                                    }
+                                },
+                                'as': 'row',
+                                'in': {
+                                    'tipo':      f'$$row.{f["tipo_de_documento"]}',
+                                    'file_url':  {'$arrayElemAt': [f'$$row.{f["documento"]}.file_url', 0]},
+                                    'file_name': {'$arrayElemAt': [f'$$row.{f["documento"]}.file_name', 0]},
+                                },
+                            }
+                        },
+                    }
+                },
             }},
             {'$sort': {'_id': -1}},
         ]
-        return self.format_cr(self.cr.aggregate(query))
+
+        # Gate temporal: la app móvil aún no entiende el shape paginado
+        # ({records, total_records, ...}) y espera la lista plana de siempre.
+        # Solo se activa el nuevo comportamiento si el caller manda pagination=True.
+        if not pagination:
+            return self.format_cr(self.cr.aggregate(query))
+
+        count_query = [{'$match': match_filters}, {'$count': 'total'}]
+        count_result = self.format_cr(self.cr.aggregate(count_query))
+        total_count = count_result[0]['total'] if count_result else 0
+
+        if limit:
+            query.append({'$skip': skip or 0})
+            query.append({'$limit': limit})
+        records = self.format_cr(self.cr.aggregate(query))
+
+        current_page = ((skip or 0) // limit) + 1 if limit else 1
+        total_pages = ceil(total_count / limit) if limit else 1
+
+        return {
+            'records': records,
+            'total_records': total_count,
+            'total_pages': total_pages,
+            'actual_page': current_page,
+            'records_on_page': len(records),
+        }
 
     def get_horarios_data(self, dia=None):
         """
