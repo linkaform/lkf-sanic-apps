@@ -235,14 +235,13 @@ class AccesosModel(Base):
                     self.USUARIOS_ID,
                     self.VISITA_AUTORIZADA_CAT_ID,
                     self.MENUS_CATALOG_ID,
-                    self.OCR_DOCS
                     ],
-                'scripts':[self.OFFLINE_SERVICES, self.SCRIPT_MENUS, self.FILTERS]
+                'scripts':[self.OFFLINE_SERVICES, self.SCRIPT_MENUS, self.FILTERS, self.OCR_DOCS]
             },
             'accesos':{
                 'forms':[self.CHECKIN_CASETAS, self.REGISTRO_ASISTENCIA, self.BITACORA_GAFETES_LOCKERS, self.CHECK_UBICACIONES, self.BITACORA_ACCESOS],
                 'catalogs':[],
-                'scripts':[]
+                'scripts':[self.OCR_DOCS]
             },
             'seguridad':{
                 'forms':[self.CONFIGURACION_RECORRIDOS_FORM, self.BITACORA_RONDINES, self.BITACORA_FALLAS, self.BITACORA_INCIDENCIAS],
