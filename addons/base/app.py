@@ -3,7 +3,7 @@
 
 # Importaciones necesarias
 import simplejson, importlib
-import re, os, zipfile, wget, random, shutil, datetime
+import hashlib, re, os, zipfile, wget, random, shutil, datetime
 from bson.objectid import ObjectId
 from datetime import timedelta
 from couchdb.http import ResourceNotFound
@@ -185,6 +185,27 @@ class Base(base.LKF_Base):
             # 'warehouse':f'{self.WAREHOUSE_OBJ_ID}.{self.f.get("warehouse")}',
             # 'location':f'{self.WAREHOUSE_OBJ_ID}.{self.f.get("location")}',
         }
+
+    def get_valid_object_id(self, value):
+        """
+        Regresa siempre un ObjectId valido a partir de `value`.
+        - ObjectId o string de 24 hex: se respeta tal cual.
+        - String hex mas largo (ej. uuid de 32, con o sin guiones): se recorta a 24.
+        - Cualquier otra cosa (hex corto, texto): se deriva de forma determinista
+          con md5, asi el mismo valor siempre da el mismo ObjectId.
+        - Vacio o None: ObjectId nuevo.
+        """
+        if isinstance(value, ObjectId):
+            return value
+        if value is None or str(value).strip() == '':
+            return ObjectId()
+        raw = str(value).strip()
+        if ObjectId.is_valid(raw):
+            return ObjectId(raw)
+        clean = raw.replace('-', '')
+        if len(clean) > 24 and re.fullmatch(r'[0-9a-fA-F]+', clean):
+            return ObjectId(clean[:24])
+        return ObjectId(hashlib.md5(raw.encode('utf-8')).hexdigest()[:24])
 
     def create_user_account(self, user_data):
         if user_data.get(self.f['new_user_status']) == 'Creado':
@@ -2154,7 +2175,7 @@ class ScriptLogs(Base):
         except Exception as e:
             print('ScriptLogs: no se pudieron resolver usuarios', e)
         try:
-            res = self.lkf_api.get_user_scripts(self.user_id) or {}
+            res = self.lkf_api.get_user_scripts(self.user_id, flat=True) or {}
             items = res.get('data', []) if isinstance(res, dict) else []
             if isinstance(items, list):
                 for s in items:
@@ -2164,6 +2185,7 @@ class ScriptLogs(Base):
                         scripts[int(sid)] = name
         except Exception as e:
             print('ScriptLogs: no se pudieron resolver scripts', e)
+        print('scripts=', scripts)
         maps = {'users': users, 'scripts': scripts}
         # 'scripts' = solo los scripts que el usuario puede ver (los demas no se
         # resuelven). Si la consulta fallo (vacio) no se cachea para reintentar.
@@ -2216,6 +2238,8 @@ class ScriptLogs(Base):
                          user_ids=None, user_name='', date1=None, date2=None,
                          min_duration=None, max_duration=None, run_success=None):
         maps = self._name_maps()
+        if not script_ids:
+            script_ids = list(maps.get('scripts',{}).keys())
         match = {}
         if status:
             match['status'] = status
@@ -2248,7 +2272,6 @@ class ScriptLogs(Base):
             dur['$lte'] = float(max_duration)
         if dur:
             match['duration'] = dur
-
         limit = int(limit or 25)
         skip = int(skip or 0)
         cr = self.script_log_cr
@@ -2258,24 +2281,20 @@ class ScriptLogs(Base):
         records = []
         for r in cursor:
             tb = r.get('traceback') or ''
-            script_name =  maps['scripts'].get(r.get('script_id')) or str(r.get('script_id', ''))
-            try:
-                int(script_name)
-            except Exception as e:
-                records.append({
-                    'id': str(r['_id']),
-                    'status': r.get('status', ''),
-                    'run_success': r.get('run_success'),
-                    'script_id': r.get('script_id'),
-                    'script_name': script_name,
-                    'user_id': r.get('user_id'),
-                    'user_name': maps['users'].get(r.get('user_id')) or str(r.get('user_id', '')),
-                    'start_date': r['start_date'].isoformat() + 'Z' if r.get('start_date') else None,
-                    'end_date': r['end_date'].isoformat() + 'Z' if r.get('end_date') else None,
-                    'duration': r.get('duration'),
-                    'has_log': tb.startswith(self.LOG_PREFIXES),
-                    'log_url': tb if tb.startswith(self.LOG_PREFIXES) else '',
-                })
+            records.append({
+                'id': str(r['_id']),
+                'status': r.get('status', ''),
+                'run_success': r.get('run_success'),
+                'script_id': r.get('script_id'),
+                'script_name': maps['scripts'].get(r.get('script_id')) or str(r.get('script_id', '')),
+                'user_id': r.get('user_id'),
+                'user_name': maps['users'].get(r.get('user_id')) or str(r.get('user_id', '')),
+                'start_date': r['start_date'].isoformat() + 'Z' if r.get('start_date') else None,
+                'end_date': r['end_date'].isoformat() + 'Z' if r.get('end_date') else None,
+                'duration': r.get('duration'),
+                'has_log': tb.startswith(self.LOG_PREFIXES),
+                'log_url': tb if tb.startswith(self.LOG_PREFIXES) else '',
+            })
         return {
             'records': records,
             'total_records': total_records,

@@ -7100,7 +7100,7 @@ class Accesos(OcrMixin, AccesosModel):
             },
         })
         if force_id:
-            metadata.update({'id': force_id})
+            metadata.update({'id': str(self.get_valid_object_id(force_id))})
         metadata.update({'answers':answers})
         response = self.lkf_api.post_forms_answers(metadata)
         return response
@@ -18034,7 +18034,7 @@ class Accesos(OcrMixin, AccesosModel):
                 }
             },
         })
-        metadata.update({"id": data.id})
+        metadata.update({"id": str(self.get_valid_object_id(data.id))})
         if isinstance(data.get('geolocation'), dict):
             metadata.update({'geolocation': [data.get('geolocation').get('long'), data.get('geolocation').get('lat')]})
 
