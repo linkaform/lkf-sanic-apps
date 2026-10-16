@@ -584,6 +584,20 @@ async def post_ocr_truck(request: Request):
     )
     return json(res, status=res.get('status_code', 200))
 
+@accesos_bp.post("/ocr_acceso_transportista")
+async def post_ocr_acceso_transportista(request: Request):
+    # IA de Nuevo acceso / Registrar llegada de transportistas (2610-1382).
+    # image_source: lista de {'file_url', 'file_name', 'tipo_hint'}.
+    payload = _ocr_payload(request)
+    if not payload.get('image_source'):
+        return json({'status_code': 400, 'msg': 'image_source es requerido'}, status=400)
+    res = service.ocr_acceso_transportista(
+        image_source=payload.get('image_source'),
+        extra_instructions=payload.get('extra_instructions'),
+        model=payload.get('model', 'google/gemini-2.5-flash'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
 @accesos_bp.post("/ocr_articulo_concesionado")
 async def post_ocr_articulo_concesionado(request: Request):
     payload = _ocr_payload(request)
