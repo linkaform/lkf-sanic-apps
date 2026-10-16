@@ -4,9 +4,11 @@ from sanic.response import json
 
 from config.account_settings import *
 
-from lkf_addons.base.app import ScriptLogs
+from lkf_addons.base.app import ScriptLogs, UserActivation
 
 script_logs_service = ScriptLogs(settings)
+
+user_activation_service = UserActivation(settings)
 
 base_bp = Blueprint("base", url_prefix="/base")
 
@@ -82,4 +84,19 @@ async def get_get_workflow_log_filters(request: Request):
 @base_bp.post("/get_workflow_log_detail")
 async def post_get_workflow_log_detail(request: Request):
     response = workflow_logs_service.get_workflow_log_detail(_payload(request).get("log_id", ""))
+    return json({"data": response}, status=200)
+
+
+# ---- Ruta publica (sin JWT): el usuario fija su contraseña con el enlace del correo ----
+
+@base_bp.post("/set_user_password")
+async def post_set_user_password(request: Request):
+    """POST y no GET: el token y la contraseña no deben quedar en el access_log."""
+    p = _payload(request)
+    response = user_activation_service.set_user_password(
+        record_id=p.get("record_id", ""),
+        token=p.get("token", ""),
+        password=p.get("password", ""),
+        password2=p.get("password2", ""),
+    )
     return json({"data": response}, status=200)

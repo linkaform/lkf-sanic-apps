@@ -2545,3 +2545,110 @@ class WorkflowLogs(ScriptLogs):
             'workflow_response': parsed(d.get('workflow_response_content')),
             'record_response_code': d.get('record_response_code'),
         }
+
+
+class UserActivation(Base):
+    """
+    Ultimo paso del alta de usuarios (form Usuarios): el usuario abre el enlace
+    del correo de bienvenida y fija su contraseña. Ruta publica, igual que el
+    alta de contratistas: no hay JWT de usuario, todo corre con el API key de la
+    cuenta (APIKEY_JWT_KEY).
+
+    El enlace lleva record_id + token. El token lo genera create_user_account
+    (lkf_addons/addons/base/app.py) y es de un solo uso: al cambiar la
+    contraseña se borra del registro y el estatus pasa a 'activado'. Mientras el
+    estatus no sea 'creado' (create_user_account lo deja asi al dar de alta) no se
+    cambia nada; tras usarse queda 'activado'.
+    El usuario nace inactivo en LinkaForm: aqui se activa justo antes de cambiar
+    la contraseña, asi que solo queda activo quien completo el flujo.
+    """
+
+    JWT_CLIENTE = 'APIKEY_JWT_KEY'
+    MIN_PASSWORD = 8
+
+    # Ids del form Usuarios (lkf_addons/addons/base/model.py, self.f['new_user_*'])
+    # en dict LOCAL para no pisar self.f, que es compartido por el singleton.
+    user_fields = {
+        'status':   '679d023876ad7f5ba642f4ed',
+        'user_id':  '638a9a99616398d2e392a9f5',
+        'username': '6759e4a7a9a6e13c7b26da33',
+        'token':    '6a2f1c0e5b3d4a7c9e8f1a01',
+    }
+
+    # Mismo mensaje y status para record_id inexistente, token incorrecto,
+    # estatus distinto de 'creado' o enlace ya usado: la ruta no debe servir de
+    # oraculo para adivinar record_ids ni para saber en que estado esta un alta.
+    INVALID = {'msg': 'El enlace no es válido o ya fue utilizado.', 'status_code': 400}
+
+    def set_user_password(self, record_id='', token='', password='', password2=''):
+        import hmac
+        from bson.errors import InvalidId
+
+        if not password or password != password2:
+            raise self.LKFException({
+                'msg': 'Las contraseñas no coinciden.', 'status_code': 400})
+        if len(password) < self.MIN_PASSWORD:
+            raise self.LKFException({
+                'msg': f'La contraseña debe tener al menos {self.MIN_PASSWORD} caracteres.',
+                'status_code': 400})
+
+        try:
+            oid = ObjectId(record_id)
+        except (InvalidId, TypeError):
+            raise self.LKFException(self.INVALID)
+
+        f = self.user_fields
+        record = self.cr.find_one(
+            {'_id': oid, 'deleted_at': {'$exists': False}},
+            {'form_id': 1, 'answers': 1})
+        answers = (record or {}).get('answers') or {}
+        saved_token = answers.get(f['token']) or ''
+        user_id = answers.get(f['user_id'])
+        if isinstance(user_id, list):
+            user_id = user_id[0] if user_id else None
+
+        valid = (
+            record
+            and answers.get(f['status']) == 'creado'
+            and saved_token
+            and token
+            and hmac.compare_digest(str(saved_token), str(token))
+            and user_id
+        )
+        if not valid:
+            raise self.LKFException(self.INVALID)
+
+        # POST /api/infosync/activate_user/ responde 202 al activar y 400 si ya
+        # estaba activo (reenvio / reintento tras un fallo posterior), asi que el
+        # 400 no se trata como error; 404/5xx si: sin activar no podria entrar.
+        username = answers.get(f['username'])
+        if isinstance(username, list):
+            username = username[0] if username else None
+        res = self.lkf_api.activate_user(username, jwt_settings_key=self.JWT_CLIENTE) if username else None
+        if not res or res.get('status_code') not in (200, 201, 202, 400):
+            raise self.LKFException({
+                'msg': 'No pudimos activar tu cuenta. Intenta de nuevo.',
+                'status_code': 400})
+
+        res = self.lkf_api.update_user_password(
+            int(user_id), password=password, jwt_settings_key=self.JWT_CLIENTE)
+        if not res or res[0].get('status_code') not in (200, 201, 202):
+            # NUNCA imprimir `password` ni la respuesta completa.
+            raise self.LKFException({
+                'msg': 'No pudimos cambiar tu contraseña. Intenta de nuevo.',
+                'status_code': 400})
+
+        # Quema el enlace: sin token y con estatus 'activado' ya no pasa el
+        # filtro de arriba. Si esto fallara el enlace seguiria vivo, asi que no
+        # se traga el error.
+        res = self.lkf_api.patch_multi_record(
+            answers={f['status']: 'activado', f['token']: ''},
+            form_id=record['form_id'],
+            record_id=[record_id],
+            jwt_settings_key=self.JWT_CLIENTE)
+        if not res:
+            raise self.LKFException({
+                'msg': 'Tu contraseña se cambió, pero no pudimos cerrar el enlace. '
+                       'Avisa a tu administrador.',
+                'status_code': 500})
+        return {'activated': True}
