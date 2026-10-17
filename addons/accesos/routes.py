@@ -1007,6 +1007,50 @@ async def get_get_incidences(request: Request):
     records = service.get_list_incidences(locations, area, prioridades=prioridades, **filters)
     return json({"data": records}, status=200)
 
+def _lista(valor):
+    """ locations/prioridades pueden llegar como lista o como texto suelto. """
+    if not valor:
+        return []
+    return valor if isinstance(valor, list) else [valor]
+
+# Listado con estatus, paginación (limit/skip) y buscador (facets). POST porque
+# facets es una lista de objetos; el GET de arriba se queda para compatibilidad.
+@accesos_bp.post("/get_incidences")
+async def post_get_incidences(request: Request):
+    payload = _ocr_payload(request)
+    records = service.get_list_incidences(
+        _lista(payload.get("locations") or payload.get("location")),
+        payload.get("area", ""),
+        prioridades=_lista(payload.get("prioridades")),
+        dateFrom=payload.get("dateFrom", ""),
+        dateTo=payload.get("dateTo", ""),
+        filterDate=payload.get("filterDate", ""),
+        status=payload.get("estatus") or payload.get("status") or None,
+        limit=payload.get("limit"),
+        skip=payload.get("skip", 0) or 0,
+        facets=payload.get("facets", []) or [],
+    )
+    return json({"data": records}, status=200)
+
+@accesos_bp.get("/get_search_fields_incidencias")
+async def get_search_fields_incidencias(request: Request):
+    return json({"data": service.get_search_fields_incidencias()}, status=200)
+
+@accesos_bp.post("/get_search_counts_incidencias")
+async def post_get_search_counts_incidencias(request: Request):
+    payload = _ocr_payload(request)
+    records = service.get_search_counts_incidencias(
+        _lista(payload.get("locations") or payload.get("location")),
+        payload.get("area", ""),
+        dateFrom=payload.get("dateFrom", ""),
+        dateTo=payload.get("dateTo", ""),
+        filterDate=payload.get("filterDate", ""),
+        status=payload.get("estatus") or payload.get("status") or None,
+        facets=payload.get("facets", []) or [],
+        candidates=payload.get("candidates", []) or [],
+    )
+    return json({"data": records}, status=200)
+
 @accesos_bp.post("/update_incidence")
 async def post_update_incidence(request: Request):
     payload = _ocr_payload(request)
@@ -1037,16 +1081,9 @@ async def get_catalogo_area_empleado_incidencias(request: Request):
     records = service.catalogo_config_area_empleado(bitacora='Incidencias', location=location)
     return json({"data": records}, status=200)
 
-@accesos_bp.get("/catalogo_incidencias")
-async def get_catalogo_incidencias(request: Request):
-    cat = request.args.get("cat")
-    sub_cat = request.args.get("sub_cat")
-    records = service.catalogo_incidencias(cat=cat, sub_cat=sub_cat)
-    return json({"data": records}, status=200)
-
-# ============================================
-# Update QR (migrado de update_qr.py, hook de formulario)
-# ============================================
+@accesos_bp.get("/catalogo_incidencias_plano")
+async def get_catalogo_incidencias_plano(request: Request):
+    return json({"data": service.catalogo_incidencias_plano()}, status=200)
 
 @accesos_bp.post("/update_qr")
 async def post_update_qr_hook(request: Request):
