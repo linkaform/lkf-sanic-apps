@@ -2616,6 +2616,17 @@ class UserActivation(Base):
             and user_id
         )
         if not valid:
+            # Solo al log del servidor (nunca al cliente, que recibe un mensaje
+            # generico): que condicion fallo. Sin el token ni la contraseña.
+            print('set_user_password rechazado:', {
+                'record_id': str(record_id)[:24],
+                'registro_existe': bool(record),
+                'estatus': answers.get(f['status']),
+                'token_guardado': bool(saved_token),
+                'token_recibido': bool(token),
+                'token_coincide': bool(saved_token and token and hmac.compare_digest(str(saved_token), str(token))),
+                'user_id': bool(user_id),
+            })
             raise self.LKFException(self.INVALID)
 
         # POST /api/infosync/activate_user/ responde 202 al activar y 400 si ya
