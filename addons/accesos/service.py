@@ -5842,65 +5842,28 @@ class Accesos(OcrMixin, AccesosModel):
         form_id = self.PASE_ENTRADA
         return self.catalogo_view(catalog_id, form_id)
 
-    def catalogo_incidencias(self, cat="", sub_cat=""):
-        # selector = {} #Aqui filtras igual que con mongo de que answers.tal.tal: name_hotel
-        # fields = ["_id"] #Aqui que te retorne los campos que quieras
-
-        # mango_query = {
-        #     "selector": selector,
-        #     "fields": fields,
-        #     "limit": 1000
-        # }
-
-        # row_catalog = self.lkf_api.search_catalog(self.LISTA_INCIDENCIAS_CAT_ID, mango_query)
-        # print(f"Consulta de catálogo: {row_catalog}")
-
-
-
-        catalog_id = self.LISTA_INCIDENCIAS_CAT_ID
-        form_id = self.BITACORA_INCIDENCIAS
-        options={}
-        search=""
-        # cat= ""
-        # sub_cat= ""
-        
-        if cat and sub_cat:
-            options = {
-                "group_level": 3,
-                "startkey": [cat,sub_cat],
-                "endkey": [cat, f"{sub_cat}\n"]
-            }
-            search="incidence"
-        else:
-            if cat and not sub_cat:
-                options = {
-                    "group_level": 2,
-                    "startkey": [cat],
-                    "endkey": [f"{cat}\n"]
-                }
-                search="sub_catalog"
-            if sub_cat and not cat:
-                options = {
-                    "group_level": 3,
-                    "startkey": [sub_cat],
-                    "endkey": [f"{sub_cat}\n"]
-                }
-                search="incidence"
-
-        res = self.lkf_api.catalog_view(catalog_id, form_id, options)
-        print("CATALGOO", catalog_id, form_id,res)
-        formatted= {
-            "selected":cat, 
-            "data":res, 
-            "type": search
-        }
-        if res == [None] and cat and not sub_cat:
-            res_obj = self.catalogo_incidencias(cat="", sub_cat= cat)
-            formatted["selected"] = cat
-            formatted["data"] = res_obj["data"] 
-            formatted["type"] = "incidence"
-        print("formatedo", simplejson.dumps(formatted, indent=4))
-        return formatted
+    def catalogo_incidencias_plano(self):
+        """
+        Todos los tipos de incidencia en una sola llamada, cada uno con su
+        categoría y subcategoría: [{incidente, categoria, sub_categoria}].
+        Se leen los registros del catálogo (catalog_view solo regresa un nivel)
+        y se quitan los repetidos: el catálogo tiene filas duplicadas.
+        """
+        registros = self.lkf_api.search_catalog(self.LISTA_INCIDENCIAS_CAT_ID, {'selector': {}, 'limit': 5000}) or []
+        vistos = set()
+        tipos = []
+        for r in registros:
+            if not isinstance(r, dict):
+                continue
+            incidente = self.unlist(r.get(self.incidence_fields['incidencia'], '')) or ''
+            categoria = self.unlist(r.get(self.incidence_fields['categoria'], '')) or ''
+            sub_categoria = self.unlist(r.get(self.incidence_fields['sub_categoria'], '')) or ''
+            llave = (incidente, categoria, sub_categoria)
+            if not incidente or llave in vistos:
+                continue
+            vistos.add(llave)
+            tipos.append({'incidente': incidente, 'categoria': categoria, 'sub_categoria': sub_categoria})
+        return sorted(tipos, key=lambda t: t['incidente'].lower())
 
     def catalogo_vehiculos(self, options={}):
         catalog_id = self.AF.TIPO_DE_VEHICULO_ID
@@ -7805,6 +7768,9 @@ class Accesos(OcrMixin, AccesosModel):
             },
         })
         #---Define Answers
+        if data_failures.get('record_id'):
+            # Id generado de antemano (p. ej. falla creada desde una incidencia).
+            metadata.update({"id": data_failures.pop('record_id')})
         answers = {}
         for key, value in data_failures.items():
             if key == 'falla_ubicacion' or key == 'falla_caseta':
@@ -7816,8 +7782,8 @@ class Accesos(OcrMixin, AccesosModel):
                     answers[self.fallas_fields['falla_ubicacion_catalog']] = {self.fallas_fields['falla_ubicacion']:data_failures['falla_ubicacion'],
                     self.fallas_fields['falla_caseta']:data_failures['falla_caseta']}
             elif key == 'falla' or key== 'falla_objeto_afectado':
-                answers[self.fallas_fields['falla_catalog']] = {self.fallas_fields['falla']:data_failures['falla'],
-                self.fallas_fields['falla_subconcepto']:data_failures['falla_objeto_afectado']}
+                answers[self.fallas_fields['falla_catalog']] = {self.fallas_fields['falla']:data_failures.get('falla', ''),
+                self.fallas_fields['falla_subconcepto']:data_failures.get('falla_objeto_afectado', '')}
             elif key == 'falla_reporta_nombre':
                 answers[self.fallas_fields['falla_reporta_catalog']] = {self.fallas_fields['falla_reporta_nombre']:value}
             elif key == 'falla_responsable_solucionar_nombre':
@@ -7839,10 +7805,25 @@ class Accesos(OcrMixin, AccesosModel):
                             }
                         )
                     answers.update({self.fallas_fields['falla_grupo_seguimiento']:seg_list})
-            else:
+            elif key in self.fallas_fields:
                 answers.update({f"{self.fallas_fields[key]}":value})
+            # Llaves que la forma de fallas no conoce se ignoran.
         metadata.update({'answers':answers})
         return self.lkf_api.post_forms_answers(metadata)
+
+    def _reporta_sesion(self):
+        """ Nombre del empleado (catálogo de empleados) del usuario de la sesión,
+        para "Reporta" de la incidencia. El nombre de la cuenta puede no coincidir
+        con el del catálogo, por eso no se usa lo que mande el front. """
+        employee_obj = getattr(self, 'Employee', self)
+        try:
+            employee = employee_obj.get_employee_data(email=self.user.get('email'), get_one=True) or {}
+            if not employee and self.user_id:
+                employee = employee_obj.get_employee_data(user_id=self.user_id, get_one=True) or {}
+        except Exception:
+            employee = {}
+        nombre = employee.get('worker_name') if isinstance(employee, dict) else ''
+        return self.unlist(nombre) if nombre else ''
 
     def create_incidence(self, data_incidences):
         #---Define Metadata
@@ -7862,6 +7843,21 @@ class Accesos(OcrMixin, AccesosModel):
             metadata.update({
                 "id": data_incidences.pop('record_id')
             })
+        #---"Reportar como falla": se separa del resto de los datos. Los ids de la
+        #   incidencia y de la falla se generan aquí para que cada registro nazca
+        #   con la liga al otro (un PATCH posterior reemplazaría todas las respuestas).
+        reportar_falla = data_incidences.pop('reportar_falla', None)
+        falla_id = None
+        incidencia_id = None
+        if isinstance(reportar_falla, dict):
+            incidencia_id = metadata.get('id') or str(ObjectId())
+            metadata['id'] = incidencia_id
+            falla_id = str(ObjectId())
+            data_incidences['falla_generada_url'] = self._url_registro_lkf(falla_id)
+        if not data_incidences.get('reporta_incidencia'):
+            reporta = self._reporta_sesion()
+            if reporta:
+                data_incidences['reporta_incidencia'] = reporta
         #---Define Answers
         answers = {}
         answers[self.incidence_fields['incidencia_catalog']]={}
@@ -7872,12 +7868,14 @@ class Accesos(OcrMixin, AccesosModel):
                     self.incidence_fields['categoria']:data_incidences['categoria']
                 })
             elif key == 'sub_categoria':
+                # El catálogo ya no tiene subcategoría: solo se escribe si viene con valor.
+                if value:
+                    answers[self.incidence_fields['incidencia_catalog']].update({
+                        self.incidence_fields['sub_categoria']: data_incidences['sub_categoria']
+                    })
+            elif key in ('incidencia', 'incidente'):
                 answers[self.incidence_fields['incidencia_catalog']].update({
-                    self.incidence_fields['sub_categoria']: data_incidences['sub_categoria']
-                })
-            elif key == 'incidente':
-                answers[self.incidence_fields['incidencia_catalog']].update({
-                    self.incidence_fields['incidente']: data_incidences['incidente']
+                    self.incidence_fields['incidencia']: data_incidences.get('incidencia') or data_incidences.get('incidente')
                 })
 
             elif key == 'ubicacion_incidencia' or key == 'area_incidencia':
@@ -7901,13 +7899,15 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['puesto']:c.get('puesto',""),
                                 self.incidence_fields['rol'] :c.get('rol',"").lower().replace(" ","_"),
                                 self.incidence_fields['sexo'] :c.get('sexo',"").lower().replace(" ","_"),
-                                self.incidence_fields['grupo_etario'] :c.get("grupo_etario").lower().replace(" ","_"),
+                                self.incidence_fields['grupo_etario'] :(c.get('grupo_etario') or "").lower().replace(" ","_"),
                                 self.incidence_fields['atencion_medica'] :c.get('atencion_medica',"").lower(),
                                 self.incidence_fields['retenido'] :c.get('retenido',"").lower(),
                                 self.incidence_fields['comentarios'] :c.get('comentarios',"")
                             }
                         )
                     answers.update({self.incidence_fields['personas_involucradas_incidencia']:personas_list})
+            elif key == 'acciones_correctivas_incidencia':
+                answers[self.incidence_fields['acciones_correctivas_incidencia']] = self._answers_acciones_correctivas(value)
             elif key == 'acciones_tomadas_incidencia':
                 acciones = data_incidences.get('acciones_tomadas_incidencia',[])
                 if acciones:
@@ -7933,9 +7933,10 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['accion_correctiva_incidencia']:c.get('accion_correctiva_incidencia',""),
                                 self.incidence_fields['incidencia_personas_involucradas'] :c.get('incidencia_personas_involucradas',""),
                                 self.incidence_fields['fecha_inicio_seg'] :c.get('fecha_inicio_seg',""),
-                                self.incidence_fields['tiempo_transcurrido'] : c.get('tiempo_transcurrido',"12 horas"),
+                                self.incidence_fields['tiempo_transcurrido'] : c.get('tiempo_transcurrido',""),
                                 self.incidence_fields['incidencia_documento_solucion'] :c.get('incidencia_documento_solucion'),
-                                self.incidence_fields['incidencia_evidencia_solucion'] :c.get('incidencia_evidencia_solucion')
+                                self.incidence_fields['incidencia_evidencia_solucion'] :c.get('incidencia_evidencia_solucion'),
+                                self.incidence_fields['registrado_por_seguimiento']: c.get('registrado_por') if 'registrado_por' in c else self._reporta_sesion(),
                             }
                         )
                     answers.update({self.incidence_fields['seguimientos_incidencia']:seg_list})
@@ -7955,7 +7956,6 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['documento'] :c.get('documento')
                             }
                         )
-                        print("LISTA",ap_list)
                     answers.update({self.incidence_fields['afectacion_patrimonial_incidencia']:ap_list})
             elif key == 'datos_deposito_incidencia':
                 depositos = data_incidences.get('datos_deposito_incidencia',[])
@@ -7985,11 +7985,47 @@ class Accesos(OcrMixin, AccesosModel):
                 answers[self.incidence_fields['prioridad_incidencia']] = f"{value}".lower()
             elif key == 'color_piel':
                 answers[self.incidence_fields['color_piel']] =  f"{value}".lower().replace(" ", "_")
-            else:
+            elif key in self.incidence_fields:
                 answers.update({f"{self.incidence_fields[key]}":value})
+            # Llaves que el form no conoce se ignoran: antes tronaban con KeyError
+            # y la incidencia completa no se creaba/actualizaba.
         # print("RESPUESTAS", simplejson.dumps(answers, indent=4))
         metadata.update({'answers':answers})
-        return self.lkf_api.post_forms_answers(metadata)
+        response = self.lkf_api.post_forms_answers(metadata)
+        if falla_id and isinstance(response, dict) and response.get('status_code') in (200, 201, 202):
+            response['falla'] = self._crear_falla_de_incidencia(
+                data_incidences, reportar_falla, falla_id, incidencia_id)
+        return response
+
+    def _url_registro_lkf(self, record_id):
+        config = getattr(getattr(self, 'settings', None), 'config', {}) or {}
+        return f"{config.get('WEB_PROTOCOL', 'https')}://{config.get('WEB_HOST', 'app.linkaform.com')}/#/records/detail/{record_id}"
+
+    def _crear_falla_de_incidencia(self, inc, reportar_falla, falla_id, incidencia_id):
+        """ Falla generada con "Reportar como falla": toma los datos de la
+        incidencia y guarda la liga a ella. Si falla, la incidencia ya quedó
+        creada: se regresa el error para avisarle al usuario. """
+        data_falla = {
+            'record_id': falla_id,
+            'falla_fecha_hora': inc.get('fecha_hora_incidencia', ''),
+            'falla_ubicacion': inc.get('ubicacion_incidencia', ''),
+            'falla_caseta': inc.get('area_incidencia', ''),
+            'falla_comentarios': inc.get('comentario_incidencia', ''),
+            'falla_evidencia': inc.get('evidencia_incidencia', []) or [],
+            'falla_documento': inc.get('documento_incidencia', []) or [],
+            'falla_reporta_nombre': self._reporta_sesion() or inc.get('reporta_incidencia', ''),
+            'falla_estatus': 'abierto',
+            'incidencia_url': self._url_registro_lkf(incidencia_id),
+        }
+        if reportar_falla.get('concepto') or reportar_falla.get('subconcepto'):
+            data_falla['falla'] = reportar_falla.get('concepto', '')
+            data_falla['falla_objeto_afectado'] = reportar_falla.get('subconcepto', '')
+        try:
+            res = self.create_failure(data_falla)
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+        ok = isinstance(res, dict) and res.get('status_code') in (200, 201, 202)
+        return {'ok': ok, 'id': falla_id, 'error': '' if ok else str(res)[:300]}
 
     def create_note(self, location, area, data_notes):
         '''
@@ -8942,6 +8978,7 @@ class Accesos(OcrMixin, AccesosModel):
             row['tiempo_transcurrido'] = r.get(self.incidence_fields['tiempo_transcurrido'],'')
             row['incidencia_documento_solucion'] = r.get(self.incidence_fields['incidencia_documento_solucion'],'')
             row['incidencia_evidencia_solucion'] = r.get(self.incidence_fields['incidencia_evidencia_solucion'],'')
+            row['registrado_por'] = self.unlist(r.get(self.incidence_fields['registrado_por_seguimiento'],'')) or ''
             res.append(row)
         return res
     
@@ -8977,6 +9014,40 @@ class Accesos(OcrMixin, AccesosModel):
             row['cantidad'] = r.get(self.incidence_fields['cantidad'],'')
             row['origen'] = r.get(self.incidence_fields['origen'],'')
             res.append(row)
+        return res
+
+    def _valor_opcion(self, texto):
+        texto = unicodedata.normalize('NFD', str(texto or '')).encode('ascii', 'ignore').decode('ascii')
+        return texto.strip().lower().replace(' ', '_')
+
+    def _answers_acciones_correctivas(self, acciones):
+        grupo = []
+        for c in acciones or []:
+            if not isinstance(c, dict):
+                continue
+            grupo.append({
+                self.incidence_fields['tipo_accion_correctiva']: self._valor_opcion(c.get('tipo') or 'correctiva'),
+                self.incidence_fields['accion_correctiva']: c.get('accion', ''),
+                self.incidence_fields['causa_accion_correctiva']: c.get('causa', ''),
+                self.incidence_fields['tipo_responsable_accion_correctiva']: self._valor_opcion(c.get('responsable_tipo') or 'empleado'),
+                self.incidence_fields['responsable_accion_correctiva']: c.get('responsable', ''),
+                self.incidence_fields['estatus_accion_correctiva']: self._valor_opcion(c.get('estatus') or 'pendiente'),
+            })
+        return grupo
+
+    def format_acciones_correctivas(self, data):
+        etiquetas_responsable = {'empleado': 'Empleado', 'area': 'Área', 'rol': 'Rol'}
+        res = []
+        for r in data or []:
+            estatus = r.get(self.incidence_fields['estatus_accion_correctiva'], '') or 'pendiente'
+            res.append({
+                'tipo': (r.get(self.incidence_fields['tipo_accion_correctiva'], '') or 'correctiva').capitalize(),
+                'accion': r.get(self.incidence_fields['accion_correctiva'], ''),
+                'causa': r.get(self.incidence_fields['causa_accion_correctiva'], ''),
+                'responsable_tipo': etiquetas_responsable.get(r.get(self.incidence_fields['tipo_responsable_accion_correctiva'], ''), 'Empleado'),
+                'responsable': r.get(self.incidence_fields['responsable_accion_correctiva'], ''),
+                'estatus': estatus.replace('_', ' ').capitalize(),
+            })
         return res
 
     def format_acciones(self, data):
@@ -10887,48 +10958,157 @@ class Accesos(OcrMixin, AccesosModel):
                 r.pop('falla_grupo_seguimiento', None)
         return result
 
-    def get_list_incidences(self, locations, area, prioridades=[], dateFrom="", dateTo="", filterDate="", folio=None):
+    #---Listado de incidencias con estatus, paginacion y buscador (facets):
+    #   portado de lkf_addons (accesos/app.py) para llamarlo desde incidencias_sdk.py.
+    def clean_text(self, texto):
+        """
+        Limpia texto: minúsculas, espacios y puntos por guiones bajos, elimina acentos
+        """
+        if not isinstance(texto, str):
+            return ""
+
+        texto = texto.lower()                # Minúsculas
+        texto = texto.replace(" ", "_")      # Espacios → guiones bajos
+        texto = texto.replace(".", "_")      # Puntos → guiones bajos
+
+        # Eliminar acentos
+        texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
+
+        return texto
+
+    def facet_date_match(self, match_query, path, dateFrom="", dateTo="", filterDate="", zona=None):
+        """Mismo criterio de fechas que los listados: filterDate != "range" usa el
+        periodo (today, this_week...) en la zona del usuario; "" = sin fecha.
+        Las fechas se guardan como "AAAA-MM-DD HH:MM:SS" y se comparan como texto:
+        un dateTo de solo día ("AAAA-MM-DD") se extiende al final de ese día."""
+        if filterDate != "range":
+            dateFrom, dateTo = None, None
+            if filterDate:
+                if not zona:
+                    user_data = self.lkf_api.get_user_by_id(self.user.get('user_id'))
+                    zona = user_data.get('timezone', 'America/Monterrey')
+                dateFrom, dateTo = self.get_range_dates(filterDate, zona)
+            dateFrom = str(dateFrom) if dateFrom else ""
+            dateTo = str(dateTo) if dateTo else ""
+        elif dateTo and len(dateTo) == 10:
+            dateTo = f"{dateTo} 23:59:59"
+        if dateFrom and dateTo:
+            match_query[path] = {"$gte": dateFrom, "$lte": dateTo}
+        elif dateFrom:
+            match_query[path] = {"$gte": dateFrom}
+        elif dateTo:
+            match_query[path] = {"$lte": dateTo}
+        return match_query
+
+    def search_fields_config(self, fields_def):
+        """Config pública de los campos para el front (sin las rutas de Mongo)."""
+        config = []
+        for key, field in fields_def.items():
+            options = field.get('options')
+            if callable(options):
+                options = options()
+            item = {'key': key, 'label': field['label'], 'type': 'enum' if options else 'text'}
+            if options:
+                item['options'] = options
+            config.append(item)
+        return config
+
+    def count_facet_candidates(self, base_match, fields_def, facets, candidates):
+        """Cuántos registros daría agregar cada candidato {key, value, exact} a
+        los facets actuales. Un solo aggregate con un $count por candidato."""
+        if not candidates:
+            return []
+        branches = {}
+        for i, cand in enumerate(candidates):
+            extra = {'key': cand.get('key'), 'values': [cand.get('value')], 'exact': cand.get('exact')}
+            conditions = self.build_facets_match(fields_def, list(facets or []) + [extra])
+            branches[f"c{i}"] = [{'$match': {'$and': conditions} if conditions else {}}, {'$count': 'n'}]
+        result = list(self.cr.aggregate([{'$match': base_match}, {'$facet': branches}]))
+        row = result[0] if result else {}
+        return [(row.get(f"c{i}") or [{}])[0].get('n', 0) for i in range(len(candidates))]
+
+    def facet_list_page(self, match_query, project, sort, limit, skip, format_record=None):
+        """Igual que facet_paginated pero con orden propio y formato por registro."""
+        limit = int(limit) or 25
+        skip = int(skip or 0)
+        count = list(self.cr.aggregate([{'$match': match_query}, {'$count': 'total'}]))
+        total = count[0]['total'] if count else 0
+        records = self.format_cr_result(self.cr.aggregate([
+            {'$match': match_query}, {'$project': project}, {'$sort': sort},
+            {'$skip': skip}, {'$limit': limit},
+        ]))
+        if format_record:
+            records = [format_record(r) for r in records]
+        return {
+            'records': records,
+            'total_records': total,
+            'total_pages': ceil(total / limit) if limit else 1,
+            'actual_page': (skip // limit) + 1,
+            'records_on_page': len(records),
+        }
+
+    def incidencias_base_match(self, location=None, area=None, prioridades=[], dateFrom="", dateTo="", filterDate="", folio=None, status=None):
         match_query = {
             "deleted_at":{"$exists":False},
             "form_id": self.BITACORA_INCIDENCIAS,
         }
-        locations = [loc for loc in (locations or []) if loc]
-        if locations:
-             match_query[f"answers.{self.incidence_fields['ubicacion_incidencia_catalog']}.{self.incidence_fields['ubicacion_incidencia']}"] = {"$in": locations}
+        if location:
+             # El front puede mandar una ubicacion (str) o varias (list) desde el selector del header
+             ubicacion_key = f"answers.{self.incidence_fields['ubicacion_incidencia_catalog']}.{self.incidence_fields['ubicacion_incidencia']}"
+             match_query[ubicacion_key] = {"$in": location} if isinstance(location, list) else location
         if area:
              match_query[f"answers.{self.incidence_fields['area_incidencia_catalog']}.{self.incidence_fields['area_incidencia']}"] = area
+        # Prioridad y estatus se guardan normalizados (ej. 'critica', 'abierto'); se acepta
+        # cualquier capitalización/acento del caller.
+        prioridades = [self.clean_text(p) for p in (prioridades or []) if p]
         if prioridades:
             match_query[f"answers.{self.incidence_fields['prioridad_incidencia']}"] = {"$in": prioridades}
         if folio:
             match_query.update({"folio":folio})
-       
-        user_data = self.lkf_api.get_user_by_id(self.user.get('user_id'))
-        zona = user_data.get('timezone','America/Monterrey')
+        if status:
+            match_query.update({f"answers.{self.incidence_fields['estatus']}": self.clean_text(status)})
 
-        if filterDate != "range":
-            dateFrom, dateTo = self.get_range_dates(filterDate,zona)
+        return self.facet_date_match(match_query, f"answers.{self.incidence_fields['fecha_hora_incidencia']}", dateFrom, dateTo, filterDate)
 
-            if dateFrom:
-                dateFrom = str(dateFrom)
-            if dateTo:
-                dateTo = str(dateTo)
+    def incidencias_search_fields(self):
+        f = self.incidence_fields
+        estatus = f"answers.{f['estatus']}"
+        prioridad = f"answers.{f['prioridad_incidencia']}"
+        # Llaves = las del panel de filtros (filters.py, option incidencias).
+        return {
+            'folio': {'label': 'Folio', 'paths': ['folio']},
+            'tipo_incidencia': {'label': 'Incidente', 'paths': [
+                f"answers.{f['incidencia_catalog']}.{f['incidencia']}", f"answers.{f['incidencia']}"]},
+            'estatus_incidencia': {
+                'label': 'Estatus',
+                'paths': [estatus],
+                'options': lambda: self.facet_distinct_options(self.BITACORA_INCIDENCIAS, estatus),
+            },
+            'prioridad_incidencia': {
+                'label': 'Gravedad',
+                'paths': [prioridad],
+                'options': lambda: self.facet_distinct_options(
+                    self.BITACORA_INCIDENCIAS, prioridad,
+                    labels={'critica': 'Crítica'}, order=['leve', 'moderada', 'critica']),
+            },
+            'reportado_por': {'label': 'Reportado por', 'paths': [f"answers.{f['reporta_incidencia_catalog']}.{f['reporta_incidencia']}"]},
+            'area': {'label': 'Lugar del incidente', 'paths': [f"answers.{f['area_incidencia_catalog']}.{f['area_incidencia']}"]},
+            'comentario_incidencia': {'label': 'Descripción', 'paths': [f"answers.{f['comentario_incidencia']}"]},
+        }
 
-        if dateFrom and dateTo:
-            match_query.update({
-                f"answers.{self.incidence_fields['fecha_hora_incidencia']}": {"$gte": dateFrom,"$lte": dateTo},
-            })
-        elif dateFrom:
-            match_query.update({
-                f"answers.{self.incidence_fields['fecha_hora_incidencia']}": {"$gte": dateFrom}
-            })
-        elif dateTo:
-            match_query.update({
-                f"answers.{self.incidence_fields['fecha_hora_incidencia']}": {"$lte": dateTo}
-            })
+    def get_search_fields_incidencias(self):
+        return self.search_fields_config(self.incidencias_search_fields())
 
-        query = [
-            {'$match': match_query },
-            {'$project': {
+    def get_search_counts_incidencias(self, location=None, area=None, dateFrom="", dateTo="", filterDate="", status=None, facets=[], candidates=[]):
+        base_match = self.incidencias_base_match(location, area, dateFrom=dateFrom, dateTo=dateTo, filterDate=filterDate, status=status)
+        return self.count_facet_candidates(base_match, self.incidencias_search_fields(), facets, candidates)
+
+    def get_list_incidences(self, location, area, prioridades=[], dateFrom="", dateTo="", filterDate="", folio=None, status=None, limit=None, skip=0, facets=[]):
+        match_query = self.incidencias_base_match(location, area, prioridades, dateFrom, dateTo, filterDate, folio, status)
+        facet_conditions = self.build_facets_match(self.incidencias_search_fields(), facets)
+        if facet_conditions:
+            match_query["$and"] = facet_conditions
+        project = {
                 'folio': '$folio',
                 'reporta_incidencia': f"$answers.{self.incidence_fields['reporta_incidencia_catalog']}.{self.incidence_fields['reporta_incidencia']}",
                 'fecha_hora_incidencia':f"$answers.{self.incidence_fields['fecha_hora_incidencia']}",
@@ -10946,9 +11126,9 @@ class Accesos(OcrMixin, AccesosModel):
                 'notificacion_incidencia':f"$answers.{self.incidence_fields['notificacion_incidencia']}",
                 'total_deposito_incidencia':f"$answers.{self.incidence_fields['total_deposito_incidencia']}",
                 'datos_deposito_incidencia':f"$answers.{self.incidence_fields['datos_deposito_incidencia']}",
-                
+
                 'tags':f"$answers.{self.incidence_fields['tags']}",
-                
+
                 'estatus':f"$answers.{self.incidence_fields['estatus']}",
 
                 'nombre_completo_persona_extraviada':f"$answers.{self.incidence_fields['nombre_completo_persona_extraviada']}",
@@ -10977,25 +11157,21 @@ class Accesos(OcrMixin, AccesosModel):
 
                 'categoria':f"$answers.{self.incidence_fields['incidencia_catalog']}.{self.incidence_fields['categoria']}",
                 'sub_categoria':f"$answers.{self.incidence_fields['incidencia_catalog']}.{self.incidence_fields['sub_categoria']}",
-                # NOTA: legacy tiene esta misma proyeccion duplicada bajo la llave 'incidencia'
-                # (ver linea ~10176) — Python colapsa el duplicado y solo sobrevive esa, sin
-                # generar una llave 'incidente' en el output real. Se omite aqui para igualar
-                # byte a byte la respuesta de produccion.
+                'incidencia':f"$answers.{self.incidence_fields['incidencia_catalog']}.{self.incidence_fields['incidencia']}",
 
                 #Grupos repetitivos
                 'personas_involucradas_incidencia':f"$answers.{self.incidence_fields['personas_involucradas_incidencia']}",
                 'afectacion_patrimonial_incidencia':f"$answers.{self.incidence_fields['afectacion_patrimonial_incidencia']}",
                 'acciones_tomadas_incidencia':f"$answers.{self.incidence_fields['acciones_tomadas_incidencia']}",
+                'acciones_correctivas_incidencia':f"$answers.{self.incidence_fields['acciones_correctivas_incidencia']}",
+                'falla_generada_url':f"$answers.{self.incidence_fields['falla_generada_url']}",
                 'seguimientos_incidencia':f"$answers.{self.incidence_fields['seguimientos_incidencia']}",
-                }
-            },
-            {'$sort':{'folio':-1}}
-        ]
-        result = self.format_cr_result(self.cr.aggregate(query))
-        result = self.format_cr(result)
-        for r in result:
+        }
+
+        def format_incidencia(r):
             r['personas_involucradas_incidencia'] = self.format_personas_involucradas(r.get('personas_involucradas_incidencia',[]))
             r['acciones_tomadas_incidencia'] = self.format_acciones(r.get('acciones_tomadas_incidencia',[]))
+            r['acciones_correctivas_incidencia'] = self.format_acciones_correctivas(r.get('acciones_correctivas_incidencia',[]))
             r['afectacion_patrimonial_incidencia'] = self.format_afectacion_patrimonial(r.get('afectacion_patrimonial_incidencia',[]))
             r['datos_deposito_incidencia'] = self.format_datos_deposito(r.get('datos_deposito_incidencia',[]))
             r['seguimientos_incidencia'] = self.format_seguimiento_incidencias(r.get('seguimientos_incidencia',[]))
@@ -11003,8 +11179,21 @@ class Accesos(OcrMixin, AccesosModel):
             r['prioridad_incidencia'] = r.get('prioridad_incidencia',[]).title()
             r['color_piel'] = r.get('color_piel',"").capitalize().replace("_", " ")
             r['estatus'] = r.get('estatus',"").capitalize()
-        print("resultados", simplejson.dumps(result, indent=4))
-        return result
+            return r
+
+        if limit is not None:
+            page = self.facet_list_page(match_query, project, {'folio': -1}, limit, skip)
+            page['records'] = [format_incidencia(r) for r in self.format_cr(page['records'])]
+            return page
+
+        # Formato anterior (lista completa) para quien todavía no pagina.
+        query = [
+            {'$match': match_query },
+            {'$project': project},
+            {'$sort':{'folio':-1}}
+        ]
+        result = self.format_cr_result(self.cr.aggregate(query))
+        return [format_incidencia(r) for r in self.format_cr(result)]
 
     def get_list_notes(self, location, area, status=None, limit=10, offset=0, dateFrom="", dateTo=""):
         '''
@@ -12609,7 +12798,7 @@ class Accesos(OcrMixin, AccesosModel):
         #         # self.incidence_fields['evidencia_accion_correctiva_incidencia']: incidencia.get('evidencia'),
         #         # self.incidence_fields['documento_accion_correctiva_incidencia']: incidencia.get('documento'),
         #         # self.incidence_fields['fecha_inicio_seg']: incidencia.get('fecha_inicio'),
-        #         # self.incidence_fields['fecha_fin_accion_correctiva_incidencia']: incidencia.get('fecha_fin'),    
+        #         # self.incidence_fields['fecha_fin_accion_correctiva_incidencia']: incidencia.get('fecha_fin'),
         #     }
         #     incidencia_nuevo_grupo_con_ids.append(incidencia)
         incidencia_seg = {
@@ -12617,13 +12806,13 @@ class Accesos(OcrMixin, AccesosModel):
             "fecha_hora_incidencia": incidence_selected.get('fecha_hora_incidencia', ''),
             "ubicacion_incidencia": incidence_selected.get('ubicacion_incidencia', ''),
             "area_incidencia": incidence_selected.get('area_incidencia', ''),
-            "incidencia": incidence_selected.get('incidencia', ''),
             "tipo_incidencia": incidence_selected.get('tipo_incidencia', ''),
             "comentario_incidencia": incidence_selected.get('comentario_incidencia', ''),
             "tipo_dano_incidencia": incidence_selected.get('tipo_dano_incidencia', []),
             "dano_incidencia": incidence_selected.get('dano_incidencia', ''),
             "personas_involucradas_incidencia": incidence_selected.get('personas_involucradas_incidencia', []),
             "acciones_tomadas_incidencia": incidence_selected.get('acciones_tomadas_incidencia', []),
+            "acciones_correctivas_incidencia": incidence_selected.get('acciones_correctivas_incidencia', []),
             "afectacion_patrimonial_incidencia" : incidence_selected.get('afectacion_patrimonial_incidencia', []),
             "evidencia_incidencia": incidence_selected.get('evidencia_incidencia', []),
             "documento_incidencia": incidence_selected.get('documento_incidencia', []),
@@ -12636,35 +12825,35 @@ class Accesos(OcrMixin, AccesosModel):
             "seguimientos_incidencia_nuevo": [incidencia_grupo_seguimiento],
             "categoria": incidence_selected.get("categoria", ''),
             "sub_categoria": incidence_selected.get("sub_categoria", ''),
-            "incidente": incidence_selected.get("incidente", ''),
+            "incidencia": incidence_selected.get("incidencia") or incidence_selected.get("incidente") or '',
             "estatus": estatus or incidence_selected.get("estatus", '')
         }
         answers = {}
         for key, value in incidencia_seg.items():
             if key == 'categoria':
-                answers[self.incidence_fields['incidencia_catalog']].update({
+                answers.setdefault(self.incidence_fields['incidencia_catalog'], {}).update({
                     self.incidence_fields['categoria']: value
                 })
-            if key == 'sub_categoria':
-                answers[self.incidence_fields['incidencia_catalog']].update({
+            if key == 'sub_categoria' and value:
+                answers.setdefault(self.incidence_fields['incidencia_catalog'], {}).update({
                     self.incidence_fields['sub_categoria']: value
                 })
-            if key == 'incidente':
-                answers[self.incidence_fields['incidencia_catalog']].update({
-                    self.incidence_fields['incidente']: incidencia_seg['incidencia']
-                })
+            # La llave vive como 'incidencia' o 'incidente' según el caller; se aceptan ambas
+            # y un valor vacío no pisa uno ya capturado por la otra llave.
+            if key in ('incidencia', 'incidente'):
+                catalog = answers.setdefault(self.incidence_fields['incidencia_catalog'], {})
+                if value or not catalog.get(self.incidence_fields['incidencia']):
+                    catalog[self.incidence_fields['incidencia']] = value
             if  key == 'ubicacion_incidencia' or key == 'area_incidencia':
                 if incidencia_seg['ubicacion_incidencia'] and not incidencia_seg['area_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['ubicacion_incidencia']:incidencia_seg['ubicacion_incidencia']}
                 elif incidencia_seg['area_incidencia'] and not incidencia_seg['ubicacion_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['area_incidencia']:incidencia_seg['area_incidencia']}
-                elif incidencia_seg['area_incidencia'] and incidencia_seg['ubicacion_incidencia']: 
+                elif incidencia_seg['area_incidencia'] and incidencia_seg['ubicacion_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['ubicacion_incidencia']:incidencia_seg['ubicacion_incidencia'],
                     self.incidence_fields['area_incidencia']:incidencia_seg['area_incidencia']}
             elif  key == 'reporta_incidencia':
                 answers[self.incidence_fields['reporta_incidencia_catalog']] = {self.incidence_fields['reporta_incidencia']:value}
-            elif  key == 'incidencia':
-                answers[self.incidence_fields['incidencia_catalog']] = {self.incidence_fields['incidencia']:value}
             elif key == 'personas_involucradas_incidencia':
                 personas = incidencia_seg.get('personas_involucradas_incidencia',[])
                 if personas:
@@ -12676,13 +12865,15 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['puesto']:c.get('puesto',""),
                                 self.incidence_fields['rol'] :c.get('rol',"").lower().replace(" ","_"),
                                 self.incidence_fields['sexo'] :c.get('sexo',"").lower(),
-                                self.incidence_fields['grupo_etario'] :c.get('grupo_etario',"").lower().replace(" ","_"),
+                                self.incidence_fields['grupo_etario'] :(c.get('grupo_etario') or "").lower().replace(" ","_"),
                                 self.incidence_fields['atencion_medica'] :c.get('atencion_medica',""),
                                 self.incidence_fields['retenido'] :c.get('retenido',""),
                                 self.incidence_fields['comentarios'] :c.get('comentarios',"")
                             }
                         )
                     answers.update({self.incidence_fields['personas_involucradas_incidencia']:personas_list})
+            elif key == 'acciones_correctivas_incidencia':
+                answers[self.incidence_fields['acciones_correctivas_incidencia']] = self._answers_acciones_correctivas(value)
             elif key == 'acciones_tomadas_incidencia':
                 acciones = incidencia_seg.get('acciones_tomadas_incidencia',[])
                 if acciones:
@@ -12710,7 +12901,10 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['fecha_inicio_seg'] : c.get('fecha_inicio_seg',""),
                                 self.incidence_fields['tiempo_transcurrido'] : c.get('tiempo_transcurrido',""),
                                 self.incidence_fields['incidencia_documento_solucion'] : c.get('incidencia_documento_solucion'),
-                                self.incidence_fields['incidencia_evidencia_solucion'] : c.get('incidencia_evidencia_solucion')
+                                self.incidence_fields['incidencia_evidencia_solucion'] : c.get('incidencia_evidencia_solucion'),
+                                # Solo los seguimientos nuevos (sin la llave) toman al empleado de la sesión;
+                                # los que ya existían conservan lo que tenían.
+                                self.incidence_fields['registrado_por_seguimiento']: c.get('registrado_por') if 'registrado_por' in c else self._reporta_sesion(),
                             }
                         )
                     if self.incidence_fields['seguimientos_incidencia'] in answers:
@@ -12764,8 +12958,13 @@ class Accesos(OcrMixin, AccesosModel):
                 answers[self.incidence_fields['color_piel']] = f"{value}".lower().replace(" ", "_")
             elif key == 'estatus':
                 answers[self.incidence_fields['estatus']] = f"{value}".lower().replace(" ", "_")
-            else:
+            elif key in ('categoria', 'sub_categoria', 'incidencia', 'incidente'):
+                # Ya se agregaron dentro del catálogo de incidencia arriba.
+                pass
+            elif key in self.incidence_fields:
                 answers.update({f"{self.incidence_fields[key]}":value})
+            # Llaves que el form no conoce se ignoran: antes tronaban con KeyError
+            # y la incidencia completa no se creaba/actualizaba.
         print("ANSWERS", simplejson.dumps(answers, indent=4))
         # print(err)
         if answers or folio:
@@ -12776,9 +12975,9 @@ class Accesos(OcrMixin, AccesosModel):
                     'properties': {
                         "device_properties":{
                             "system": "Addons",
-                            "process":"Actualizacion de Incidencia", 
-                            "accion":'update_incidence_seguimiento', 
-                            "folio": folio, 
+                            "process":"Actualizacion de Incidencia",
+                            "accion":'update_incidence_seguimiento',
+                            "folio": folio,
                             "archive": "incidencias.py"
                         }
                     },
@@ -12792,7 +12991,7 @@ class Accesos(OcrMixin, AccesosModel):
             else:
                 return res
         else:
-            self.LKFException('No se mandarón parametros para actualizar') 
+            self.LKFException('No se mandarón parametros para actualizar')
 
     def update_seg(self, folio, seguimientos ):
         # incidence_selected = self.get_list_incidences(location, area, folio=folio)
@@ -12823,29 +13022,29 @@ class Accesos(OcrMixin, AccesosModel):
         # answers[self.incidence_fields['estatus']]="abierto"
         for key, value in data_incidences.items():
             if key == 'categoria':
-                answers[self.incidence_fields['incidencia_catalog']].update({
+                answers.setdefault(self.incidence_fields['incidencia_catalog'], {}).update({
                     self.incidence_fields['categoria']:data_incidences['categoria']
                 })
-            if key == 'sub_categoria':
-                answers[self.incidence_fields['incidencia_catalog']].update({
+            if key == 'sub_categoria' and value:
+                answers.setdefault(self.incidence_fields['incidencia_catalog'], {}).update({
                     self.incidence_fields['sub_categoria']: data_incidences['sub_categoria']
                 })
-            if key == 'incidente':
-                answers[self.incidence_fields['incidencia_catalog']].update({
-                    self.incidence_fields['incidente']: data_incidences['incidente']
-                })
+            # La llave vive como 'incidencia' o 'incidente' según el caller; se aceptan ambas
+            # y un valor vacío no pisa uno ya capturado por la otra llave.
+            if key in ('incidencia', 'incidente'):
+                catalog = answers.setdefault(self.incidence_fields['incidencia_catalog'], {})
+                if value or not catalog.get(self.incidence_fields['incidencia']):
+                    catalog[self.incidence_fields['incidencia']] = value
             if  key == 'ubicacion_incidencia' or key == 'area_incidencia':
                 if data_incidences['ubicacion_incidencia'] and not data_incidences['area_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['ubicacion_incidencia']:data_incidences['ubicacion_incidencia']}
                 elif data_incidences['area_incidencia'] and not data_incidences['ubicacion_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['area_incidencia']:data_incidences['area_incidencia']}
-                elif data_incidences['area_incidencia'] and data_incidences['ubicacion_incidencia']: 
+                elif data_incidences['area_incidencia'] and data_incidences['ubicacion_incidencia']:
                     answers[self.incidence_fields['ubicacion_incidencia_catalog']] = {self.incidence_fields['ubicacion_incidencia']:data_incidences['ubicacion_incidencia'],
                     self.incidence_fields['area_incidencia']:data_incidences['area_incidencia']}
             elif  key == 'reporta_incidencia':
                 answers[self.incidence_fields['reporta_incidencia_catalog']] = {self.incidence_fields['reporta_incidencia']:value}
-            elif  key == 'incidencia':
-                answers[self.incidence_fields['incidencia_catalog']] = {self.incidence_fields['incidencia']:value}
             elif key == 'personas_involucradas_incidencia':
                 personas = data_incidences.get('personas_involucradas_incidencia',[])
                 if personas:
@@ -12857,13 +13056,15 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['puesto']:c.get('puesto',""),
                                 self.incidence_fields['rol'] :c.get('rol',"").lower().replace(" ","_"),
                                 self.incidence_fields['sexo'] :c.get('sexo',"").lower(),
-                                self.incidence_fields['grupo_etario'] :c.get('grupo_etario',"").lower().replace(" ","_"),
+                                self.incidence_fields['grupo_etario'] :(c.get('grupo_etario') or "").lower().replace(" ","_"),
                                 self.incidence_fields['atencion_medica'] :c.get('atencion_medica',""),
                                 self.incidence_fields['retenido'] :c.get('retenido',""),
                                 self.incidence_fields['comentarios'] :c.get('comentarios',"")
                             }
                         )
                     answers.update({self.incidence_fields['personas_involucradas_incidencia']:personas_list})
+            elif key == 'acciones_correctivas_incidencia':
+                answers[self.incidence_fields['acciones_correctivas_incidencia']] = self._answers_acciones_correctivas(value)
             elif key == 'acciones_tomadas_incidencia':
                 acciones = data_incidences.get('acciones_tomadas_incidencia',[])
                 if acciones:
@@ -12891,7 +13092,10 @@ class Accesos(OcrMixin, AccesosModel):
                                 self.incidence_fields['fecha_inicio_seg'] :c.get('fecha_inicio_seg',""),
                                 self.incidence_fields['tiempo_transcurrido'] : c.get('tiempo_transcurrido',""),
                                 self.incidence_fields['incidencia_documento_solucion'] :c.get('incidencia_documento_solucion'),
-                                self.incidence_fields['incidencia_evidencia_solucion'] :c.get('incidencia_evidencia_solucion')
+                                self.incidence_fields['incidencia_evidencia_solucion'] :c.get('incidencia_evidencia_solucion'),
+                                # Solo los seguimientos nuevos (sin la llave) toman al empleado de la sesión;
+                                # los que ya existían conservan lo que tenían.
+                                self.incidence_fields['registrado_por_seguimiento']: c.get('registrado_por') if 'registrado_por' in c else self._reporta_sesion(),
                             }
                         )
                     answers.update({self.incidence_fields['seguimientos_incidencia']:seg_list})
@@ -12944,8 +13148,10 @@ class Accesos(OcrMixin, AccesosModel):
             elif key == 'estatus':
                 answers[self.incidence_fields['estatus']] = f"{value}".lower().replace(" ", "_")
 
-            else:
+            elif key in self.incidence_fields:
                 answers.update({f"{self.incidence_fields[key]}":value})
+            # Llaves que el form no conoce se ignoran: antes tronaban con KeyError
+            # y la incidencia completa no se creaba/actualizaba.
         # print("incidencias answers", simplejson.dumps(answers, indent=4) )
         if answers or folio:
             metadata = self.lkf_api.get_metadata(form_id=self.BITACORA_INCIDENCIAS)

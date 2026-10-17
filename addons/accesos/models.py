@@ -730,6 +730,8 @@ class AccesosModel(Base):
             'falla_documento':'66f2df6b6917fe63f4233227',
             'falla_documento_solucion':'66f2dfb2c80d24e5e82332b6',
             'falla_estatus': '66397e2c59c2600b1df2742c',
+            #---Liga a la incidencia que generó esta falla
+            'incidencia_url':'6ad2b78969b635f2a64b967b',
             'falla_evidencia':'66f2df6b6917fe63f4233226',
             'falla_evidencia_solucion':'66f2dfb2c80d24e5e82332b5',
             'falla_fecha_hora': '66397d0cfd99d7263f833032',
@@ -759,6 +761,17 @@ class AccesosModel(Base):
             #Campos en grupo repetitivo acciones tomadas:
             # 'acciones_tomadas_incidencia':'66ec6987f251a9c2cef0126f',
             'acciones_tomadas_incidencia':'688bbd509b98fd9afaf2c401',
+            #---Grupo "Acciones Correctivas" (correctivas/preventivas de la incidencia)
+            'acciones_correctivas_incidencia':'6ad13d79ee449c5015870503',
+            'tipo_accion_correctiva':'6ad13ed648eb4362cfc672a1',
+            'accion_correctiva':'6ad13ed648eb4362cfc672a2',
+            'causa_accion_correctiva':'6ad13ed648eb4362cfc672a3',
+            'tipo_responsable_accion_correctiva':'6ad13ed648eb4362cfc672a4',
+            'responsable_accion_correctiva':'6ad13ed648eb4362cfc672a5',
+            'estatus_accion_correctiva':'6ad13ed648eb4362cfc672a6',
+            #---Seguimientos: quién registró cada uno (empleado de la sesión)
+            'registrado_por_seguimiento':'6ad1bc37140c8bd3f32a8361',
+            'falla_generada_url':'6ad2b74f9c69fe794fa8a9fc',
             'afectacion_patrimonial_incidencia':'688a9cbda7b2dd2b599ff381',
             'area_incidencia': '663e5d44f5b8a7ce8211ed0f',
             'area_incidencia_catalog': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
@@ -1581,7 +1594,7 @@ class AccesosModel(Base):
             'parentesco': "", 'num_doc_identidad': "", 'telefono': "",
             'info_coincide_con_videos': "", 'responsable_que_entrega': "",
             'responsable_que_recibe': "", 'afectacion_patrimonial_incidencia': [],
-            'personas_involucradas_incidencia': [], 'acciones_tomadas_incidencia': [],
+            'personas_involucradas_incidencia': [], 'acciones_tomadas_incidencia': [], 'acciones_correctivas_incidencia': [],
             'seguimientos_incidencia': [], 'valor_estimado': "", 'pertenencias_sustraidas': "",
             'placas': "", 'tipo': "", 'marca': "", 'modelo': "", 'color': "",
         }
