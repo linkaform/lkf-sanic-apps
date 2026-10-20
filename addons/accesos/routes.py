@@ -491,7 +491,7 @@ async def post_ocr_identificacion(request: Request):
     res = service.ocr_identificacion(
         image_source=payload.get('image_source'),
         form_id=payload.get('form_id'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
         name=payload.get('name'),
         is_employee=payload.get('is_employee', False),
     )
@@ -527,7 +527,7 @@ async def post_ocr_articulo_perdido(request: Request):
     payload = _ocr_payload(request)
     res = service.ocr_articulo_perdido(
         image_source=payload.get('image_source'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -538,7 +538,7 @@ async def post_ocr_paquete(request: Request):
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -548,7 +548,7 @@ async def post_ocr_equipo(request: Request):
     res = service.ocr_equipo(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -558,7 +558,7 @@ async def post_ocr_persona(request: Request):
     res = service.ocr_persona(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -569,7 +569,7 @@ async def post_ocr_vehiculo(request: Request):
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -580,7 +580,7 @@ async def post_ocr_truck(request: Request):
         image_source=payload.get('image_source'),
         fields=payload.get('fields', {}),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -594,7 +594,7 @@ async def post_ocr_acceso_transportista(request: Request):
     res = service.ocr_acceso_transportista(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash'),
+        model=payload.get('model', 'google/gemini-3.5-flash'),
     )
     return json(res, status=res.get('status_code', 200))
 
@@ -604,7 +604,7 @@ async def post_ocr_articulo_concesionado(request: Request):
     res = service.ocr_articulo_concesionado(
         image_source=payload.get('image_source'),
         extra_instructions=payload.get('extra_instructions'),
-        model=payload.get('model', 'google/gemini-2.5-flash-lite'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
     )
     return json(res, status=res.get('status_code', 200))
 

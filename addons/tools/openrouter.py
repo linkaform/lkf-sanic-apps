@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 # Modelo por default — puede sobreescribirse en account_settings con OPENROUTER_MODEL
-DEFAULT_MODEL = 'google/gemini-2.5-flash'
+DEFAULT_MODEL = 'google/gemini-3.5-flash'
 
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
@@ -110,7 +110,7 @@ class OpenRouter:
         )
         return data
 
-    def ocr_id(self, image_source: list, model: str = 'google/gemini-2.5-flash-lite', name: str = None) -> dict:
+    def ocr_id(self, image_source: list, model: str = 'google/gemini-3.5-flash-lite', name: str = None) -> dict:
         """
         Extrae datos de todas las identificaciones visibles en la imagen
         (INE, pasaporte, licencia, credencial escolar, etc.) y las retorna
@@ -188,7 +188,7 @@ class OpenRouter:
         return self._parse_json(raw)
 
     def ocr(self, image_source: list, fields: list = None,
-            extra_instructions: str = None, model: str = 'google/gemini-2.5-flash-lite') -> dict:
+            extra_instructions: str = None, model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         OCR genérico para cualquier imagen.
 

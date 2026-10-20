@@ -14863,7 +14863,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_equipo(self, image_source,
                    extra_instructions: str = None,
-                   model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                   model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un equipo/herramienta:
         tipo, marca, modelo, número de serie y color.
@@ -14944,7 +14944,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_persona(self, image_source,
                     extra_instructions: str = None,
-                    model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                    model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Analiza una foto para detectar si hay una persona visible
         y extrae sus características físicas descriptivas.
@@ -15038,7 +15038,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_vehiculo(self, image_source, fields: dict = {},
                      extra_instructions: str = None,
-                     model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                     model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un vehículo:
         tipo, marca, modelo, año estimado, color, placas,
@@ -15129,7 +15129,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_truck(self, image_source: list, fields: dict = {},
                            extra_instructions: str = None,
-                           model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                           model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un camión/transporte en caseta:
         vehículo, remolques/contenedores, inspección de 17 puntos (tractor)
@@ -15263,7 +15263,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_articulo_concesionado(self, image_source,
                                    extra_instructions: str = None,
-                                   model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                                   model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Identifica un artículo concesionado a partir de su foto. Puede tratarse de:
           - Un artículo genérico identificable a simple vista (guantes, casco, chaleco,
@@ -17147,7 +17147,7 @@ class Accesos(OcrMixin, AccesosModel):
     # que usa ocr_docs.py en lkf-addons (tipo_hint, varios remolques/contenedores).
     def ocr_acceso_transportista(self, image_source,
                                   extra_instructions: str = None,
-                                  model: str = 'google/gemini-2.5-flash') -> dict:
+                                  model: str = 'google/gemini-3.5-flash') -> dict:
         """
         Analiza uno o varios archivos de un acceso de transportista.
         Acepta mezcla de imágenes y documentos (PDFs, JPGs, PNGs).
@@ -17171,7 +17171,7 @@ class Accesos(OcrMixin, AccesosModel):
                           que el usuario ya asignó a ese archivo antes de analizar,
                           usada como prior de alta confianza (no reemplaza la
                           verificación contra el contenido real de la imagen).
-            model:        Modelo OpenRouter ('google/gemini-2.5-flash' recomendado para docs).
+            model:        Modelo OpenRouter ('google/gemini-3.5-flash' recomendado para docs).
 
         Returns:
             dict con status_code, data, msg.
