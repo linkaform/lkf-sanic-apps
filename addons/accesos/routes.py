@@ -94,6 +94,11 @@ async def get_pases(request: Request):
     # records = [{"empresa": empresa, "count": 42}]
     return json({"data": records})
 
+@accesos_bp.get("/booth_config")
+async def get_booth_config(request: Request):
+    # Opciones de la ubicación (impresion_de_pase, auto_acceso) de Configuración Módulo Seguridad.
+    return json({"data": service.get_booth_config(request.args.get("location"))}, status=200)
+
 @accesos_bp.get("/load_shift")
 async def get_shift_data(request: Request):
     allowed_params = ["booth_location", "booth_area"]

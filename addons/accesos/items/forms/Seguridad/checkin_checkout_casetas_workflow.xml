@@ -61,10 +61,10 @@
                                 <catalog>{}</catalog>
                                 <field_id>663bffc28d00553254f274e0</field_id>
                                 <group>{}</group>
-                                <label>Estatus de Caseta</label>
+                                <label>Estatus del Check In</label>
                                 <type>radio</type>
                             </trigger_field>
-                            <value>apertura</value>
+                            <value>abierto</value>
                         </item>
                     </triggers>
                 </wf_fields>
