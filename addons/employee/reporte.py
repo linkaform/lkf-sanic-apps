@@ -364,7 +364,7 @@ class ReporteAsistencia(Presencia):
         for g in grupos.values():
             for d in g['asistencia_mes']:
                 if not d['empleados']:
-                    d['empleados'] = ['sin_registro-sin_registro-0']
+                    d['empleados'] = ['sin_registro-sin_registro']
         return sorted(grupos.values(), key=lambda g: (g['ubicacion'], g['turno_ref']))
 
     def _generales(self, j):
