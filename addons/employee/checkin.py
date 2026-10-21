@@ -146,6 +146,18 @@ class Presencia(Asistencia):
     # Internos
     # ------------------------------------------------------------------
 
+    def _cerrar(self, registro, cierre_dt, tz, automatico=False):
+        """Si la jornada se cierra sola (olvidada), sus Check In abiertos también."""
+        res = super()._cerrar(registro, cierre_dt, tz, automatico=automatico)
+        if automatico:
+            query = self._checkin_query({'user_id': self.user.get('user_id')})
+            for abierto in self.format_cr(self.cr.aggregate(query)) or []:
+                inicio = self._parse(abierto.get('desde'), tz)
+                cierre = max(cierre_dt, inicio) if inicio else cierre_dt
+                self._cerrar_checkin(abierto, cierre, 'automatico',
+                                     'Check Out automático: la jornada se cerró sola.')
+        return res
+
     def _cerrar_checkin(self, registro, cierre_dt, tipo, comentario=None, foto=None):
         f = self.checkin_fields
         answers = {
