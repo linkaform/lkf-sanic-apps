@@ -128,7 +128,8 @@ class ReporteAsistencia(Presencia):
                     resumen['descansos'] += 1
                 if jornada:
                     resumen['horas_trabajadas'] += self._horas(jornada, tz, now)
-                dias.append({'fecha': fecha.isoformat(), 'estado': estado})
+                dias.append({'fecha': fecha.isoformat(), 'estado': estado,
+                             'llegada': (jornada or {}).get('inicio'), 'salida': (jornada or {}).get('cierre')})
                 fecha += timedelta(days=1)
             resumen['horas_trabajadas'] = round(resumen['horas_trabajadas'], 1)
             resumen['horas_programadas'] = round(resumen['horas_programadas'], 1)
