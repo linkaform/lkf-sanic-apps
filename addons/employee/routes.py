@@ -35,9 +35,11 @@ async def get_employee_data(request: Request):
     return json({"data": records}, status=201)
 
 from .checkin import Presencia
+from .reporte import ReporteAsistencia
 
 # Asistencia y Check In comparten servicio: pasar a Ausente hace Check Out de lo abierto.
 presencia_service = Presencia(settings)
+reporte_service = ReporteAsistencia(settings)
 
 
 @employee_bp.get("/asistencia")
@@ -80,6 +82,34 @@ async def post_checkout(request: Request):
     allowed = ["comentario", "foto"]
     data = presencia_service.do_checkout(**{k: payload.get(k) for k in allowed if payload.get(k) is not None})
     return json({"data": data}, status=200)
+
+
+def _reporte_args(request, allowed):
+    payload = request.json or {}
+    return {k: payload.get(k) for k in allowed if payload.get(k) is not None}
+
+
+@employee_bp.post("/reporte/asistencia")
+async def post_reporte_asistencia(request: Request):
+    args = _reporte_args(request, ["group_by", "locations", "month", "year"])
+    return json({"data": reporte_service.get_report(**args)}, status=200)
+
+
+@employee_bp.post("/reporte/ubicaciones")
+async def post_reporte_ubicaciones(request: Request):
+    return json({"data": reporte_service.get_locations()}, status=200)
+
+
+@employee_bp.post("/reporte/detalle")
+async def post_reporte_detalle(request: Request):
+    args = _reporte_args(request, ["user_ids", "selected_day", "location", "month", "year"])
+    return json({"data": reporte_service.get_detail(**args)}, status=200)
+
+
+@employee_bp.post("/reporte/registros")
+async def post_reporte_registros(request: Request):
+    args = _reporte_args(request, ["locations", "month", "year", "limit", "offset"])
+    return json({"data": reporte_service.get_records(**args)}, status=200)
 
 # @accesos_bp.post("/incidentes")
 # async def post_incidente(request: Request):
