@@ -35,6 +35,8 @@ class Presencia(Asistencia):
             'comentario': '66a5b9bed0c44910177eb724',
             'foto_in': '68d384ef55840a75f2cb7e28',
             'foto_out': '68d384ef55840a75f2cb7e29',
+            'folio_jornada': '6ad90e470d23e745a45bfc6d',
+            'horas_lugar': '6ad90e471e2847655984f5f0',
         }
 
     # ------------------------------------------------------------------
@@ -74,7 +76,8 @@ class Presencia(Asistencia):
     def do_checkin(self, ubicacion, caseta, rol=None, suplente=None, motivo=None, foto=None):
         user_id = self.user.get('user_id')
         tz = self._user_tz(user_id)
-        if not self._registro_abierto(user_id, tz):
+        jornada = self._registro_abierto(user_id, tz)
+        if not jornada:
             self.LKFException({'title': 'Registra tu asistencia',
                                'msg': 'Para hacer Check In primero cámbiate a Disponible.'})
         abierto = self._checkin_abierto(user_id)
@@ -96,6 +99,7 @@ class Presencia(Asistencia):
             },
             f['estatus']: 'abierto',
             f['fecha_in']: self._now(tz).strftime(DATE_FMT),
+            f['folio_jornada']: jornada.get('folio', ''),
         }
         if rol and self.ROL_CATALOG_OBJ_ID:
             answers[self.ROL_CATALOG_OBJ_ID] = {f['rol']: rol}
@@ -165,6 +169,9 @@ class Presencia(Asistencia):
             f['fecha_out']: cierre_dt.strftime(DATE_FMT),
             f['tipo_out']: tipo,
         }
+        inicio = self._parse(registro.get('desde'), self._user_tz(self.user.get('user_id')))
+        if inicio:
+            answers[f['horas_lugar']] = round(max((cierre_dt - inicio).total_seconds(), 0) / 3600, 2)
         if comentario:
             answers[f['comentario']] = comentario
         if foto:

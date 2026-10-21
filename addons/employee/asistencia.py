@@ -39,6 +39,8 @@ class Asistencia(Employee):
             'retardo_maximo': '68b642e2bc17e2713cabe019',
             'horas_trabajadas': '68d6b0d5f7865907a86c37d7',
             'status': '68d5bbb57691dec5a7640358',
+            'ubicacion_horario': '6ad90e4757d6829358977bd8',
+            'tipo_cierre': '6ad90e477d254b629e023075',
         }
         self.horario_fields = {
             'ingreso_maximo': '69824e4bfdead27b0009739e',
@@ -112,6 +114,11 @@ class Asistencia(Employee):
         answers = {f['inicio']: now.strftime(DATE_FMT)}
 
         horario = self._horario_para(user_id, now, tz)
+        # Sin horario, si el empleado tiene una sola ubicación, esa es la de su jornada.
+        ubicaciones = self._ubicaciones_configuradas(user_id)
+        ubicacion = (horario or {}).get('ubicacion') or (ubicaciones[0] if len(ubicaciones) == 1 else None)
+        if ubicacion:
+            answers[f['ubicacion_horario']] = ubicacion
         if horario:
             answers.update({
                 f['nombre_horario']: horario['nombre_horario'],
@@ -156,7 +163,10 @@ class Asistencia(Employee):
     def _cerrar(self, registro, cierre_dt, tz, automatico=False):
         f = self.asistencia_fields
         inicio = self._parse(registro.get('inicio'), tz)
-        answers = {f['cierre']: cierre_dt.strftime(DATE_FMT)}
+        answers = {
+            f['cierre']: cierre_dt.strftime(DATE_FMT),
+            f['tipo_cierre']: 'automatico' if automatico else 'manual',
+        }
         if inicio:
             horas = max((cierre_dt - inicio).total_seconds(), 0) / 3600
             answers[f['horas_trabajadas']] = round(horas, 2)
@@ -258,6 +268,7 @@ class Asistencia(Employee):
                 'tolerancia_retardo': f'$answers.{f["tolerancia_retardo"]}',
                 'retardo_maximo': f'$answers.{f["retardo_maximo"]}',
                 'ingreso_maximo': f'$answers.{hf["ingreso_maximo"]}',
+                'ubicaciones': f'$answers.{loc_path}',
             }},
         ]
         mejor, mejor_diff = None, None
@@ -275,7 +286,11 @@ class Asistencia(Employee):
                         mejor, mejor_diff = {**h, 'entrada_dt': entrada}, abs(delta)
         if not mejor:
             return None
+        # El horario puede aplicar a varias ubicaciones: la suya es la que también tiene el empleado.
+        del_horario = mejor.get('ubicaciones') or []
+        ubicacion = next((u for u in del_horario if u in ubicaciones), None)
         return {
+            'ubicacion': ubicacion,
             'nombre_horario': mejor.get('nombre_horario', ''),
             'hora_entrada': mejor.get('hora_entrada', ''),
             'hora_salida': mejor.get('hora_salida', ''),
