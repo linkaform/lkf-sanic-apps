@@ -138,10 +138,20 @@ class Asistencia(Employee):
             },
             'answers': answers,
         })
-        res = self.lkf_api.post_forms_answers(metadata)
+        res = self._crear_registro(metadata)
         if res.get('status_code') not in (200, 201, 202):
             self.LKFException({'title': 'Error al registrar asistencia', 'msg': res.get('json', res)})
         return res
+
+    def _crear_registro(self, metadata):
+        """Crea el registro con el JWT del usuario del request.
+
+        post_forms_answers lo manda desde un hilo que no hereda el contexto del
+        request y termina usando el JWT de la cuenta: el registro quedaba a nombre
+        del dueño y no del usuario. Aquí se manda en el mismo hilo.
+        """
+        url = self.lkf_api.api_url.form['set_form_answer']
+        return self.lkf_api.network.dispatch(url, data=metadata)
 
     def _cerrar(self, registro, cierre_dt, tz, automatico=False):
         f = self.asistencia_fields

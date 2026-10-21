@@ -119,7 +119,7 @@ class Presencia(Asistencia):
             },
             'answers': answers,
         })
-        res = self.lkf_api.post_forms_answers(metadata)
+        res = self._crear_registro(metadata)
         if res.get('status_code') not in (200, 201, 202):
             self.LKFException({'title': 'Error al hacer Check In', 'msg': res.get('json', res)})
         return self.get_estado_checkin()
