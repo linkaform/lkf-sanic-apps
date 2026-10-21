@@ -36,10 +36,12 @@ async def get_employee_data(request: Request):
 
 from .checkin import Presencia
 from .reporte import ReporteAsistencia
+from .bandeja import Bandeja
 
 # Asistencia y Check In comparten servicio: pasar a Ausente hace Check Out de lo abierto.
 presencia_service = Presencia(settings)
 reporte_service = ReporteAsistencia(settings)
+bandeja_service = Bandeja(settings)
 
 
 @employee_bp.get("/asistencia")
@@ -98,6 +100,11 @@ async def post_checkout(request: Request):
 def _reporte_args(request, allowed):
     payload = request.json or {}
     return {k: payload.get(k) for k in allowed if payload.get(k) is not None}
+
+
+@employee_bp.get("/bandeja")
+async def get_bandeja(request: Request):
+    return json({"data": bandeja_service.get_bandeja()}, status=200)
 
 
 @employee_bp.post("/reporte/hoy")
