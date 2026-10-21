@@ -19,6 +19,10 @@ DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'd
 MAX_JORNADA_HORAS = 16
 # Sin horario, una jornada olvidada se cierra a estas horas de su inicio.
 CIERRE_SIN_HORARIO_HORAS = 12
+# Tiempo extra: se pregunta "¿sigues trabajando?" a los EXTRA_PREGUNTA_MIN de la salida del
+# turno; si no confirma en EXTRA_ESPERA_HORAS, la jornada se cierra a la hora de salida.
+EXTRA_PREGUNTA_MIN = 30
+EXTRA_ESPERA_HORAS = 2
 
 
 class Asistencia(Employee):
@@ -40,6 +44,11 @@ class Asistencia(Employee):
             'status': '68d5bbb57691dec5a7640358',
             'ubicacion_horario': '6ad90e4757d6829358977bd8',
             'tipo_cierre': '6ad90e477d254b629e023075',
+            # El dueño del registro cambia si otro lo edita; la persona se guarda aparte.
+            'usuario': '6ad946c9d5879569810dfcb5',
+            'horas_extra': '6ad946c93592f2833e63bea9',
+            'extra_confirmado': '6ad946c91e515f9e4732beed',
+            'autorizacion_extra': '6ad946c95e4b56d0a300e113',
         }
         self.HORARIOS_CAT_OBJ_ID = (self.lkm.catalog_id('horarios') or {}).get('obj_id')
         self.horario_fields = {
@@ -59,7 +68,7 @@ class Asistencia(Employee):
         user_id = self.user.get('user_id')
         tz = self._user_tz(user_id)
         abierto = self._registro_abierto(user_id, tz)
-        return self._format_estado(abierto, user_id)
+        return self._format_estado(abierto, user_id, tz)
 
     def set_estatus(self, estatus):
         if estatus not in ('disponible', 'ausente'):
@@ -73,7 +82,46 @@ class Asistencia(Employee):
         elif estatus == 'ausente' and abierto:
             self._cerrar(abierto, self._now(tz), tz)
 
-        return self._format_estado(self._registro_abierto(user_id, tz), user_id)
+        return self._format_estado(self._registro_abierto(user_id, tz), user_id, tz)
+
+    def confirmar_extra(self):
+        """La persona sigue trabajando después de su turno: la jornada queda en tiempo extra."""
+        user_id = self.user.get('user_id')
+        tz = self._user_tz(user_id)
+        abierto = self._registro_abierto(user_id, tz)
+        if not abierto:
+            self.LKFException({'title': 'Sin jornada', 'msg': 'No tienes una jornada abierta.'})
+        f = self.asistencia_fields
+        res = self.lkf_api.patch_multi_record(
+            answers={f['extra_confirmado']: self._now(tz).strftime(DATE_FMT)},
+            form_id=self.REGISTRO_ASISTENCIA, record_id=[str(abierto['_id'])])
+        if res.get('status_code') not in (200, 201, 202):
+            self.LKFException({'title': 'Error al confirmar tiempo extra', 'msg': res.get('json', res)})
+        return self._format_estado(self._registro_abierto(user_id, tz), user_id, tz)
+
+    def cerrar_olvidadas(self):
+        """Cierre programado: cierra las jornadas de todos que ya cumplieron su regla de cierre."""
+        f = self.asistencia_fields
+        query = [
+            {'$match': {
+                'deleted_at': {'$exists': False},
+                'form_id': self.REGISTRO_ASISTENCIA,
+                f'answers.{f["inicio"]}': {'$exists': True},
+                f'answers.{f["cierre"]}': {'$exists': False},
+            }},
+            {'$project': self._abierto_project()},
+        ]
+        zonas, cerradas = {}, []
+        for reg in self.format_cr(self.cr.aggregate(query)):
+            usuario = self.unlist(reg.get('usuario'))
+            if not usuario:
+                continue
+            tz = zonas.setdefault(usuario, self._user_tz(usuario))
+            cierre = self._regla_cierre(reg, tz, self._now(tz))
+            if cierre:
+                self._cerrar(reg, cierre, tz, automatico=True)
+                cerradas.append(reg.get('folio'))
+        return {'cerradas': cerradas}
 
     # ------------------------------------------------------------------
     # Registros
@@ -86,36 +134,42 @@ class Asistencia(Employee):
             {'$match': {
                 'deleted_at': {'$exists': False},
                 'form_id': self.REGISTRO_ASISTENCIA,
-                'user_id': user_id,
+                f'answers.{f["usuario"]}': user_id,
                 f'answers.{f["inicio"]}': {'$exists': True},
                 f'answers.{f["cierre"]}': {'$exists': False},
             }},
             {'$sort': {'created_at': -1}},
-            {'$project': {
-                '_id': 1,
-                'folio': 1,
-                'inicio': f'$answers.{f["inicio"]}',
-                'nombre_horario': f'$answers.{f["nombre_horario"]}',
-                'hora_entrada': f'$answers.{f["hora_entrada"]}',
-                'hora_salida': f'$answers.{f["hora_salida"]}',
-                'status': f'$answers.{f["status"]}',
-            }},
+            {'$project': self._abierto_project()},
         ]
         abiertos = self.format_cr(self.cr.aggregate(query))
         now = self._now(tz)
         vigente = None
         for reg in abiertos:
-            inicio = self._parse(reg.get('inicio'), tz)
-            if vigente is None and inicio and now - inicio < timedelta(hours=MAX_JORNADA_HORAS):
+            cierre = self._regla_cierre(reg, tz, now)
+            if vigente is None and not cierre:
                 vigente = reg
             else:
-                self._cerrar(reg, self._cierre_olvidado(reg, tz, now), tz, automatico=True)
+                self._cerrar(reg, cierre or now, tz, automatico=True)
         return vigente
+
+    def _abierto_project(self):
+        f = self.asistencia_fields
+        return {
+            '_id': 1,
+            'folio': 1,
+            'usuario': f'$answers.{f["usuario"]}',
+            'inicio': f'$answers.{f["inicio"]}',
+            'nombre_horario': f'$answers.{f["nombre_horario"]}',
+            'hora_entrada': f'$answers.{f["hora_entrada"]}',
+            'hora_salida': f'$answers.{f["hora_salida"]}',
+            'status': f'$answers.{f["status"]}',
+            'extra_confirmado': f'$answers.{f["extra_confirmado"]}',
+        }
 
     def _abrir(self, user_id, tz):
         f = self.asistencia_fields
         now = self._now(tz)
-        answers = {f['inicio']: now.strftime(DATE_FMT)}
+        answers = {f['inicio']: now.strftime(DATE_FMT), f['usuario']: user_id}
 
         horario = self._horario_para(user_id, now, tz)
         # Si el empleado tiene una sola ubicación, esa es la de su jornada.
@@ -171,25 +225,56 @@ class Asistencia(Employee):
         if inicio:
             horas = max((cierre_dt - inicio).total_seconds(), 0) / 3600
             answers[f['horas_trabajadas']] = round(horas, 2)
+            extra = self._horas_extra(registro, inicio, cierre_dt, horas, tz)
+            answers[f['horas_extra']] = round(extra, 2)
+            if extra > 0:
+                # Sin autorización por ahora; el inbox la pedirá después (pendiente/aprobada/rechazada).
+                answers[f['autorizacion_extra']] = 'no_requerida'
         res = self.lkf_api.patch_multi_record(
             answers=answers, form_id=self.REGISTRO_ASISTENCIA, record_id=[str(registro['_id'])])
         if res.get('status_code') not in (200, 201, 202):
             self.LKFException({'title': 'Error al cerrar asistencia', 'msg': res.get('json', res)})
         return res
 
-    def _cierre_olvidado(self, registro, tz, now):
-        """Hora de cierre para una jornada olvidada: su hora de salida, o inicio + 12 h."""
-        inicio = self._parse(registro.get('inicio'), tz) or now
-        salida = registro.get('hora_salida')
-        cierre = None
+    def _salida_esperada(self, registro, tz):
+        """Salida del turno que se copió a la jornada, o None si la jornada no tuvo turno."""
+        inicio = self._parse(registro.get('inicio'), tz)
+        if not inicio or not registro.get('hora_entrada') or not registro.get('hora_salida'):
+            return None
+        t_entrada = datetime.strptime(self._hhmmss(registro['hora_entrada']), '%H:%M:%S').time()
+        t_salida = datetime.strptime(self._hhmmss(registro['hora_salida']), '%H:%M:%S').time()
+        entrada = tz.localize(datetime.combine(inicio.date(), t_entrada))
+        # El turno es el de la entrada más cercana al inicio (puede ser de ayer o de mañana).
+        if (entrada - inicio).total_seconds() > 12 * 3600:
+            entrada -= timedelta(days=1)
+        elif (inicio - entrada).total_seconds() > 12 * 3600:
+            entrada += timedelta(days=1)
+        salida = tz.localize(datetime.combine(entrada.date(), t_salida))
+        return salida + timedelta(days=1) if salida <= entrada else salida
+
+    def _regla_cierre(self, registro, tz, now):
+        """Hora en que se cierra sola una jornada abierta, o None si todavía no toca."""
+        inicio = self._parse(registro.get('inicio'), tz)
+        if not inicio:
+            return now
+        tope = inicio + timedelta(hours=MAX_JORNADA_HORAS)
+        salida = self._salida_esperada(registro, tz)
+        if registro.get('extra_confirmado'):
+            cierre = tope if now >= tope else None
+        elif salida:
+            espera = salida + timedelta(minutes=EXTRA_PREGUNTA_MIN) + timedelta(hours=EXTRA_ESPERA_HORAS)
+            cierre = max(salida, inicio) if now >= espera else None
+        else:
+            cierre = inicio + timedelta(hours=CIERRE_SIN_HORARIO_HORAS) if now >= tope else None
+        return min(cierre, now) if cierre else None
+
+    def _horas_extra(self, registro, inicio, cierre_dt, horas, tz):
+        """Lo trabajado después de la salida del turno; sin turno ese día (y con horario), todo."""
+        salida = self._salida_esperada(registro, tz)
         if salida:
-            t_salida = datetime.strptime(self._hhmmss(salida), '%H:%M:%S').time()
-            cierre = tz.localize(datetime.combine(inicio.date(), t_salida))
-            if cierre <= inicio:
-                cierre += timedelta(days=1)
-        if not cierre:
-            cierre = inicio + timedelta(hours=CIERRE_SIN_HORARIO_HORAS)
-        return min(cierre, now)
+            return max((cierre_dt - max(salida, inicio)).total_seconds(), 0) / 3600
+        usuario = self.unlist(registro.get('usuario'))
+        return horas if usuario and self._horario_de(int(usuario)) else 0.0
 
     def _ultimo_cierre(self, user_id):
         f = self.asistencia_fields
@@ -197,7 +282,7 @@ class Asistencia(Employee):
             {'$match': {
                 'deleted_at': {'$exists': False},
                 'form_id': self.REGISTRO_ASISTENCIA,
-                'user_id': user_id,
+                f'answers.{f["usuario"]}': user_id,
                 f'answers.{f["cierre"]}': {'$exists': True},
             }},
             {'$sort': {f'answers.{f["cierre"]}': -1}},
@@ -207,7 +292,7 @@ class Asistencia(Employee):
         res = self.format_cr(self.cr.aggregate(query), get_one=True)
         return (res or {}).get('cierre')
 
-    def _format_estado(self, abierto, user_id):
+    def _format_estado(self, abierto, user_id, tz=None):
         if abierto:
             horario = None
             if abierto.get('nombre_horario'):
@@ -222,11 +307,22 @@ class Asistencia(Employee):
                 'status_llegada': abierto.get('status'),
                 'horario': horario,
                 'folio': abierto.get('folio'),
+                'extra_confirmado': abierto.get('extra_confirmado'),
+                'pregunta_extra': self._pregunta_extra(abierto, tz or self._user_tz(user_id)),
             }
         return {
             'estatus': 'ausente',
             'ultimo_cierre': self._ultimo_cierre(user_id),
         }
+
+    def _pregunta_extra(self, abierto, tz):
+        """Si ya pasó su salida y no ha confirmado, el front le pregunta si sigue trabajando."""
+        salida = self._salida_esperada(abierto, tz)
+        if not salida or abierto.get('extra_confirmado'):
+            return None
+        if self._now(tz) < salida + timedelta(minutes=EXTRA_PREGUNTA_MIN):
+            return None
+        return {'salida': salida.strftime('%H:%M')}
 
     # ------------------------------------------------------------------
     # Horario

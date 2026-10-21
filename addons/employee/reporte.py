@@ -45,7 +45,7 @@ class ReporteAsistencia(Presencia):
         empleados = self._empleados_filtrados(locations)
         ids = [e['employee_id'] for e in empleados]
         horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
-        jornadas = self._jornadas(hoy, hoy, ids)
+        jornadas = self._jornadas(hoy, hoy, ids, tz, now)
         abiertos = self._checkins_abiertos(ids)
         vacaciones = self._vacaciones(hoy, hoy)
 
@@ -95,7 +95,7 @@ class ReporteAsistencia(Presencia):
         empleados = self._empleados_filtrados(locations)
         ids = [e['employee_id'] for e in empleados]
         horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
-        jornadas = self._jornadas(desde, hasta, ids)
+        jornadas = self._jornadas(desde, hasta, ids, tz, now)
         vacaciones = self._vacaciones(desde, hasta)
 
         result = []
@@ -103,7 +103,7 @@ class ReporteAsistencia(Presencia):
             uid = e['employee_id']
             horario = horarios.get(e.get('horario'))
             resumen = {'asistencias': 0, 'retardos': 0, 'faltas': 0, 'descansos': 0,
-                       'horas_trabajadas': 0.0, 'horas_programadas': 0.0}
+                       'horas_trabajadas': 0.0, 'horas_programadas': 0.0, 'horas_extra': 0.0}
             dias = []
             fecha = desde
             while fecha <= hasta:
@@ -127,11 +127,13 @@ class ReporteAsistencia(Presencia):
                 elif estado == 'descanso':
                     resumen['descansos'] += 1
                 if jornada:
-                    resumen['horas_trabajadas'] += self._horas(jornada, tz, now)
+                    resumen['horas_trabajadas'] += jornada['horas']
+                    resumen['horas_extra'] += jornada['extra']
                 dias.append({'fecha': fecha.isoformat(), 'estado': estado,
                              'llegada': (jornada or {}).get('inicio'), 'salida': (jornada or {}).get('cierre')})
                 fecha += timedelta(days=1)
             resumen['horas_trabajadas'] = round(resumen['horas_trabajadas'], 1)
+            resumen['horas_extra'] = round(resumen['horas_extra'], 1)
             resumen['horas_programadas'] = round(resumen['horas_programadas'], 1)
             result.append({'user_id': uid, 'nombre': e['nombre'], 'horario': e.get('horario'),
                            'dias': dias, 'resumen': resumen})
@@ -145,7 +147,7 @@ class ReporteAsistencia(Presencia):
         empleado = next((e for e in self._empleados() if e['employee_id'] == user_id), {})
         horario = self._horarios_por_nombre([empleado.get('horario')]).get(empleado.get('horario'))
         turno = next(iter(self._turnos_del_dia(horario, fecha, tz)), None)
-        jornada = self._jornadas(fecha, fecha, [user_id]).get((user_id, fecha))
+        jornada = self._jornadas(fecha, fecha, [user_id], tz, now).get((user_id, fecha))
         checkins = self._checkins_del_dia(user_id, fecha, jornada)
         vacaciones = self._vacaciones(fecha, fecha).get(user_id, {}).get(fecha)
         return {
@@ -160,7 +162,11 @@ class ReporteAsistencia(Presencia):
                 'inicio': jornada.get('inicio'),
                 'cierre': jornada.get('cierre'),
                 'tipo_cierre': jornada.get('tipo_cierre'),
-                'horas': round(self._horas(jornada, tz, now), 2),
+                'horas': round(jornada['horas'], 2),
+                'horas_extra': round(jornada['extra'], 2),
+                'jornadas': len(jornada['folios']),
+                'extra_confirmado': jornada.get('extra_confirmado'),
+                'autorizacion_extra': jornada.get('autorizacion_extra'),
                 'ubicacion': jornada.get('ubicacion_horario'),
             } if jornada else None,
             'checkins': checkins,
@@ -244,21 +250,21 @@ class ReporteAsistencia(Presencia):
                 res[int(r['user_id'])].add(r['ubicacion'])
         return res
 
-    def _jornadas(self, desde, hasta, user_ids):
-        """{(user_id, fecha): jornada} con la última jornada de cada persona por día."""
+    def _jornadas(self, desde, hasta, user_ids, tz, now):
+        """{(user_id, fecha): día} juntando las jornadas de cada persona por día (puede haber varias)."""
         f = self.asistencia_fields
         query = [
             {'$match': {
                 'deleted_at': {'$exists': False},
                 'form_id': self.REGISTRO_ASISTENCIA,
-                'user_id': {'$in': user_ids},
+                f'answers.{f["usuario"]}': {'$in': user_ids},
                 f'answers.{f["inicio"]}': {'$gte': f'{desde.isoformat()} 00:00:00', '$lte': f'{hasta.isoformat()} 23:59:59'},
             }},
             {'$sort': {f'answers.{f["inicio"]}': -1}},
             {'$project': {
                 '_id': 0,
                 'folio': 1,
-                'user_id': 1,
+                'user_id': f'$answers.{f["usuario"]}',
                 'inicio': f'$answers.{f["inicio"]}',
                 'cierre': f'$answers.{f["cierre"]}',
                 'status': f'$answers.{f["status"]}',
@@ -266,21 +272,46 @@ class ReporteAsistencia(Presencia):
                 'nombre_horario': f'$answers.{f["nombre_horario"]}',
                 'ubicacion_horario': f'$answers.{f["ubicacion_horario"]}',
                 'tipo_cierre': f'$answers.{f["tipo_cierre"]}',
+                'hora_entrada': f'$answers.{f["hora_entrada"]}',
+                'hora_salida': f'$answers.{f["hora_salida"]}',
+                'extra_confirmado': f'$answers.{f["extra_confirmado"]}',
+                'horas_extra': f'$answers.{f["horas_extra"]}',
+                'autorizacion_extra': f'$answers.{f["autorizacion_extra"]}',
+                'usuario': f'$answers.{f["usuario"]}',
             }},
         ]
-        res = {}
+        por_dia = defaultdict(list)
         for j in self.cr.aggregate(query):
             fecha = self._fecha((j.get('inicio') or '')[:10])
             if fecha:
-                res.setdefault((j['user_id'], fecha), j)
-        return res
+                por_dia[(j['user_id'], fecha)].append(j)
+        return {k: self._dia(sorted(js, key=lambda j: j.get('inicio') or ''), tz, now) for k, js in por_dia.items()}
+
+    def _dia(self, jornadas, tz, now):
+        """Las jornadas de un día como una sola: llegada de la primera, salida de la última, horas sumadas."""
+        primera, ultima = jornadas[0], jornadas[-1]
+        horas = extra = 0.0
+        for j in jornadas:
+            h, e = self._horas_y_extra(j, tz, now)
+            horas, extra = horas + h, extra + e
+        abierta = any(not j.get('cierre') for j in jornadas)
+        return {
+            **primera,
+            'folios': [j.get('folio') for j in jornadas if j.get('folio')],
+            'cierre': None if abierta else ultima.get('cierre'),
+            'tipo_cierre': ultima.get('tipo_cierre'),
+            'extra_confirmado': next((j['extra_confirmado'] for j in jornadas if j.get('extra_confirmado')), None),
+            'autorizacion_extra': next((j['autorizacion_extra'] for j in jornadas if j.get('autorizacion_extra')), None),
+            'horas': horas,
+            'extra': extra,
+        }
 
     def _checkin_project(self):
         f = self.checkin_fields
         return {
             '_id': 0,
             'folio': 1,
-            'user_id': 1,
+            'user_id': f'$answers.{f["usuario"]}',
             'folio_jornada': f'$answers.{f["folio_jornada"]}',
             'ubicacion': f'$answers.{f["lugar"]}.{f["ubicacion"]}',
             'caseta': f'$answers.{f["lugar"]}.{f["caseta"]}',
@@ -298,7 +329,8 @@ class ReporteAsistencia(Presencia):
 
     def _checkins_abiertos(self, user_ids):
         res = {}
-        for c in self.cr.aggregate(self._checkin_query({'user_id': {'$in': user_ids}})):
+        usuario = f'answers.{self.checkin_fields["usuario"]}'
+        for c in self.cr.aggregate(self._checkin_query({usuario: {'$in': user_ids}})):
             res.setdefault(c.get('user_id'), {k: self.unlist(c.get(k)) for k in ('ubicacion', 'caseta', 'rol')})
         return res
 
@@ -306,16 +338,16 @@ class ReporteAsistencia(Presencia):
         """Los Check In de la jornada; los anteriores al folio de jornada, por fecha."""
         f = self.checkin_fields
         match = {'deleted_at': {'$exists': False}, 'form_id': self.CHECKIN}
-        if jornada and jornada.get('folio'):
-            # Los Check In de antes del folio de jornada se ligan por caer dentro de ella.
+        if jornada and jornada.get('folios'):
+            # Los Check In de antes del folio de jornada se ligan por caer dentro del día de jornada.
             dentro = {'$gte': jornada.get('inicio'), '$lte': jornada.get('cierre') or f'{fecha.isoformat()} 23:59:59'}
             match['$or'] = [
-                {f'answers.{f["folio_jornada"]}': jornada['folio']},
-                {'user_id': user_id, f'answers.{f["folio_jornada"]}': {'$exists': False},
+                {f'answers.{f["folio_jornada"]}': {'$in': jornada['folios']}},
+                {f'answers.{f["usuario"]}': user_id, f'answers.{f["folio_jornada"]}': {'$exists': False},
                  f'answers.{f["fecha_in"]}': dentro},
             ]
         else:
-            match.update({'user_id': user_id, f'answers.{f["fecha_in"]}': {'$regex': f'^{fecha.isoformat()}'}})
+            match.update({f'answers.{f["usuario"]}': user_id, f'answers.{f["fecha_in"]}': {'$regex': f'^{fecha.isoformat()}'}})
         rows = []
         for c in self.cr.aggregate([{'$match': match}, {'$sort': {f'answers.{f["fecha_in"]}': 1}},
                                     {'$project': self._checkin_project()}]):
@@ -364,11 +396,18 @@ class ReporteAsistencia(Presencia):
     # Utilidades
     # ------------------------------------------------------------------
 
-    def _horas(self, jornada, tz, now):
-        if jornada.get('horas_trabajadas') is not None and jornada.get('cierre'):
-            return float(jornada['horas_trabajadas'] or 0)
+    def _horas_y_extra(self, jornada, tz, now):
+        """(horas trabajadas, horas extra). Una jornada abierta cuenta solo hasta donde la cerraría su regla."""
+        if jornada.get('cierre'):
+            return float(jornada.get('horas_trabajadas') or 0), float(jornada.get('horas_extra') or 0)
         inicio = self._parse(jornada.get('inicio'), tz)
-        return max((now - inicio).total_seconds(), 0) / 3600 if inicio else 0.0
+        if not inicio:
+            return 0.0, 0.0
+        cierre = self._regla_cierre(jornada, tz, now) or now
+        horas = max((cierre - inicio).total_seconds(), 0) / 3600
+        # Mientras no confirme que sigue trabajando, lo de después de su salida no es extra todavía.
+        extra = self._horas_extra(jornada, inicio, cierre, horas, tz) if jornada.get('extra_confirmado') else 0.0
+        return horas, extra
 
     def _turno_fmt(self, turno):
         if not turno:

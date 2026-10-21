@@ -37,6 +37,7 @@ class Presencia(Asistencia):
             'foto_out': '68d384ef55840a75f2cb7e29',
             'folio_jornada': '6ad90e470d23e745a45bfc6d',
             'horas_lugar': '6ad90e471e2847655984f5f0',
+            'usuario': '6ad946c981c0e38093dbc8e5',
         }
 
     # ------------------------------------------------------------------
@@ -100,6 +101,7 @@ class Presencia(Asistencia):
             f['estatus']: 'abierto',
             f['fecha_in']: self._now(tz).strftime(DATE_FMT),
             f['folio_jornada']: jornada.get('folio', ''),
+            f['usuario']: user_id,
         }
         if rol and self.ROL_CATALOG_OBJ_ID:
             answers[self.ROL_CATALOG_OBJ_ID] = {f['rol']: rol}
@@ -154,7 +156,8 @@ class Presencia(Asistencia):
         """Si la jornada se cierra sola (olvidada), sus Check In abiertos también."""
         res = super()._cerrar(registro, cierre_dt, tz, automatico=automatico)
         if automatico:
-            query = self._checkin_query({'user_id': self.user.get('user_id')})
+            usuario = registro.get('usuario') or self.user.get('user_id')
+            query = self._checkin_query({f'answers.{self.checkin_fields["usuario"]}': usuario})
             for abierto in self.format_cr(self.cr.aggregate(query)) or []:
                 inicio = self._parse(abierto.get('desde'), tz)
                 cierre = max(cierre_dt, inicio) if inicio else cierre_dt
@@ -195,7 +198,7 @@ class Presencia(Asistencia):
             {'$project': {
                 '_id': 1,
                 'folio': 1,
-                'user_id': 1,
+                'user_id': f'$answers.{f["usuario"]}',
                 'nombre': f'$answers.{lugar}.{f["nombre"]}',
                 'ubicacion': f'$answers.{lugar}.{f["ubicacion"]}',
                 'caseta': f'$answers.{lugar}.{f["caseta"]}',
@@ -206,8 +209,7 @@ class Presencia(Asistencia):
         ]
 
     def _checkin_abierto(self, user_id):
-        # El dueño del registro es quien hizo el Check In.
-        query = self._checkin_query({'user_id': user_id})
+        query = self._checkin_query({f'answers.{self.checkin_fields["usuario"]}': user_id})
         return self.format_cr(self.cr.aggregate(query), get_one=True) or None
 
     def _ocupantes(self, ubicaciones):

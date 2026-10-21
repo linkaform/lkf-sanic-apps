@@ -53,6 +53,17 @@ async def post_asistencia(request: Request):
     return json({"data": presencia_service.set_estatus(payload.get("estatus"))}, status=200)
 
 
+@employee_bp.post("/asistencia/extra")
+async def post_asistencia_extra(request: Request):
+    return json({"data": presencia_service.confirmar_extra()}, status=200)
+
+
+@employee_bp.post("/asistencia/cierre_automatico")
+async def post_asistencia_cierre_automatico(request: Request):
+    # Lo llama el cierre programado: cierra las jornadas de todos que ya cumplieron su regla.
+    return json({"data": presencia_service.cerrar_olvidadas()}, status=200)
+
+
 @employee_bp.get("/checkin")
 async def get_checkin(request: Request):
     return json({"data": presencia_service.get_estado_checkin()}, status=200)
