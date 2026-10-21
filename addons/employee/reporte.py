@@ -69,7 +69,7 @@ class ReporteAsistencia(Presencia):
 
         hoy = self._hoy()
         alta = next((e.get('alta') for e in self._empleados() if e['employee_id'] in user_ids), None)
-        dias_libres = next((j['dias_libres'] for j in jornadas if j.get('dias_libres')), [])
+        dias_libres = self._dias_descanso(next(iter(user_ids), None))
         por_dia = {j['dia']: j for j in jornadas}
         indicadores = {'cantidad_asistencias': 0, 'retardos': 0, 'faltas': 0}
         horas = 0.0
@@ -155,6 +155,7 @@ class ReporteAsistencia(Presencia):
                 'created_at': 1,
                 'employee_id': f"$answers.{self.USUARIOS_OBJ_ID}.{self.employee_fields['user_id_id']}",
                 'nombre': f"$answers.{self.f['worker_name']}",
+                'horario': f"$answers.{self.HORARIOS_CAT_OBJ_ID}.{self.asistencia_fields['nombre_horario']}",
             }},
         ]
         res = []
@@ -163,7 +164,8 @@ class ReporteAsistencia(Presencia):
             if emp_id:
                 alta = e.get('created_at')
                 res.append({'employee_id': int(emp_id), 'nombre': e.get('nombre') or '',
-                            'alta': alta.date() if hasattr(alta, 'date') else None})
+                            'alta': alta.date() if hasattr(alta, 'date') else None,
+                            'horario': self.unlist(e.get('horario'))})
         return sorted(res, key=lambda e: e['nombre'])
 
     def _jornada_project(self):
@@ -174,13 +176,11 @@ class ReporteAsistencia(Presencia):
             'user_id': 1,
             'inicio': f'$answers.{f["inicio"]}',
             'cierre': f'$answers.{f["cierre"]}',
-            'comentario_cierre': f'$answers.{f["comentario_cierre"]}',
             'status': f'$answers.{f["status"]}',
             'horas_trabajadas': f'$answers.{f["horas_trabajadas"]}',
             'nombre_horario': f'$answers.{f["nombre_horario"]}',
             'hora_entrada': f'$answers.{f["hora_entrada"]}',
             'hora_salida': f'$answers.{f["hora_salida"]}',
-            'dias_libres': f'$answers.{f["dias_libres"]}',
             'ubicacion_horario': f'$answers.{f["ubicacion_horario"]}',
             'tipo_cierre': f'$answers.{f["tipo_cierre"]}',
         }
@@ -207,7 +207,6 @@ class ReporteAsistencia(Presencia):
                 continue
             vistas.add(clave)
             j['dia'] = int(inicio[8:10])
-            j['dias_libres'] = j.get('dias_libres') or []
             jornadas.append(j)
         return jornadas
 
@@ -306,6 +305,7 @@ class ReporteAsistencia(Presencia):
         vacaciones = self._vacaciones(month, year)
         nombres = {e['employee_id']: e['nombre'] for e in empleados}
         altas = {e['employee_id']: e.get('alta') for e in empleados}
+        descansos = self._descansos(empleados)
         grupos = defaultdict(list)
         for j in jornadas:
             grupos[(j['user_id'], j['ubicacion'])].append(j)
@@ -319,7 +319,7 @@ class ReporteAsistencia(Presencia):
         result = []
         for (uid, ubicacion), js in grupos.items():
             por_dia = {j['dia']: j for j in js}
-            dias_libres = next((j['dias_libres'] for j in js if j['dias_libres']), [])
+            dias_libres = descansos.get(uid, [])
             resumen = {'asistencias': 0, 'retardos': 0, 'faltas': 0}
             asistencia_mes = []
             for dia in range(1, monthrange(year, month)[1] + 1):
@@ -345,6 +345,7 @@ class ReporteAsistencia(Presencia):
 
     def _por_ubicacion(self, jornadas, empleados, month, year):
         nombres = {e['employee_id']: e['nombre'] for e in empleados}
+        descansos = self._descansos(empleados)
         dias_mes = monthrange(year, month)[1]
         grupos = {}
         for j in jornadas:
@@ -356,7 +357,7 @@ class ReporteAsistencia(Presencia):
                 'resumen': {'asistencias': 0, 'retardos': 0, 'faltas': 0},
             })
             dia_semana = DIAS[datetime(year, month, j['dia']).weekday()]
-            status = 'dia_libre' if dia_semana in j['dias_libres'] else (j.get('status') or 'presente')
+            status = 'dia_libre' if dia_semana in descansos.get(j['user_id'], []) else (j.get('status') or 'presente')
             # El front separa "nombre-status-id" por guiones: el nombre no puede llevar guion.
             nombre = (nombres.get(j['user_id']) or str(j['user_id'])).replace('-', '–')
             g['asistencia_mes'][j['dia'] - 1]['empleados'].append(f"{nombre}-{status}-{j['user_id']}")
@@ -382,7 +383,7 @@ class ReporteAsistencia(Presencia):
             'horas_trabajadas': j.get('horas_trabajadas'),
             'tipo_cierre': j.get('tipo_cierre'),
             'comentario_inicio_turno': '',
-            'comentario_cierre_turno': j.get('comentario_cierre') or ultimo.get('comentario') or '',
+            'comentario_cierre_turno': ultimo.get('comentario') or '',
             'incidente_location': primero.get('ubicacion') or j.get('ubicacion_horario'),
             'incidente_area': primero.get('caseta'),
             'tipo_guardia': primero.get('rol'),
@@ -394,6 +395,28 @@ class ReporteAsistencia(Presencia):
     # ------------------------------------------------------------------
     # Utilidades
     # ------------------------------------------------------------------
+
+    def _descansos(self, empleados):
+        """{user_id: [días de la semana sin turno]} según el horario semanal de cada empleado."""
+        horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
+        res = {}
+        for e in empleados:
+            dias = self._dias_sin_turno(horarios.get(e.get('horario')))
+            if dias:
+                res[e['employee_id']] = dias
+        return res
+
+    def _dias_descanso(self, user_id):
+        return self._dias_sin_turno(self._horario_de(user_id)) if user_id else []
+
+    def _dias_sin_turno(self, horario):
+        # Sin horario (o con uno de ciclo, que aún no se calcula) no se sabe qué días descansa.
+        if not horario or (horario.get('tipo') or 'semanal') != 'semanal':
+            return []
+        con_turno = set()
+        for renglon in horario.get('dias') or []:
+            con_turno.update(renglon.get(self.horario_fields['dias_semana']) or [])
+        return [d for d in DIAS if d not in con_turno]
 
     def _ubicaciones_de(self, j):
         ubicaciones = {c.get('ubicacion') for c in j.get('checkins') or []}

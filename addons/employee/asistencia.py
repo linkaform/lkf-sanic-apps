@@ -13,6 +13,7 @@ import pytz
 from .app import Employee
 
 DATE_FMT = '%Y-%m-%d %H:%M:%S'
+DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
 
 # Un registro abierto más viejo que esto se considera olvidado y se cierra solo.
 MAX_JORNADA_HORAS = 16
@@ -30,8 +31,6 @@ class Asistencia(Employee):
         self.asistencia_fields = {
             'inicio': '6879828d0234f02649cad390',
             'cierre': '6879828d0234f02649cad391',
-            'comentario_cierre': '68798dd1205f333d8f53a1c7',
-            'dias_libres': '68bb20095035e61c5745de05',
             'nombre_horario': '68b6427cc8f94827ebfed695',
             'hora_entrada': '68b6427cc8f94827ebfed696',
             'hora_salida': '68b6427cc8f94827ebfed697',
@@ -42,9 +41,14 @@ class Asistencia(Employee):
             'ubicacion_horario': '6ad90e4757d6829358977bd8',
             'tipo_cierre': '6ad90e477d254b629e023075',
         }
+        self.HORARIOS_CAT_OBJ_ID = (self.lkm.catalog_id('horarios') or {}).get('obj_id')
         self.horario_fields = {
+            'tipo': '6ad940a913fa360c61952193',
             'ingreso_maximo': '69824e4bfdead27b0009739e',
-            'ubicaciones': '68b6427cc8f94827ebfed699',
+            'dias': '6ad940a92d045e0931f052e2',
+            'dias_semana': '6ad940a9ef84c3bb5e325d5b',
+            'entrada': '6ad940a978cc628b4d20f84d',
+            'salida': '6ad940a9aede17d2bc054635',
         }
 
     # ------------------------------------------------------------------
@@ -114,9 +118,9 @@ class Asistencia(Employee):
         answers = {f['inicio']: now.strftime(DATE_FMT)}
 
         horario = self._horario_para(user_id, now, tz)
-        # Sin horario, si el empleado tiene una sola ubicación, esa es la de su jornada.
+        # Si el empleado tiene una sola ubicación, esa es la de su jornada.
         ubicaciones = self._ubicaciones_configuradas(user_id)
-        ubicacion = (horario or {}).get('ubicacion') or (ubicaciones[0] if len(ubicaciones) == 1 else None)
+        ubicacion = ubicaciones[0] if len(ubicaciones) == 1 else None
         if ubicacion:
             answers[f['ubicacion_horario']] = ubicacion
         if horario:
@@ -128,9 +132,6 @@ class Asistencia(Employee):
                 f['retardo_maximo']: horario['retardo_maximo'],
                 f['status']: self._status_llegada(now, horario),
             })
-        dias_libres = self._dias_libres(user_id)
-        if dias_libres:
-            answers[f['dias_libres']] = dias_libres
 
         metadata = self.lkf_api.get_metadata(form_id=self.REGISTRO_ASISTENCIA)
         metadata.update({
@@ -170,8 +171,6 @@ class Asistencia(Employee):
         if inicio:
             horas = max((cierre_dt - inicio).total_seconds(), 0) / 3600
             answers[f['horas_trabajadas']] = round(horas, 2)
-        if automatico:
-            answers[f['comentario_cierre']] = 'Cierre automático: la jornada no se cerró al pasar a Ausente.'
         res = self.lkf_api.patch_multi_record(
             answers=answers, form_id=self.REGISTRO_ASISTENCIA, record_id=[str(registro['_id'])])
         if res.get('status_code') not in (200, 201, 202):
@@ -247,55 +246,89 @@ class Asistencia(Employee):
         ]
         return [x['_id'] for x in self.cr.aggregate(query) if x.get('_id')]
 
-    def _horario_para(self, user_id, now, tz):
-        """El horario de las ubicaciones del empleado cuya entrada queda más cerca de `now`."""
-        ubicaciones = self._ubicaciones_configuradas(user_id)
-        if not ubicaciones:
+    def _horario_de(self, user_id):
+        """El horario asignado al empleado en Empleados (catálogo Horarios), o None."""
+        if not self.HORARIOS_CAT_OBJ_ID:
             return None
+        empleado = self.format_cr(self.cr.aggregate([
+            {'$match': {
+                'deleted_at': {'$exists': False},
+                'form_id': self.EMPLEADOS,
+                f'answers.{self.USUARIOS_OBJ_ID}.{self.employee_fields["user_id_id"]}': user_id,
+            }},
+            {'$limit': 1},
+            {'$project': {'_id': 0, 'nombre': f'$answers.{self.HORARIOS_CAT_OBJ_ID}.{self.asistencia_fields["nombre_horario"]}'}},
+        ]), get_one=True) or {}
+        nombre = self.unlist(empleado.get('nombre'))
+        return self._horarios_por_nombre([nombre]).get(nombre) if nombre else None
+
+    def _horarios_por_nombre(self, nombres):
+        """{nombre: horario} de la forma Horarios."""
         f, hf = self.asistencia_fields, self.horario_fields
-        loc_path = f'{hf["ubicaciones"]}.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f["location"]}'
         query = [
             {'$match': {
                 'deleted_at': {'$exists': False},
                 'form_id': self.HORARIOS,
-                f'answers.{loc_path}': {'$in': ubicaciones},
+                f'answers.{f["nombre_horario"]}': {'$in': [n for n in nombres if n]},
             }},
+            {'$sort': {'created_at': -1}},
             {'$project': {
                 '_id': 0,
                 'nombre_horario': f'$answers.{f["nombre_horario"]}',
-                'hora_entrada': f'$answers.{f["hora_entrada"]}',
-                'hora_salida': f'$answers.{f["hora_salida"]}',
+                'tipo': f'$answers.{hf["tipo"]}',
                 'tolerancia_retardo': f'$answers.{f["tolerancia_retardo"]}',
                 'retardo_maximo': f'$answers.{f["retardo_maximo"]}',
                 'ingreso_maximo': f'$answers.{hf["ingreso_maximo"]}',
-                'ubicaciones': f'$answers.{loc_path}',
+                'dias': f'$answers.{hf["dias"]}',
             }},
         ]
-        mejor, mejor_diff = None, None
+        res = {}
         for h in self.cr.aggregate(query):
-            if not h.get('hora_entrada'):
+            res.setdefault(h.get('nombre_horario'), h)
+        return res
+
+    def _turnos_del_dia(self, horario, fecha, tz):
+        """Turnos (entrada, salida) que el horario tiene para `fecha`. Por ahora solo el semanal."""
+        if not horario or (horario.get('tipo') or 'semanal') != 'semanal':
+            return []
+        hf = self.horario_fields
+        dia = DIAS_SEMANA[fecha.weekday()]
+        turnos = []
+        for renglon in horario.get('dias') or []:
+            if dia not in (renglon.get(hf['dias_semana']) or []) or not renglon.get(hf['entrada']):
                 continue
-            t_entrada = datetime.strptime(self._hhmmss(h['hora_entrada']), '%H:%M:%S').time()
-            antes_permitido = int(h.get('ingreso_maximo') or 0) * 60
-            for dias in (-1, 0, 1):
-                entrada = tz.localize(datetime.combine(now.date() + timedelta(days=dias), t_entrada))
-                delta = (now - entrada).total_seconds()
+            entrada_t = datetime.strptime(self._hhmmss(renglon[hf['entrada']]), '%H:%M:%S').time()
+            salida_t = datetime.strptime(self._hhmmss(renglon.get(hf['salida']) or renglon[hf['entrada']]), '%H:%M:%S').time()
+            entrada = tz.localize(datetime.combine(fecha, entrada_t))
+            salida = tz.localize(datetime.combine(fecha, salida_t))
+            if salida <= entrada:
+                salida += timedelta(days=1)
+            turnos.append({'entrada_dt': entrada, 'salida_dt': salida,
+                           'hora_entrada': renglon[hf['entrada']], 'hora_salida': renglon.get(hf['salida']) or ''})
+        return turnos
+
+    def _horario_para(self, user_id, now, tz):
+        """El turno del horario del empleado cuya entrada queda más cerca de `now`."""
+        horario = self._horario_de(user_id)
+        if not horario:
+            return None
+        antes_permitido = int(horario.get('ingreso_maximo') or 0) * 60
+        mejor, mejor_diff = None, None
+        # Ayer también cuenta: un turno nocturno de ayer puede seguir abierto.
+        for dias in (-1, 0, 1):
+            for turno in self._turnos_del_dia(horario, now.date() + timedelta(days=dias), tz):
+                delta = (now - turno['entrada_dt']).total_seconds()
                 # Puede llegar hasta `ingreso_maximo` min antes, o hasta 12 h después.
-                if -antes_permitido <= delta <= 12 * 3600:
-                    if mejor_diff is None or abs(delta) < mejor_diff:
-                        mejor, mejor_diff = {**h, 'entrada_dt': entrada}, abs(delta)
+                if -antes_permitido <= delta <= 12 * 3600 and (mejor_diff is None or abs(delta) < mejor_diff):
+                    mejor, mejor_diff = turno, abs(delta)
         if not mejor:
             return None
-        # El horario puede aplicar a varias ubicaciones: la suya es la que también tiene el empleado.
-        del_horario = mejor.get('ubicaciones') or []
-        ubicacion = next((u for u in del_horario if u in ubicaciones), None)
         return {
-            'ubicacion': ubicacion,
-            'nombre_horario': mejor.get('nombre_horario', ''),
-            'hora_entrada': mejor.get('hora_entrada', ''),
-            'hora_salida': mejor.get('hora_salida', ''),
-            'tolerancia_retardo': int(mejor.get('tolerancia_retardo') or 0),
-            'retardo_maximo': int(mejor.get('retardo_maximo') or 0),
+            'nombre_horario': horario.get('nombre_horario', ''),
+            'hora_entrada': mejor['hora_entrada'],
+            'hora_salida': mejor['hora_salida'],
+            'tolerancia_retardo': int(horario.get('tolerancia_retardo') or 0),
+            'retardo_maximo': int(horario.get('retardo_maximo') or 0),
             'entrada_dt': mejor['entrada_dt'],
         }
 
@@ -306,19 +339,6 @@ class Asistencia(Employee):
         if retraso_min <= horario['retardo_maximo']:
             return 'retardo'
         return 'falta_por_retardo'
-
-    def _dias_libres(self, user_id):
-        query = [
-            {'$match': {
-                'deleted_at': {'$exists': False},
-                'form_id': self.EMPLEADOS,
-                f'answers.{self.USUARIOS_OBJ_ID}.{self.employee_fields["user_id_id"]}': user_id,
-            }},
-            {'$limit': 1},
-            {'$project': {'_id': 0, 'dias_libres': f'$answers.{self.asistencia_fields["dias_libres"]}'}},
-        ]
-        res = self.format_cr(self.cr.aggregate(query), get_one=True)
-        return (res or {}).get('dias_libres') or []
 
     # ------------------------------------------------------------------
     # Fechas
