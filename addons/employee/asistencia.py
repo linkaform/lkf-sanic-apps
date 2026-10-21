@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import pytz
 
 from .app import Employee
+from .extra import HorasExtra
 
 DATE_FMT = '%Y-%m-%d %H:%M:%S'
 DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
@@ -25,7 +26,7 @@ EXTRA_PREGUNTA_MIN = 30
 EXTRA_ESPERA_HORAS = 2
 
 
-class Asistencia(Employee):
+class Asistencia(HorasExtra, Employee):
 
     def __init__(self, settings, **kwargs):
         super().__init__(settings, **kwargs)
@@ -49,6 +50,10 @@ class Asistencia(Employee):
             'horas_extra': '6ad946c93592f2833e63bea9',
             'extra_confirmado': '6ad946c91e515f9e4732beed',
             'autorizacion_extra': '6ad946c95e4b56d0a300e113',
+            'motivo_extra': '6ad94f6d9ec92a66c20824d2',
+            'autorizo_extra': '6ad94f6d54eb50a2a8d561b7',
+            'fecha_autorizacion': '6ad94f6d3acf876b4f3b81de',
+            'comentario_autorizacion': '6ad94f6dcf8a16e95c8b1fa6',
         }
         self.HORARIOS_CAT_OBJ_ID = (self.lkm.catalog_id('horarios') or {}).get('obj_id')
         self.horario_fields = {
@@ -84,19 +89,32 @@ class Asistencia(Employee):
 
         return self._format_estado(self._registro_abierto(user_id, tz), user_id, tz)
 
-    def confirmar_extra(self):
-        """La persona sigue trabajando después de su turno: la jornada queda en tiempo extra."""
+    def confirmar_extra(self, motivo=None):
+        """La persona sigue trabajando después de su turno: la jornada queda en tiempo extra.
+
+        Si la política pide autorización, la extra queda pendiente y se le pide a quien autoriza.
+        """
         user_id = self.user.get('user_id')
         tz = self._user_tz(user_id)
         abierto = self._registro_abierto(user_id, tz)
         if not abierto:
             self.LKFException({'title': 'Sin jornada', 'msg': 'No tienes una jornada abierta.'})
+        politica = self._politica()
+        motivo = (motivo or '').strip()
+        if politica['motivo_obligatorio'] and not motivo:
+            self.LKFException({'title': 'Falta el motivo', 'msg': 'Indica por qué sigues trabajando.'})
         f = self.asistencia_fields
+        answers = {f['extra_confirmado']: self._now(tz).strftime(DATE_FMT)}
+        if motivo:
+            answers[f['motivo_extra']] = motivo
+        if politica['requiere']:
+            answers[f['autorizacion_extra']] = 'pendiente'
         res = self.lkf_api.patch_multi_record(
-            answers={f['extra_confirmado']: self._now(tz).strftime(DATE_FMT)},
-            form_id=self.REGISTRO_ASISTENCIA, record_id=[str(abierto['_id'])])
+            answers=answers, form_id=self.REGISTRO_ASISTENCIA, record_id=[str(abierto['_id'])])
         if res.get('status_code') not in (200, 201, 202):
             self.LKFException({'title': 'Error al confirmar tiempo extra', 'msg': res.get('json', res)})
+        if politica['requiere']:
+            self._solicitar_autorizacion(abierto, motivo, salida=self._salida_esperada(abierto, tz))
         return self._format_estado(self._registro_abierto(user_id, tz), user_id, tz)
 
     def cerrar_olvidadas(self):
@@ -164,6 +182,8 @@ class Asistencia(Employee):
             'hora_salida': f'$answers.{f["hora_salida"]}',
             'status': f'$answers.{f["status"]}',
             'extra_confirmado': f'$answers.{f["extra_confirmado"]}',
+            'autorizacion_extra': f'$answers.{f["autorizacion_extra"]}',
+            'motivo_extra': f'$answers.{f["motivo_extra"]}',
         }
 
     def _abrir(self, user_id, tz):
@@ -227,9 +247,17 @@ class Asistencia(Employee):
             answers[f['horas_trabajadas']] = round(horas, 2)
             extra = self._horas_extra(registro, inicio, cierre_dt, horas, tz)
             answers[f['horas_extra']] = round(extra, 2)
-            if extra > 0:
-                # Sin autorización por ahora; el inbox la pedirá después (pendiente/aprobada/rechazada).
-                answers[f['autorizacion_extra']] = 'no_requerida'
+            ya = registro.get('autorizacion_extra')
+            if extra > 0 and ya not in ('aprobada', 'rechazada'):
+                politica = self._politica()
+                tope = politica['tope_dia']
+                pasa_tope = bool(tope) and extra > float(tope) and politica['al_tope'] == 'pedir_autorizacion'
+                if politica['requiere'] or pasa_tope or ya == 'pendiente':
+                    answers[f['autorizacion_extra']] = 'pendiente'
+                    self._solicitar_autorizacion(registro, registro.get('motivo_extra'), horas=round(extra, 2),
+                                                 salida=self._salida_esperada(registro, tz))
+                else:
+                    answers[f['autorizacion_extra']] = 'no_requerida'
         res = self.lkf_api.patch_multi_record(
             answers=answers, form_id=self.REGISTRO_ASISTENCIA, record_id=[str(registro['_id'])])
         if res.get('status_code') not in (200, 201, 202):
@@ -322,7 +350,13 @@ class Asistencia(Employee):
             return None
         if self._now(tz) < salida + timedelta(minutes=EXTRA_PREGUNTA_MIN):
             return None
-        return {'salida': salida.strftime('%H:%M')}
+        politica = self._politica()
+        return {
+            'salida': salida.strftime('%H:%M'),
+            'requiere_autorizacion': politica['requiere'],
+            'motivo_obligatorio': politica['motivo_obligatorio'],
+            'motivos': politica['motivos'],
+        }
 
     # ------------------------------------------------------------------
     # Horario

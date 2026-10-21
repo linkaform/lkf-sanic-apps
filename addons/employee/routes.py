@@ -57,7 +57,8 @@ async def post_asistencia(request: Request):
 
 @employee_bp.post("/asistencia/extra")
 async def post_asistencia_extra(request: Request):
-    return json({"data": presencia_service.confirmar_extra()}, status=200)
+    payload = request.json or {}
+    return json({"data": presencia_service.confirmar_extra(payload.get("motivo"))}, status=200)
 
 
 @employee_bp.post("/asistencia/cierre_automatico")
@@ -105,6 +106,13 @@ def _reporte_args(request, allowed):
 @employee_bp.get("/bandeja")
 async def get_bandeja(request: Request):
     return json({"data": bandeja_service.get_bandeja()}, status=200)
+
+
+@employee_bp.post("/bandeja/resolver")
+async def post_bandeja_resolver(request: Request):
+    payload = request.json or {}
+    return json({"data": bandeja_service.resolver(payload.get("id"), payload.get("decision"), payload.get("comentario"))},
+                status=200)
 
 
 @employee_bp.post("/reporte/hoy")
