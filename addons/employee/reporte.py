@@ -1,24 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Reporte de asistencias sobre el modelo nuevo.
+"""Reporte de asistencias.
 
-La jornada (`registro_de_asistencia`) da el status del día, las horas y la
-ubicación del horario; los Check In (`checkin_checkout_casetas`) dan dónde
-estuvo, con qué rol y sus fotos. Se ligan por el folio de la jornada.
+Tres lecturas sobre el modelo nuevo:
+- Hoy: por persona, el turno que le toca según su horario, a qué hora llegó
+  (su jornada), su estado y dónde está (su Check In abierto).
+- Periodo: por persona, el estado de cada día, retardos, faltas y horas
+  trabajadas contra horas programadas.
+- Día: la jornada de una persona con sus Check In (lugares, rol, fotos).
 
-Regresa las mismas formas que el reporte viejo (`asistencia_report.py`) para
-que el front no cambie de estructura.
+El "deber" sale del horario asignado en Empleados; el "fue" de la jornada
+(`registro_de_asistencia`) y de los Check In (`checkin_checkout_casetas`),
+ligados por el folio de la jornada.
 """
 
-from calendar import monthrange
 from collections import defaultdict
 from datetime import datetime, timedelta
-from math import ceil
 
 from .checkin import Presencia
 
-DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
 SIN_UBICACION = 'Sin ubicación'
-STATUS_LABEL = {'presente': 'Asistencia', 'retardo': 'Retardo', 'falta_por_retardo': 'Falta por retardo'}
+FALTAS = ('falta', 'falta_por_retardo')
 
 
 class ReporteAsistencia(Presencia):
@@ -37,107 +38,156 @@ class ReporteAsistencia(Presencia):
     # API pública
     # ------------------------------------------------------------------
 
-    def get_report(self, group_by='employees', locations=None, month=None, year=None):
-        month, year = self._mes(month, year)
-        empleados = self._empleados()
-        jornadas = self._jornadas_del_mes(month, year, [e['employee_id'] for e in empleados])
-        checkins = self._checkins_por_jornada([j['folio'] for j in jornadas])
-        for j in jornadas:
-            j['checkins'] = checkins.get(j['folio'], [])
-            j['ubicacion'] = j.get('ubicacion_horario') or next(
-                (c['ubicacion'] for c in j['checkins'] if c.get('ubicacion')), None) or SIN_UBICACION
-        if locations:
-            jornadas = [j for j in jornadas if self._ubicaciones_de(j) & set(locations)]
-        if group_by == 'locations':
-            return self._por_ubicacion(jornadas, empleados, month, year)
-        return self._por_empleado(jornadas, empleados, month, year, bool(locations))
+    def get_hoy(self, locations=None):
+        tz = self._tz()
+        now = self._now(tz)
+        hoy = now.date()
+        empleados = self._empleados_filtrados(locations)
+        ids = [e['employee_id'] for e in empleados]
+        horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
+        jornadas = self._jornadas(hoy, hoy, ids)
+        abiertos = self._checkins_abiertos(ids)
+        vacaciones = self._vacaciones(hoy, hoy)
+
+        rows = []
+        for e in empleados:
+            uid = e['employee_id']
+            horario = horarios.get(e.get('horario'))
+            turno = next(iter(self._turnos_del_dia(horario, hoy, tz)), None)
+            jornada = jornadas.get((uid, hoy))
+            checkin = abiertos.get(uid)
+            row = {
+                'user_id': uid,
+                'nombre': e['nombre'],
+                'horario': e.get('horario'),
+                'turno': self._turno_fmt(turno),
+                'llegada': (jornada or {}).get('inicio'),
+                'retraso_min': None,
+                'estado': self._estado(horario, turno, jornada, vacaciones.get(uid, {}).get(hoy), now),
+                'lugar': self._lugar(checkin),
+                'rol': (checkin or {}).get('rol'),
+                'jornada_abierta': bool(jornada and not jornada.get('cierre')),
+            }
+            if jornada and turno:
+                llegada = self._parse(jornada.get('inicio'), tz)
+                if llegada:
+                    row['retraso_min'] = max(int((llegada - turno['entrada_dt']).total_seconds() // 60), 0)
+            rows.append(row)
+
+        resumen = {
+            'programados': sum(1 for r in rows if r['turno']),
+            'a_tiempo': sum(1 for r in rows if r['estado'] == 'presente' and r['turno']),
+            'retardo': sum(1 for r in rows if r['estado'] in ('retardo', 'falta_por_retardo')),
+            'no_ha_llegado': sum(1 for r in rows if r['estado'] == 'no_ha_llegado'),
+            'fuera_de_horario': sum(1 for r in rows if r['estado'] == 'fuera_de_horario'),
+            'dentro': sum(1 for r in rows if r['lugar']),
+        }
+        orden = ['no_ha_llegado', 'falta_por_retardo', 'retardo', 'fuera_de_horario', 'presente', 'asistio',
+                 'por_llegar', 'sin_horario', 'descanso']
+        rows.sort(key=lambda r: (orden.index(r['estado']) if r['estado'] in orden else len(orden), r['nombre']))
+        return {'fecha': hoy.isoformat(), 'hora': now.strftime('%H:%M'), 'resumen': resumen, 'empleados': rows}
+
+    def get_periodo(self, desde=None, hasta=None, locations=None):
+        tz = self._tz()
+        now = self._now(tz)
+        hoy = now.date()
+        desde, hasta = self._rango(desde, hasta, hoy)
+        empleados = self._empleados_filtrados(locations)
+        ids = [e['employee_id'] for e in empleados]
+        horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
+        jornadas = self._jornadas(desde, hasta, ids)
+        vacaciones = self._vacaciones(desde, hasta)
+
+        result = []
+        for e in empleados:
+            uid = e['employee_id']
+            horario = horarios.get(e.get('horario'))
+            resumen = {'asistencias': 0, 'retardos': 0, 'faltas': 0, 'descansos': 0,
+                       'horas_trabajadas': 0.0, 'horas_programadas': 0.0}
+            dias = []
+            fecha = desde
+            while fecha <= hasta:
+                turno = next(iter(self._turnos_del_dia(horario, fecha, tz)), None)
+                jornada = jornadas.get((uid, fecha))
+                if e.get('alta') and fecha < e['alta'] and not jornada:
+                    estado = 'sin_registro'
+                else:
+                    estado = self._estado(horario, turno, jornada, vacaciones.get(uid, {}).get(fecha), now)
+                    if estado in ('no_ha_llegado', 'por_llegar'):
+                        estado = 'falta' if estado == 'no_ha_llegado' else 'sin_registro'
+                    if turno and fecha <= hoy and estado not in ('sin_registro',) and not vacaciones.get(uid, {}).get(fecha):
+                        resumen['horas_programadas'] += (turno['salida_dt'] - turno['entrada_dt']).total_seconds() / 3600
+                if estado in ('presente', 'asistio', 'fuera_de_horario'):
+                    resumen['asistencias'] += 1
+                elif estado == 'retardo':
+                    resumen['asistencias'] += 1
+                    resumen['retardos'] += 1
+                elif estado in FALTAS:
+                    resumen['faltas'] += 1
+                elif estado == 'descanso':
+                    resumen['descansos'] += 1
+                if jornada:
+                    resumen['horas_trabajadas'] += self._horas(jornada, tz, now)
+                dias.append({'fecha': fecha.isoformat(), 'estado': estado})
+                fecha += timedelta(days=1)
+            resumen['horas_trabajadas'] = round(resumen['horas_trabajadas'], 1)
+            resumen['horas_programadas'] = round(resumen['horas_programadas'], 1)
+            result.append({'user_id': uid, 'nombre': e['nombre'], 'horario': e.get('horario'),
+                           'dias': dias, 'resumen': resumen})
+        return {'desde': desde.isoformat(), 'hasta': hasta.isoformat(), 'empleados': result}
+
+    def get_dia(self, user_id, fecha=None):
+        tz = self._tz()
+        now = self._now(tz)
+        fecha = self._fecha(fecha) or now.date()
+        user_id = int(user_id)
+        empleado = next((e for e in self._empleados() if e['employee_id'] == user_id), {})
+        horario = self._horarios_por_nombre([empleado.get('horario')]).get(empleado.get('horario'))
+        turno = next(iter(self._turnos_del_dia(horario, fecha, tz)), None)
+        jornada = self._jornadas(fecha, fecha, [user_id]).get((user_id, fecha))
+        checkins = self._checkins_del_dia(user_id, fecha, jornada)
+        vacaciones = self._vacaciones(fecha, fecha).get(user_id, {}).get(fecha)
+        return {
+            'user_id': user_id,
+            'nombre': empleado.get('nombre', ''),
+            'fecha': fecha.isoformat(),
+            'horario': empleado.get('horario'),
+            'turno': self._turno_fmt(turno),
+            'estado': self._estado(horario, turno, jornada, vacaciones, now),
+            'jornada': {
+                'folio': jornada.get('folio'),
+                'inicio': jornada.get('inicio'),
+                'cierre': jornada.get('cierre'),
+                'tipo_cierre': jornada.get('tipo_cierre'),
+                'horas': round(self._horas(jornada, tz, now), 2),
+                'ubicacion': jornada.get('ubicacion_horario'),
+            } if jornada else None,
+            'checkins': checkins,
+        }
 
     def get_locations(self):
         rows = self.lkf_api.search_catalog(self.Location.UBICACIONES_CAT_ID, {
             'selector': {}, 'fields': ['_id', f"answers.{self.Location.f['location']}"], 'limit': 200}) or []
         return sorted({r.get(self.Location.f['location']) for r in rows if r.get(self.Location.f['location'])})
 
-    def get_detail(self, user_ids=None, selected_day=1, location=None, month=None, year=None):
-        month, year = self._mes(month, year)
-        user_ids = [int(u) for u in (user_ids or []) if u]
-        jornadas = self._jornadas_del_mes(month, year, user_ids)
-        checkins = self._checkins_por_jornada([j['folio'] for j in jornadas])
-        for j in jornadas:
-            j['checkins'] = checkins.get(j['folio'], [])
-        if location and location != SIN_UBICACION:
-            jornadas = [j for j in jornadas if location in self._ubicaciones_de(j)]
+    # ------------------------------------------------------------------
+    # Estado de un día
+    # ------------------------------------------------------------------
 
-        hoy = self._hoy()
-        alta = next((e.get('alta') for e in self._empleados() if e['employee_id'] in user_ids), None)
-        dias_libres = self._dias_descanso(next(iter(user_ids), None))
-        por_dia = {j['dia']: j for j in jornadas}
-        indicadores = {'cantidad_asistencias': 0, 'retardos': 0, 'faltas': 0}
-        horas = 0.0
-        asistencia_mes = []
-        for dia in range(1, monthrange(year, month)[1] + 1):
-            status = self._status_dia(datetime(year, month, dia).date(), hoy, por_dia.get(dia), dias_libres, {}, alta)
-            self._sumar(indicadores, status, keys=('cantidad_asistencias', 'retardos', 'faltas'))
-            asistencia_mes.append({'dia': dia, 'status': status})
-        for j in jornadas:
-            horas += float(j.get('horas_trabajadas') or 0)
-
-        jornada = por_dia.get(int(selected_day or 0))
-        return {
-            'guardia_generales': self._generales(jornada) if jornada else {},
-            'asistencia_mes': asistencia_mes,
-            'indicadores_generales': {**indicadores, 'horas_trabajadas': f'{round(horas, 1)} h'},
-        }
-
-    def get_records(self, locations=None, month=None, year=None, limit=100, offset=0):
-        """Un renglón por Check In del mes (fotos de entrada y salida), el más reciente primero."""
-        month, year = self._mes(month, year)
-        desde, hasta = self._rango(month, year)
-        f = self.checkin_fields
-        match = {
-            'deleted_at': {'$exists': False},
-            'form_id': self.CHECKIN,
-            f'answers.{f["fecha_in"]}': {'$gte': desde, '$lte': hasta},
-        }
-        if locations:
-            match[f'answers.{f["lugar"]}.{f["ubicacion"]}'] = {'$in': locations}
-        total = next(iter(self.cr.aggregate([{'$match': match}, {'$count': 'n'}])), {}).get('n', 0)
-        query = [
-            {'$match': match},
-            {'$sort': {f'answers.{f["fecha_in"]}': -1}},
-            {'$skip': int(offset)},
-            {'$limit': int(limit)},
-            {'$project': self._checkin_project()},
-        ]
-        rows = list(self.cr.aggregate(query))
-        jornadas = {j['folio']: j for j in self._jornadas_por_folio([r.get('folio_jornada') for r in rows])}
-        records = []
-        for r in rows:
-            j = jornadas.get(r.get('folio_jornada')) or {}
-            records.append({
-                '_id': str(r['_id']),
-                'folio': r.get('folio'),
-                'attendance_status': STATUS_LABEL.get(j.get('status') or 'presente', '') if j else '',
-                'attendance_start_pic': self._primera(r.get('foto_in')),
-                'attendance_end_pic': self._primera(r.get('foto_out')),
-                'attendance_name': self.unlist(r.get('nombre')) or '',
-                'attendance_sup_name': r.get('suplente') or '',
-                'attendance_horario': j.get('nombre_horario') or '',
-                'attendance_position': self.unlist(r.get('rol')) or '',
-                'attendance_location': self.unlist(r.get('ubicacion')) or '',
-                'attendance_area': self.unlist(r.get('caseta')) or '',
-                'attendance_start_time': r.get('desde'),
-                'attendance_end_time': r.get('hasta'),
-                'attendance_start_comment': '',
-                'attendance_end_comment': r.get('comentario') or '',
-                'attendance_work_hours': r.get('horas'),
-            })
-        return {
-            'records': records,
-            'total_records': total,
-            'total_pages': ceil(total / limit) if limit else 1,
-            'actual_page': (int(offset) // int(limit)) + 1 if limit else 1,
-            'records_on_page': len(records),
-        }
+    def _estado(self, horario, turno, jornada, vacaciones, now):
+        if jornada:
+            if jornada.get('status'):
+                return jornada['status']
+            # Registró asistencia sin turno que le correspondiera; sin horario no hay puntualidad que medir.
+            return 'fuera_de_horario' if horario else 'asistio'
+        if vacaciones:
+            return vacaciones
+        if not horario or (horario.get('tipo') or 'semanal') != 'semanal':
+            return 'sin_horario'
+        if not turno:
+            return 'descanso'
+        limite = turno['entrada_dt'] + timedelta(minutes=int(horario.get('retardo_maximo') or 0))
+        return 'no_ha_llegado' if now > limite else 'por_llegar'
 
     # ------------------------------------------------------------------
     # Lecturas
@@ -168,67 +218,72 @@ class ReporteAsistencia(Presencia):
                             'horario': self.unlist(e.get('horario'))})
         return sorted(res, key=lambda e: e['nombre'])
 
-    def _jornada_project(self):
-        f = self.asistencia_fields
-        return {
-            '_id': 0,
-            'folio': 1,
-            'user_id': 1,
-            'inicio': f'$answers.{f["inicio"]}',
-            'cierre': f'$answers.{f["cierre"]}',
-            'status': f'$answers.{f["status"]}',
-            'horas_trabajadas': f'$answers.{f["horas_trabajadas"]}',
-            'nombre_horario': f'$answers.{f["nombre_horario"]}',
-            'hora_entrada': f'$answers.{f["hora_entrada"]}',
-            'hora_salida': f'$answers.{f["hora_salida"]}',
-            'ubicacion_horario': f'$answers.{f["ubicacion_horario"]}',
-            'tipo_cierre': f'$answers.{f["tipo_cierre"]}',
-        }
+    def _empleados_filtrados(self, locations):
+        empleados = self._empleados()
+        if not locations:
+            return empleados
+        ubicaciones = self._ubicaciones_por_usuario([e['employee_id'] for e in empleados])
+        return [e for e in empleados if ubicaciones.get(e['employee_id'], set()) & set(locations)]
 
-    def _jornadas_del_mes(self, month, year, user_ids):
-        """La última jornada de cada empleado por día del mes."""
-        desde, hasta = self._rango(month, year)
+    def _ubicaciones_por_usuario(self, user_ids):
+        user_path = f'answers.{self.EMPLOYEE_OBJ_ID}.{self.employee_fields["user_id_id"]}'
+        query = [
+            {'$match': {'deleted_at': {'$exists': False}, 'form_id': self.CONF_AREA_EMPLEADOS, user_path: {'$in': user_ids}}},
+            {'$unwind': f'${user_path}'},
+            {'$unwind': f'$answers.{self.f["areas_group"]}'},
+            {'$project': {
+                '_id': 0,
+                'user_id': f'${user_path}',
+                'ubicacion': f'$answers.{self.f["areas_group"]}.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.Location.f["location"]}',
+            }},
+        ]
+        res = defaultdict(set)
+        for r in self.cr.aggregate(query):
+            if r.get('ubicacion'):
+                res[int(r['user_id'])].add(r['ubicacion'])
+        return res
+
+    def _jornadas(self, desde, hasta, user_ids):
+        """{(user_id, fecha): jornada} con la última jornada de cada persona por día."""
         f = self.asistencia_fields
         query = [
             {'$match': {
                 'deleted_at': {'$exists': False},
                 'form_id': self.REGISTRO_ASISTENCIA,
                 'user_id': {'$in': user_ids},
-                f'answers.{f["inicio"]}': {'$gte': desde, '$lte': hasta},
+                f'answers.{f["inicio"]}': {'$gte': f'{desde.isoformat()} 00:00:00', '$lte': f'{hasta.isoformat()} 23:59:59'},
             }},
             {'$sort': {f'answers.{f["inicio"]}': -1}},
-            {'$project': self._jornada_project()},
+            {'$project': {
+                '_id': 0,
+                'folio': 1,
+                'user_id': 1,
+                'inicio': f'$answers.{f["inicio"]}',
+                'cierre': f'$answers.{f["cierre"]}',
+                'status': f'$answers.{f["status"]}',
+                'horas_trabajadas': f'$answers.{f["horas_trabajadas"]}',
+                'nombre_horario': f'$answers.{f["nombre_horario"]}',
+                'ubicacion_horario': f'$answers.{f["ubicacion_horario"]}',
+                'tipo_cierre': f'$answers.{f["tipo_cierre"]}',
+            }},
         ]
-        vistas, jornadas = set(), []
+        res = {}
         for j in self.cr.aggregate(query):
-            inicio = j.get('inicio') or ''
-            clave = (j.get('user_id'), inicio[:10])
-            if clave in vistas:
-                continue
-            vistas.add(clave)
-            j['dia'] = int(inicio[8:10])
-            jornadas.append(j)
-        return jornadas
-
-    def _jornadas_por_folio(self, folios):
-        folios = [x for x in folios if x]
-        if not folios:
-            return []
-        return list(self.cr.aggregate([
-            {'$match': {'deleted_at': {'$exists': False}, 'form_id': self.REGISTRO_ASISTENCIA, 'folio': {'$in': folios}}},
-            {'$project': self._jornada_project()},
-        ]))
+            fecha = self._fecha((j.get('inicio') or '')[:10])
+            if fecha:
+                res.setdefault((j['user_id'], fecha), j)
+        return res
 
     def _checkin_project(self):
         f = self.checkin_fields
         return {
-            '_id': 1,
+            '_id': 0,
             'folio': 1,
             'user_id': 1,
             'folio_jornada': f'$answers.{f["folio_jornada"]}',
-            'nombre': f'$answers.{f["lugar"]}.{f["nombre"]}',
             'ubicacion': f'$answers.{f["lugar"]}.{f["ubicacion"]}',
             'caseta': f'$answers.{f["lugar"]}.{f["caseta"]}',
+            'estatus': f'$answers.{f["estatus"]}',
             'desde': f'$answers.{f["fecha_in"]}',
             'hasta': f'$answers.{f["fecha_out"]}',
             'rol': f'$answers.{self.ROL_CATALOG_OBJ_ID}.{f["rol"]}',
@@ -240,30 +295,38 @@ class ReporteAsistencia(Presencia):
             'foto_out': f'$answers.{f["foto_out"]}',
         }
 
-    def _checkins_por_jornada(self, folios):
-        folios = [x for x in folios if x]
-        if not folios:
-            return {}
-        f = self.checkin_fields
-        query = [
-            {'$match': {
-                'deleted_at': {'$exists': False},
-                'form_id': self.CHECKIN,
-                f'answers.{f["folio_jornada"]}': {'$in': folios},
-            }},
-            {'$sort': {f'answers.{f["fecha_in"]}': 1}},
-            {'$project': self._checkin_project()},
-        ]
-        res = defaultdict(list)
-        for c in self.cr.aggregate(query):
-            c['_id'] = str(c['_id'])
-            for k in ('nombre', 'ubicacion', 'caseta', 'rol'):
-                c[k] = self.unlist(c.get(k))
-            res[c['folio_jornada']].append(c)
+    def _checkins_abiertos(self, user_ids):
+        res = {}
+        for c in self.cr.aggregate(self._checkin_query({'user_id': {'$in': user_ids}})):
+            res.setdefault(c.get('user_id'), {k: self.unlist(c.get(k)) for k in ('ubicacion', 'caseta', 'rol')})
         return res
 
-    def _vacaciones(self, month, year):
-        """{user_id: {dia: tipo}} de los permisos autorizados que caen en el mes."""
+    def _checkins_del_dia(self, user_id, fecha, jornada):
+        """Los Check In de la jornada; los anteriores al folio de jornada, por fecha."""
+        f = self.checkin_fields
+        match = {'deleted_at': {'$exists': False}, 'form_id': self.CHECKIN}
+        if jornada and jornada.get('folio'):
+            # Los Check In de antes del folio de jornada se ligan por caer dentro de ella.
+            dentro = {'$gte': jornada.get('inicio'), '$lte': jornada.get('cierre') or f'{fecha.isoformat()} 23:59:59'}
+            match['$or'] = [
+                {f'answers.{f["folio_jornada"]}': jornada['folio']},
+                {'user_id': user_id, f'answers.{f["folio_jornada"]}': {'$exists': False},
+                 f'answers.{f["fecha_in"]}': dentro},
+            ]
+        else:
+            match.update({'user_id': user_id, f'answers.{f["fecha_in"]}': {'$regex': f'^{fecha.isoformat()}'}})
+        rows = []
+        for c in self.cr.aggregate([{'$match': match}, {'$sort': {f'answers.{f["fecha_in"]}': 1}},
+                                    {'$project': self._checkin_project()}]):
+            for k in ('ubicacion', 'caseta', 'rol'):
+                c[k] = self.unlist(c.get(k))
+            c['foto_in'] = c.get('foto_in') or []
+            c['foto_out'] = c.get('foto_out') or []
+            rows.append(c)
+        return rows
+
+    def _vacaciones(self, desde, hasta):
+        """{user_id: {fecha: tipo}} de los permisos autorizados que caen en el rango."""
         if not self.FORMATO_VACACIONES:
             return {}
         v = self.vacaciones_fields
@@ -283,178 +346,56 @@ class ReporteAsistencia(Presencia):
         ]
         res = defaultdict(dict)
         for r in self.cr.aggregate(query):
+            ini, fin = self._fecha((r.get('inicio') or '')[:10]), self._fecha((r.get('fin') or '')[:10])
             try:
-                ini = datetime.strptime(r['inicio'][:10], '%Y-%m-%d').date()
-                fin = datetime.strptime(r['fin'][:10], '%Y-%m-%d').date()
                 uid = int(self.unlist(r.get('user_id')))
-            except (KeyError, TypeError, ValueError):
+            except (TypeError, ValueError):
                 continue
-            d = ini
-            while d <= fin:
-                if d.year == year and d.month == month:
-                    res[uid][d.day] = r.get('tipo')
+            if not ini or not fin:
+                continue
+            d = max(ini, desde)
+            while d <= min(fin, hasta):
+                res[uid][d] = r.get('tipo') or 'vacaciones'
                 d += timedelta(days=1)
         return res
-
-    # ------------------------------------------------------------------
-    # Formatos
-    # ------------------------------------------------------------------
-
-    def _por_empleado(self, jornadas, empleados, month, year, filtrado):
-        hoy = self._hoy()
-        vacaciones = self._vacaciones(month, year)
-        nombres = {e['employee_id']: e['nombre'] for e in empleados}
-        altas = {e['employee_id']: e.get('alta') for e in empleados}
-        descansos = self._descansos(empleados)
-        grupos = defaultdict(list)
-        for j in jornadas:
-            grupos[(j['user_id'], j['ubicacion'])].append(j)
-        # Sin filtro de ubicación, los empleados sin jornadas también salen (todo falta).
-        if not filtrado:
-            con_jornada = {uid for uid, _ in grupos}
-            for e in empleados:
-                if e['employee_id'] not in con_jornada:
-                    grupos[(e['employee_id'], SIN_UBICACION)] = []
-
-        result = []
-        for (uid, ubicacion), js in grupos.items():
-            por_dia = {j['dia']: j for j in js}
-            dias_libres = descansos.get(uid, [])
-            resumen = {'asistencias': 0, 'retardos': 0, 'faltas': 0}
-            asistencia_mes = []
-            for dia in range(1, monthrange(year, month)[1] + 1):
-                j = por_dia.get(dia)
-                status = self._status_dia(datetime(year, month, dia).date(), hoy, j, dias_libres,
-                                          vacaciones.get(uid, {}), altas.get(uid))
-                self._sumar(resumen, status)
-                item = {'dia': dia, 'status': status}
-                if j and status == (j.get('status') or 'presente'):
-                    item['fecha_inicio'] = j.get('inicio')
-                    if j.get('cierre'):
-                        item['fecha_cierre'] = j['cierre']
-                        item['closed'] = True
-                asistencia_mes.append(item)
-            result.append({
-                'employee_id': uid,
-                'nombre': nombres.get(uid, str(uid)),
-                'ubicacion': ubicacion,
-                'asistencia_mes': asistencia_mes,
-                'resumen': resumen,
-            })
-        return sorted(result, key=lambda r: (r['nombre'], r['ubicacion']))
-
-    def _por_ubicacion(self, jornadas, empleados, month, year):
-        nombres = {e['employee_id']: e['nombre'] for e in empleados}
-        descansos = self._descansos(empleados)
-        dias_mes = monthrange(year, month)[1]
-        grupos = {}
-        for j in jornadas:
-            turno = f"{j.get('nombre_horario') or 'Sin horario'} {j.get('hora_entrada') or ''}-{j.get('hora_salida') or ''}".strip(' -')
-            g = grupos.setdefault((j['ubicacion'], turno), {
-                'ubicacion': j['ubicacion'],
-                'turno_ref': turno,
-                'asistencia_mes': [{'dia': d, 'empleados': []} for d in range(1, dias_mes + 1)],
-                'resumen': {'asistencias': 0, 'retardos': 0, 'faltas': 0},
-            })
-            dia_semana = DIAS[datetime(year, month, j['dia']).weekday()]
-            status = 'dia_libre' if dia_semana in descansos.get(j['user_id'], []) else (j.get('status') or 'presente')
-            # El front separa "nombre-status-id" por guiones: el nombre no puede llevar guion.
-            nombre = (nombres.get(j['user_id']) or str(j['user_id'])).replace('-', '–')
-            g['asistencia_mes'][j['dia'] - 1]['empleados'].append(f"{nombre}-{status}-{j['user_id']}")
-            self._sumar(g['resumen'], status)
-        for g in grupos.values():
-            for d in g['asistencia_mes']:
-                if not d['empleados']:
-                    d['empleados'] = ['sin_registro-sin_registro']
-        return sorted(grupos.values(), key=lambda g: (g['ubicacion'], g['turno_ref']))
-
-    def _generales(self, j):
-        """Detalle del día con las llaves que lee el modal del reporte, más sus Check In."""
-        checkins = j.get('checkins') or []
-        primero = checkins[0] if checkins else {}
-        ultimo = checkins[-1] if checkins else {}
-        return {
-            'fecha_inicio_turno': j.get('inicio'),
-            'end_shift': j.get('cierre'),
-            'status_turn': j.get('status') or 'presente',
-            'nombre_horario': j.get('nombre_horario'),
-            'hora_entrada': j.get('hora_entrada'),
-            'hora_salida': j.get('hora_salida'),
-            'horas_trabajadas': j.get('horas_trabajadas'),
-            'tipo_cierre': j.get('tipo_cierre'),
-            'comentario_inicio_turno': '',
-            'comentario_cierre_turno': ultimo.get('comentario') or '',
-            'incidente_location': primero.get('ubicacion') or j.get('ubicacion_horario'),
-            'incidente_area': primero.get('caseta'),
-            'tipo_guardia': primero.get('rol'),
-            'foto_inicio_turno': primero.get('foto_in') or [],
-            'foto_end': ultimo.get('foto_out') or [],
-            'checkins': checkins,
-        }
 
     # ------------------------------------------------------------------
     # Utilidades
     # ------------------------------------------------------------------
 
-    def _descansos(self, empleados):
-        """{user_id: [días de la semana sin turno]} según el horario semanal de cada empleado."""
-        horarios = self._horarios_por_nombre([e.get('horario') for e in empleados])
-        res = {}
-        for e in empleados:
-            dias = self._dias_sin_turno(horarios.get(e.get('horario')))
-            if dias:
-                res[e['employee_id']] = dias
-        return res
+    def _horas(self, jornada, tz, now):
+        if jornada.get('horas_trabajadas') is not None and jornada.get('cierre'):
+            return float(jornada['horas_trabajadas'] or 0)
+        inicio = self._parse(jornada.get('inicio'), tz)
+        return max((now - inicio).total_seconds(), 0) / 3600 if inicio else 0.0
 
-    def _dias_descanso(self, user_id):
-        return self._dias_sin_turno(self._horario_de(user_id)) if user_id else []
+    def _turno_fmt(self, turno):
+        if not turno:
+            return None
+        return {'entrada': (turno['hora_entrada'] or '')[:5], 'salida': (turno['hora_salida'] or '')[:5]}
 
-    def _dias_sin_turno(self, horario):
-        # Sin horario (o con uno de ciclo, que aún no se calcula) no se sabe qué días descansa.
-        if not horario or (horario.get('tipo') or 'semanal') != 'semanal':
-            return []
-        con_turno = set()
-        for renglon in horario.get('dias') or []:
-            con_turno.update(renglon.get(self.horario_fields['dias_semana']) or [])
-        return [d for d in DIAS if d not in con_turno]
+    def _lugar(self, checkin):
+        if not checkin:
+            return None
+        return ' · '.join(x for x in (checkin.get('ubicacion'), checkin.get('caseta')) if x) or None
 
-    def _ubicaciones_de(self, j):
-        ubicaciones = {c.get('ubicacion') for c in j.get('checkins') or []}
-        ubicaciones.update({j.get('ubicacion_horario'), j.get('ubicacion')})
-        return {u for u in ubicaciones if u}
+    def _rango(self, desde, hasta, hoy):
+        desde = self._fecha(desde) or hoy.replace(day=1)
+        hasta = self._fecha(hasta) or hoy
+        if hasta < desde:
+            desde, hasta = hasta, desde
+        # Tope de 93 días para que el reporte no se vuelva pesado.
+        return desde, min(hasta, desde + timedelta(days=92))
 
-    def _status_dia(self, fecha, hoy, jornada, dias_libres, vacaciones, alta=None):
-        if not jornada and alta and fecha < alta:
-            return 'sin_registro'
-        if fecha.day in vacaciones:
-            return vacaciones[fecha.day]
-        if DIAS[fecha.weekday()] in (dias_libres or []):
-            return 'dia_libre'
-        if jornada:
-            return jornada.get('status') or 'presente'
-        return 'falta' if fecha < hoy else 'sin_registro'
+    def _fecha(self, value):
+        if not value:
+            return None
+        if hasattr(value, 'year') and not isinstance(value, str):
+            return value
+        try:
+            return datetime.strptime(str(value)[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return None
 
-    def _sumar(self, resumen, status, keys=('asistencias', 'retardos', 'faltas')):
-        asistencias, retardos, faltas = keys
-        if status == 'presente':
-            resumen[asistencias] += 1
-        elif status == 'retardo':
-            resumen[retardos] += 1
-        elif status in ('falta', 'falta_por_retardo'):
-            resumen[faltas] += 1
-
-    def _primera(self, fotos):
-        if isinstance(fotos, list):
-            return fotos[0] if fotos else []
-        return fotos or []
-
-    def _mes(self, month, year):
-        hoy = self._hoy()
-        return int(month or hoy.month), int(year or hoy.year)
-
-    def _rango(self, month, year):
-        ultimo = monthrange(year, month)[1]
-        return f'{year:04d}-{month:02d}-01 00:00:00', f'{year:04d}-{month:02d}-{ultimo:02d} 23:59:59'
-
-    def _hoy(self):
-        return self._now(self._user_tz(self.user.get('user_id'))).date()
+    def _tz(self):
+        return self._user_tz(self.user.get('user_id'))

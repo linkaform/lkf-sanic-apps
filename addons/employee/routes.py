@@ -89,27 +89,27 @@ def _reporte_args(request, allowed):
     return {k: payload.get(k) for k in allowed if payload.get(k) is not None}
 
 
-@employee_bp.post("/reporte/asistencia")
-async def post_reporte_asistencia(request: Request):
-    args = _reporte_args(request, ["group_by", "locations", "month", "year"])
-    return json({"data": reporte_service.get_report(**args)}, status=200)
+@employee_bp.post("/reporte/hoy")
+async def post_reporte_hoy(request: Request):
+    args = _reporte_args(request, ["locations"])
+    return json({"data": reporte_service.get_hoy(**args)}, status=200)
+
+
+@employee_bp.post("/reporte/periodo")
+async def post_reporte_periodo(request: Request):
+    args = _reporte_args(request, ["desde", "hasta", "locations"])
+    return json({"data": reporte_service.get_periodo(**args)}, status=200)
+
+
+@employee_bp.post("/reporte/dia")
+async def post_reporte_dia(request: Request):
+    args = _reporte_args(request, ["user_id", "fecha"])
+    return json({"data": reporte_service.get_dia(**args)}, status=200)
 
 
 @employee_bp.post("/reporte/ubicaciones")
 async def post_reporte_ubicaciones(request: Request):
     return json({"data": reporte_service.get_locations()}, status=200)
-
-
-@employee_bp.post("/reporte/detalle")
-async def post_reporte_detalle(request: Request):
-    args = _reporte_args(request, ["user_ids", "selected_day", "location", "month", "year"])
-    return json({"data": reporte_service.get_detail(**args)}, status=200)
-
-
-@employee_bp.post("/reporte/registros")
-async def post_reporte_registros(request: Request):
-    args = _reporte_args(request, ["locations", "month", "year", "limit", "offset"])
-    return json({"data": reporte_service.get_records(**args)}, status=200)
 
 # @accesos_bp.post("/incidentes")
 # async def post_incidente(request: Request):
