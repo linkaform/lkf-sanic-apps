@@ -531,6 +531,15 @@ async def post_ocr_articulo_perdido(request: Request):
     )
     return json(res, status=res.get('status_code', 200))
 
+@accesos_bp.post("/transcribir_audio")
+async def post_transcribir_audio(request: Request):
+    payload = _ocr_payload(request)
+    res = service.transcribir_audio(
+        audio_source=payload.get('audio_source'),
+        model=payload.get('model', 'google/gemini-3.5-flash-lite'),
+    )
+    return json(res, status=res.get('status_code', 200))
+
 @accesos_bp.post("/ocr_paquete")
 async def post_ocr_paquete(request: Request):
     payload = _ocr_payload(request)
@@ -1884,8 +1893,23 @@ async def post_get_catalog_areas_formatted(request: Request):
         search= payload.get('search', ''),
         search_fields= payload.get('search_fields',[]),
         dynamic_filters= payload.get('dynamic_filters', []),
+        facets= payload.get('facets', []) or [],
     )
     return json({"data": response}, status=200)
+
+@accesos_bp.get("/get_search_fields_areas")
+async def get_search_fields_areas(request: Request):
+    return json({"data": service.get_search_fields_areas()}, status=200)
+
+@accesos_bp.post("/get_search_counts_areas")
+async def post_get_search_counts_areas(request: Request):
+    payload = _ocr_payload(request)
+    records = service.get_search_counts_areas(
+        locations=_lista(payload.get("locations")),
+        facets=payload.get("facets", []) or [],
+        candidates=payload.get("candidates", []) or [],
+    )
+    return json({"data": records}, status=200)
 
 @accesos_bp.post("/get_rondines_by_area")
 async def post_get_rondines_by_area(request: Request):

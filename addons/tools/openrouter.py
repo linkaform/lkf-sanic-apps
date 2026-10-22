@@ -258,6 +258,33 @@ class OpenRouter:
         )
         return self._parse_json(raw)
 
+    def transcribir_audio(self, audio_source: str, prompt: str,
+                          model: str = None, max_tokens: int = 2000) -> str:
+        """
+        Pasa un audio a texto. A diferencia de las imágenes, OpenRouter no
+        acepta URLs de audio: hay que mandarlo en base64 (input_audio).
+
+        Args:
+            audio_source: URL remota (la del archivo ya subido) o ruta local.
+            prompt:       Instrucciones de transcripción.
+            model:        Modelo con entrada de audio (opcional).
+
+        Returns:
+            El texto transcrito (str, sin espacios sobrantes).
+        """
+        data, formato = self._build_audio(audio_source)
+        raw = self.post(
+            messages=[{'role': 'user', 'content': [
+                {'type': 'text', 'text': prompt},
+                {'type': 'input_audio', 'input_audio': {'data': data, 'format': formato}},
+            ]}],
+            model=model,
+            max_tokens=max_tokens,
+            temperature=0,
+        )
+        choices = raw.get('choices') or [{}]
+        return (choices[0].get('message', {}).get('content') or '').strip()
+
     # ──────────────────────────────────────────────────────────
     # MÉTODO DE BAJO NIVEL
     # ──────────────────────────────────────────────────────────
@@ -327,6 +354,27 @@ class OpenRouter:
         with open(image_source, 'rb') as f:
             b64 = base64.b64encode(f.read()).decode('utf-8')
         return f'data:{media_type};base64,{b64}'
+
+    # Formatos de input_audio; el de las notas de voz del front es m4a (AAC).
+    AUDIO_FORMATS = ('mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'aiff')
+
+    def _build_audio(self, audio_source: str):
+        """
+        (base64, formato) de un audio remoto o local. El formato sale de la
+        extensión ("…/nota-de-voz.m4a?x=1" -> "m4a").
+        """
+        formato = Path(audio_source.split('?')[0]).suffix.lower().lstrip('.')
+        if formato not in self.AUDIO_FORMATS:
+            raise ValueError(f'Formato de audio no soportado: "{formato or "sin extensión"}"')
+
+        if audio_source.startswith('http://') or audio_source.startswith('https://'):
+            resp = requests.get(audio_source, timeout=30)
+            resp.raise_for_status()
+            contenido = resp.content
+        else:
+            with open(audio_source, 'rb') as f:
+                contenido = f.read()
+        return base64.b64encode(contenido).decode('utf-8'), formato
 
     def _build_user_content(self, prompt: str, image_url=None):
         """
