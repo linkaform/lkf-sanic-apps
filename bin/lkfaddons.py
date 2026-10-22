@@ -261,6 +261,7 @@ def print_help():
     print('-i, --item:')
     print('        stands for items, you can speficy to load or download only speficif items')
     print('        Available values are, forms, catalogs, scripts, reports')
+    print('        (install only supports scripts here: the rest is handled by the addons project)')
     print('        you can select multilple values separatede by a " "')
     print('-id:')
     print('        use for downloding a specific item_id. It will download it to the moduel (-m) and item kind (-i) specified')
@@ -369,23 +370,19 @@ if __name__ == '__main__':
             if commands[0] == 'uninstall':
                 uninstall_modules(install)
             elif commands[0] == 'install':
-                if ask_4_items:
-                    if ask_form:    
-                        load_form = set_value(input("Load Forms [y/n] (default n):"))
-                    if ask_catalog:    
-                        load_catalog = set_value(input("Load Catalogs [y/n] (default n):"))
-                        if ask_data:
-                            load_demo = set_value(input("Load DEMO data [y/n] (default n):"))
-                        if ask_demo:    
-                            load_data = set_value(input("Load DATA [y/n] (default n):"))
-                    if ask_script:    
-                        load_script = set_value(input("Load Scripts [y/n] (default n):"))
-                    if ask_reports:    
-                        load_reports = set_value(input("Load Reports [y/n] (default n):"))
-                else:
-                    if load_catalog:
-                        load_demo = set_value(input("Load DEMO data [y/n] (default n):"))
-                        load_data = set_value(input("Load DATA [y/n] (default n):"))
+                # Desde aqui solo se instalan scripts: forms, catalogs, reports y su data
+                # los maneja el proyecto addons (./lkf start addons, lkfaddons.py de alla).
+                # Se apagan aunque vengan pedidos (-y, -i forms...) para no instalarlos por
+                # accidente desde el sanic-app.
+                pedidos = [n for n, v in (('forms', load_form), ('catalogs', load_catalog),
+                                          ('reports', load_reports), ('data', load_data),
+                                          ('demo', load_demo)) if v]
+                if pedidos:
+                    print('Aviso: aqui solo se instalan scripts, se ignora: {}. '
+                          'Usa el proyecto addons para eso.'.format(', '.join(pedidos)))
+                load_form = load_catalog = load_reports = load_data = load_demo = False
+                if not load_script:
+                    load_script = set_value(input("Load Scripts [y/n] (default n):"))
 
                 install = {'all':True}
                 do_load_modules(load_modules, **kwargs)
