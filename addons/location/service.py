@@ -21,9 +21,10 @@ from bson import ObjectId
 
 from linkaform_api import base
 from lkf_addons.base.app import Base
+from lkf_addons.tools.FacetSearchMixin import FacetSearchMixin
 
 
-class Location(Base):
+class Location(FacetSearchMixin, Base):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         super().__init__(settings, sys_argv=sys_argv, use_api=use_api)
@@ -327,7 +328,7 @@ class Location(Base):
     UBICACION_SEARCH_FIELDS = ('folio', 'location', 'address', 'city', 'state')
 
     def get_catalog_ubicaciones_formatted(self, locations=None, dynamic_filters=None, limit=25,
-                                          skip=0, search='', search_fields=None, ubicacion=''):
+                                          skip=0, search='', search_fields=None, ubicacion='', facets=None):
         """ Catálogo paginado del explorador de Ubicaciones, mismo contrato que
         get_catalog_areas_formatted: una sola consulta para todas las locations,
         con dynamic_filters, búsqueda y paginación en Mongo.
@@ -338,6 +339,7 @@ class Location(Base):
         search / search_fields: búsqueda por regex (sin mayúsculas) en los campos
             de UBICACION_SEARCH_FIELDS; search_fields vacío = todos.
         ubicacion: compatibilidad con la llamada vieja de una sola ubicación.
+        facets: filtros del buscador avanzado (ver ubicaciones_search_fields).
 
         Returns: {records, total_records, total_pages, actual_page, records_on_page}
         """
@@ -347,6 +349,86 @@ class Location(Base):
         if ubicacion and ubicacion not in locations:
             locations.append(ubicacion)
 
+        match_query, etapas = self._ubicaciones_query(locations)
+        query = [{'$match': match_query}, *etapas]
+
+        filtros = self._ubicaciones_match_filtros(dynamic_filters)
+        busqueda = self._ubicaciones_match_busqueda(search, search_fields)
+        condiciones = [c for c in (filtros, busqueda) if c]
+        condiciones += self.build_facets_match(self.ubicaciones_search_fields(), facets)
+        if condiciones:
+            query.append({'$match': {'$and': condiciones} if len(condiciones) > 1 else condiciones[0]})
+
+        pagina = [{'$sort': {'location': 1}}, {'$skip': skip}]
+        if limit:
+            pagina.append({'$limit': limit})
+        # area_names solo sirve para el filtro "area"; no viaja al front.
+        pagina.append({'$project': {'area_names': 0}})
+        query.append({'$facet': {
+            'records': pagina,
+            'total': [{'$count': 'total'}],
+        }})
+
+        res = next(self.cr.aggregate(query), {}) or {}
+        records = res.get('records', [])
+        for r in records:
+            r['record_id'] = str(r.pop('_id', ''))
+        total_records = (res.get('total') or [{}])[0].get('total', 0)
+
+        return {
+            'records': records,
+            'total_records': total_records,
+            'total_pages': (total_records + limit - 1) // limit if limit else 1,
+            'actual_page': (skip // limit) + 1 if limit else 1,
+            'records_on_page': len(records),
+        }
+
+    def ubicaciones_search_fields(self):
+        """ Campos del buscador avanzado de Ubicaciones. Los paths son los campos
+        proyectados por _ubicaciones_query (no answers.*); las llaves de los
+        filtros son las del panel (get_filters_ubicaciones). """
+        return {
+            'folio': {'label': 'Folio', 'paths': ['folio']},
+            'location': {'label': 'Nombre', 'paths': ['location']},
+            'address': {'label': 'Dirección', 'paths': ['address', 'address2']},
+            'estado': {
+                'label': 'Estado',
+                'paths': ['state'],
+                'options': lambda: [{'value': v, 'label': v} for v in self._distintos_contacto('state')],
+            },
+            'ciudad': {
+                'label': 'Ciudad',
+                'paths': ['city'],
+                'options': lambda: [{'value': v, 'label': v} for v in self._distintos_contacto('city')],
+            },
+            'pais': {'label': 'País', 'paths': ['country']},
+            'area': {
+                'label': 'Área',
+                'paths': ['area_names'],
+                'options': lambda: [{'value': v, 'label': v} for v in self._nombres_de_areas()],
+            },
+            'areas': {
+                'label': '¿Contiene áreas?',
+                'paths': ['areas_count'],
+                'options': [{'value': 'con', 'label': 'Con áreas'}, {'value': 'sin', 'label': 'Sin áreas'}],
+                'value_match': {
+                    'con': {'areas_count': {'$gt': 0}},
+                    'sin': {'areas_count': 0},
+                },
+            },
+        }
+
+    def get_search_fields_ubicaciones(self):
+        return self.search_fields_config(self.ubicaciones_search_fields())
+
+    def get_search_counts_ubicaciones(self, locations=None, facets=None, candidates=None):
+        match_query, etapas = self._ubicaciones_query([l for l in (locations or []) if l])
+        return self.count_facet_candidates(
+            match_query, self.ubicaciones_search_fields(), facets, candidates, pipeline=etapas)
+
+    def _ubicaciones_query(self, locations):
+        """ $match base y etapas que proyectan los campos del listado (contacto
+        y áreas por ubicación); los filtros y facets van sobre lo proyectado. """
         match_query = {
             "deleted_at": {"$exists": False},
             "form_id": self.UBICACIONES,
@@ -359,8 +441,7 @@ class Location(Base):
             path = f"$answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f[campo]}"
             return {'$cond': [{'$isArray': path}, {'$first': path}, path]}
         loc_area = f"$answers.{self.UBICACIONES_CAT_OBJ_ID}.{self.f['location']}"
-        query = [
-            {'$match': match_query},
+        etapas = [
             {'$project': {
                 '_id': 1,
                 'folio': '$folio',
@@ -399,36 +480,7 @@ class Location(Base):
             }},
             {'$project': {'areas_info': 0}},
         ]
-
-        filtros = self._ubicaciones_match_filtros(dynamic_filters)
-        busqueda = self._ubicaciones_match_busqueda(search, search_fields)
-        condiciones = [c for c in (filtros, busqueda) if c]
-        if condiciones:
-            query.append({'$match': {'$and': condiciones} if len(condiciones) > 1 else condiciones[0]})
-
-        pagina = [{'$sort': {'location': 1}}, {'$skip': skip}]
-        if limit:
-            pagina.append({'$limit': limit})
-        # area_names solo sirve para el filtro "area"; no viaja al front.
-        pagina.append({'$project': {'area_names': 0}})
-        query.append({'$facet': {
-            'records': pagina,
-            'total': [{'$count': 'total'}],
-        }})
-
-        res = next(self.cr.aggregate(query), {}) or {}
-        records = res.get('records', [])
-        for r in records:
-            r['record_id'] = str(r.pop('_id', ''))
-        total_records = (res.get('total') or [{}])[0].get('total', 0)
-
-        return {
-            'records': records,
-            'total_records': total_records,
-            'total_pages': (total_records + limit - 1) // limit if limit else 1,
-            'actual_page': (skip // limit) + 1 if limit else 1,
-            'records_on_page': len(records),
-        }
+        return match_query, etapas
 
     def _ubicaciones_match_filtros(self, dynamic_filters):
         """ dynamic_filters -> condición de $match sobre los campos proyectados. """
@@ -571,29 +623,20 @@ class Location(Base):
         get_filters_areas. Las opciones salen de los valores capturados en el
         form 'ubicaciones'.
         """
-        def distintos(campo):
-            field = f"answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f[campo]}"
-            data = self.cr.distinct(field, {
-                "deleted_at": {"$exists": False},
-                "form_id": self.UBICACIONES,
-            })
-            valores = {str(x).strip() for x in data if x is not None and str(x).strip()}
-            return sorted(valores, key=lambda v: v.lower())
-
         return [
             {
                 "defaultDisplayOpen": True,
                 "key": "estado",
                 "label": "Estado",
                 "type": "multiselect",
-                "options": [{"label": i, "value": i} for i in distintos(self.UBICACION_FILTER_FIELDS['estado'])]
+                "options": [{"label": i, "value": i} for i in self._distintos_contacto(self.UBICACION_FILTER_FIELDS['estado'])]
             },
             {
                 "defaultDisplayOpen": False,
                 "key": "ciudad",
                 "label": "Ciudad",
                 "type": "multiselect",
-                "options": [{"label": i, "value": i} for i in distintos(self.UBICACION_FILTER_FIELDS['ciudad'])]
+                "options": [{"label": i, "value": i} for i in self._distintos_contacto(self.UBICACION_FILTER_FIELDS['ciudad'])]
             },
             {
                 "defaultDisplayOpen": False,
@@ -613,6 +656,17 @@ class Location(Base):
                 ]
             },
         ]
+
+    def _distintos_contacto(self, campo):
+        """ Valores distintos de un campo del contacto de las ubicaciones, para
+        las opciones del panel y del buscador. """
+        field = f"answers.{self.CONTACTO_CAT_OBJ_ID}.{self.f[campo]}"
+        data = self.cr.distinct(field, {
+            "deleted_at": {"$exists": False},
+            "form_id": self.UBICACIONES,
+        })
+        valores = {str(x).strip() for x in data if x is not None and str(x).strip()}
+        return sorted(valores, key=lambda v: v.lower())
 
     def _nombres_de_areas(self):
         """ Nombres distintos de las áreas registradas, para el filtro "area"

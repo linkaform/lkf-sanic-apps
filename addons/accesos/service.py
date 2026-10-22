@@ -46,10 +46,11 @@ class MyPass(Pass):
 print('--------------- ACCESOS APP --------------------')
 from .models import AccesosModel
 from lkf_addons.tools.OcrMixin import OcrMixin
+from lkf_addons.tools.FacetSearchMixin import FacetSearchMixin
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
-class Accesos(OcrMixin, AccesosModel):
+class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         #--Variables
@@ -3483,7 +3484,7 @@ class Accesos(OcrMixin, AccesosModel):
         response = self.unlist(response)
         return response
 
-    def get_areas_details(self, areas_list: list, dynamic_filters=None):
+    def get_areas_details(self, areas_list: list, dynamic_filters=None, facets=None):
         """
         Obtiene los detalles necesarios de las áreas proporcionadas.
         Args:
@@ -3491,9 +3492,33 @@ class Accesos(OcrMixin, AccesosModel):
             dynamic_filters (list): Lista de {key, value} a aplicar como $match
                 adicional (mismo shape que list_bitacora) -- keys soportadas:
                 tipo, estado, disponibilidad.
+            facets (list): filtros del buscador avanzado (ver areas_search_fields).
         Returns:
             list: Lista de áreas con su geolocalización y foto.
         """
+        match_query = self.areas_details_match(areas_list, dynamic_filters)
+        facet_conditions = self.build_facets_match(self.areas_search_fields(), facets)
+        if facet_conditions:
+            match_query["$and"] = facet_conditions
+        query = [
+            {"$match": match_query},
+            {"$project": {
+                "folio": 1,
+                "area": f"$answers.{self.Location.f['area']}",
+                "ubicacion": f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
+                "geolocation": f"$answers.{self.f['geolocalizacion_area_ubicacion']}",
+                "image": f"$answers.{self.f['foto_area']}",
+                "tag_id": f"$answers.{self.f['area_tag_id']}",
+                "tipo_de_area": f"$answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}",
+                "area_state": f"$answers.{self.Location.f['area_state']}",
+                "area_status": f"$answers.{self.Location.f['area_status']}",
+            }}
+        ]
+        response = self.format_cr(self.cr.aggregate(query))
+        return response
+
+    def areas_details_match(self, areas_list, dynamic_filters=None):
+        """ $match base de get_areas_details y de los conteos del buscador. """
         match_query = {
             "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
             "deleted_at": {"$exists": False},
@@ -3519,22 +3544,72 @@ class Accesos(OcrMixin, AccesosModel):
                         match_query[tag_field] = {"$in": [None, "", []]}
                 else:
                     continue
-        query = [
-            {"$match": match_query},
-            {"$project": {
-                "folio": 1,
-                "area": f"$answers.{self.Location.f['area']}",
-                "ubicacion": f"$answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}",
-                "geolocation": f"$answers.{self.f['geolocalizacion_area_ubicacion']}",
-                "image": f"$answers.{self.f['foto_area']}",
-                "tag_id": f"$answers.{self.f['area_tag_id']}",
-                "tipo_de_area": f"$answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}",
-                "area_state": f"$answers.{self.Location.f['area_state']}",
-                "area_status": f"$answers.{self.Location.f['area_status']}",
-            }}
-        ]
-        response = self.format_cr(self.cr.aggregate(query))
-        return response
+        return match_query
+
+    def areas_search_fields(self):
+        """ Campos del buscador avanzado de Áreas. Llaves = las del panel de
+        filtros (get_filters_areas), así panel y chips comparten filtro. """
+        tipo = f"answers.{self.Location.TIPO_AREA_OBJ_ID}.{self.f['tipo_de_area']}"
+        estado = f"answers.{self.Location.f['area_state']}"
+        disponibilidad = f"answers.{self.Location.f['area_status']}"
+        tag = f"answers.{self.f['area_tag_id']}"
+        return {
+            'folio': {'label': 'Folio', 'paths': ['folio']},
+            'area': {'label': 'Nombre del área', 'paths': [f"answers.{self.Location.f['area']}"]},
+            'ubicacion': {'label': 'Ubicación', 'paths': [
+                f"answers.{self.Location.UBICACIONES_CAT_OBJ_ID}.{self.Location.f['location']}"]},
+            'tipo': {
+                'label': 'Tipo de área',
+                'paths': [tipo],
+                'options': lambda: [{'value': t, 'label': t} for t in self.get_areas_tipo()],
+            },
+            'estado': {
+                'label': 'Estatus',
+                'paths': [estado],
+                'options': lambda: [{'value': e, 'label': e.capitalize()} for e in self.get_areas_estado()],
+            },
+            'disponibilidad': {
+                'label': 'Disponibilidad',
+                'paths': [disponibilidad],
+                'options': lambda: [{'value': d, 'label': d.capitalize()} for d in self.get_areas_disponibilidad()],
+            },
+            # Tag = tiene area_tag_id capturado; QR = no lo tiene (toda área se
+            # puede checar por el QR de su record_id). Igual que dynamic_filters.
+            'tipo_identificador': {
+                'label': 'Tag/QR',
+                'paths': [tag],
+                'options': [{'value': 'tag', 'label': 'Tag'}, {'value': 'qr', 'label': 'QR'}],
+                'value_match': {
+                    'tag': {tag: {"$exists": True, "$nin": [None, "", []]}},
+                    'qr': {tag: {"$in": [None, "", []]}},
+                },
+            },
+        }
+
+    def get_search_fields_areas(self):
+        return self.search_fields_config(self.areas_search_fields())
+
+    def get_search_counts_areas(self, locations=[], facets=[], candidates=[]):
+        ubicaciones = [u for u in (locations or []) if u]
+        if not ubicaciones:
+            return [0] * len(candidates or [])
+        base_match = self.areas_details_match(self.areas_de_ubicaciones(ubicaciones))
+        return self.count_facet_candidates(base_match, self.areas_search_fields(), facets, candidates)
+
+    def areas_de_ubicaciones(self, ubicaciones):
+        """ Nombres de las áreas de las ubicaciones, desde el catálogo (cubre las
+        áreas de varias ubicaciones). """
+        catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
+        form_id = self.CONFIGURACION_RECORRIDOS_FORM
+        areas = []
+        for u in ubicaciones:
+            options = {
+                'startkey': [u],
+                'endkey': [f"{u}\n",{}],
+                'group_level':2
+            }
+            areas += self.catalogo_view(catalog_id, form_id, options)
+        return list(dict.fromkeys(areas))
 
     def get_catalog_areas(self, ubicacion=""):
         #Obtener areas disponibles para rondin
@@ -3722,25 +3797,14 @@ class Accesos(OcrMixin, AccesosModel):
             'records_on_page': len(records),
         }
 
-    def get_catalog_areas_formatted(self, locations=[], limit=25, skip=0, search="", search_fields=[], dynamic_filters=[]):
-  
+    def get_catalog_areas_formatted(self, locations=[], limit=25, skip=0, search="", search_fields=[], dynamic_filters=[], facets=[]):
+
         ubicaciones = [u for u in locations if u]
         if not ubicaciones:
             raise Exception("Ubicacion is required.")
 
-        catalog_id = self.AREAS_DE_LAS_UBICACIONES_CAT_ID
-        form_id = self.CONFIGURACION_RECORRIDOS_FORM
-        areas = []
-        for u in ubicaciones:
-            options = {
-                'startkey': [u],
-                'endkey': [f"{u}\n",{}],
-                'group_level':2
-            }
-            areas += self.catalogo_view(catalog_id, form_id, options)
-       
-        areas = list(dict.fromkeys(areas))
-        response = self.get_areas_details(areas, dynamic_filters=dynamic_filters)
+        areas = self.areas_de_ubicaciones(ubicaciones)
+        response = self.get_areas_details(areas, dynamic_filters=dynamic_filters, facets=facets)
 
         por_ubicacion = {}
         for r in response:
@@ -11000,33 +11064,6 @@ class Accesos(OcrMixin, AccesosModel):
             match_query[path] = {"$lte": dateTo}
         return match_query
 
-    def search_fields_config(self, fields_def):
-        """Config pública de los campos para el front (sin las rutas de Mongo)."""
-        config = []
-        for key, field in fields_def.items():
-            options = field.get('options')
-            if callable(options):
-                options = options()
-            item = {'key': key, 'label': field['label'], 'type': 'enum' if options else 'text'}
-            if options:
-                item['options'] = options
-            config.append(item)
-        return config
-
-    def count_facet_candidates(self, base_match, fields_def, facets, candidates):
-        """Cuántos registros daría agregar cada candidato {key, value, exact} a
-        los facets actuales. Un solo aggregate con un $count por candidato."""
-        if not candidates:
-            return []
-        branches = {}
-        for i, cand in enumerate(candidates):
-            extra = {'key': cand.get('key'), 'values': [cand.get('value')], 'exact': cand.get('exact')}
-            conditions = self.build_facets_match(fields_def, list(facets or []) + [extra])
-            branches[f"c{i}"] = [{'$match': {'$and': conditions} if conditions else {}}, {'$count': 'n'}]
-        result = list(self.cr.aggregate([{'$match': base_match}, {'$facet': branches}]))
-        row = result[0] if result else {}
-        return [(row.get(f"c{i}") or [{}])[0].get('n', 0) for i in range(len(candidates))]
-
     def facet_list_page(self, match_query, project, sort, limit, skip, format_record=None):
         """Igual que facet_paginated pero con orden propio y formato por registro."""
         limit = int(limit) or 25
@@ -14863,7 +14900,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_equipo(self, image_source,
                    extra_instructions: str = None,
-                   model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                   model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un equipo/herramienta:
         tipo, marca, modelo, número de serie y color.
@@ -14944,7 +14981,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_persona(self, image_source,
                     extra_instructions: str = None,
-                    model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                    model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Analiza una foto para detectar si hay una persona visible
         y extrae sus características físicas descriptivas.
@@ -15038,7 +15075,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_vehiculo(self, image_source, fields: dict = {},
                      extra_instructions: str = None,
-                     model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                     model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un vehículo:
         tipo, marca, modelo, año estimado, color, placas,
@@ -15129,7 +15166,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_truck(self, image_source: list, fields: dict = {},
                            extra_instructions: str = None,
-                           model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                           model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Extrae los datos de una foto de un camión/transporte en caseta:
         vehículo, remolques/contenedores, inspección de 17 puntos (tractor)
@@ -15263,7 +15300,7 @@ class Accesos(OcrMixin, AccesosModel):
 
     def ocr_articulo_concesionado(self, image_source,
                                    extra_instructions: str = None,
-                                   model: str = 'google/gemini-2.5-flash-lite') -> dict:
+                                   model: str = 'google/gemini-3.5-flash-lite') -> dict:
         """
         Identifica un artículo concesionado a partir de su foto. Puede tratarse de:
           - Un artículo genérico identificable a simple vista (guantes, casco, chaleco,
@@ -15891,64 +15928,6 @@ class Accesos(OcrMixin, AccesosModel):
         ]
         return self.format_cr(self.cr.aggregate(query), get_one=True)
 
-    # Buscador avanzado (facets), portado de lkf_addons/addons/accesos/app.py.
-    FACET_ACCENTS = {
-        'a': 'aáàäâAÁÀÄÂ', 'e': 'eéèëêEÉÈËÊ', 'i': 'iíìïîIÍÌÏÎ',
-        'o': 'oóòöôOÓÒÖÔ', 'u': 'uúùüûUÚÙÜÛ', 'n': 'nñNÑ',
-    }
-
-    def facet_regex(self, value):
-        """Patrón contains que ignora acentos ("lucia" encuentra "Lucía")."""
-        base = unicodedata.normalize('NFD', str(value).strip().lower())
-        base = ''.join(c for c in base if unicodedata.category(c) != 'Mn')
-        # "_" y espacio son equivalentes (muchos valores se guardan como "dia_de_la_semana").
-        return ''.join(
-            f"[{self.FACET_ACCENTS[c]}]" if c in self.FACET_ACCENTS
-            else "[ _]" if c in " _"
-            else re.escape(c)
-            for c in base
-        )
-
-    def build_facets_match(self, fields_def, facets):
-        """Regresa la lista de condiciones (para un $and) de los facets válidos."""
-        conditions = []
-        for facet in facets or []:
-            field = fields_def.get(facet.get('key'))
-            values = [v for v in (facet.get('values') or []) if str(v).strip()]
-            if not field or not values:
-                continue
-            # exact = el valor completo (opciones del panel o de un enum), sin
-            # importar mayúsculas ni acentos; si no, "contiene".
-            # 'value_match': condición propia por valor exacto (ej. "con incidencias" Si/No).
-            value_match = field.get('value_match')
-            if facet.get('exact') and value_match:
-                conds = [value_match[str(v).strip().lower()] for v in values if str(v).strip().lower() in value_match]
-                if conds:
-                    conditions.append(conds[0] if len(conds) == 1 else {'$or': conds})
-                continue
-            wrap = (lambda p: f"^{p}$") if facet.get('exact') else (lambda p: p)
-            ors = [
-                {path: {'$regex': wrap(self.facet_regex(v)), '$options': 'i'}}
-                for path in field['paths'] for v in values
-            ]
-            # 'missing': valor que el listado muestra cuando el campo viene vacío
-            # (ej. tipo_rondin vacío = "qr"); al filtrar por él también cuentan los vacíos.
-            missing = field.get('missing')
-            if facet.get('exact') and missing and any(self.facet_regex(v) == self.facet_regex(missing) for v in values):
-                ors += [{path: {'$in': [None, '']}} for path in field['paths']]
-            conditions.append(ors[0] if len(ors) == 1 else {'$or': ors})
-        return conditions
-
-    def facet_distinct_options(self, form_id, path, labels=None, order=None):
-        """Opciones de un campo enum a partir de los valores que ya existen en la forma.
-        labels: etiqueta por valor (si no, capitalizado); order: valores que van primero."""
-        values = self.cr.distinct(path, {'form_id': form_id, 'deleted_at': {'$exists': False}})
-        values = sorted({str(v) for v in values if v not in (None, '')})
-        if order:
-            values.sort(key=lambda v: (order.index(v) if v in order else len(order), v))
-        labels = labels or {}
-        return [{'value': v, 'label': labels.get(v, v.capitalize().replace('_', ' '))} for v in values]
-
     def transportistas_search_fields(self):
         f = self.bitacora_transportista_fields
         estatus = f'answers.{f["estatus"]}'
@@ -15994,7 +15973,6 @@ class Accesos(OcrMixin, AccesosModel):
                                          search=None, skip=0, limit=None, pagination=False, facets=[]):
         f = self.bitacora_transportista_fields
         match_filters = self.transportistas_base_match(date_from, date_to)
-        # Buscador avanzado: los filtros del panel y las búsquedas llegan como facets.
         facet_conditions = self.build_facets_match(self.transportistas_search_fields(), facets)
         if facet_conditions:
             match_filters['$and'] = facet_conditions
@@ -17147,7 +17125,7 @@ class Accesos(OcrMixin, AccesosModel):
     # que usa ocr_docs.py en lkf-addons (tipo_hint, varios remolques/contenedores).
     def ocr_acceso_transportista(self, image_source,
                                   extra_instructions: str = None,
-                                  model: str = 'google/gemini-2.5-flash') -> dict:
+                                  model: str = 'google/gemini-3.5-flash') -> dict:
         """
         Analiza uno o varios archivos de un acceso de transportista.
         Acepta mezcla de imágenes y documentos (PDFs, JPGs, PNGs).
@@ -17171,7 +17149,7 @@ class Accesos(OcrMixin, AccesosModel):
                           que el usuario ya asignó a ese archivo antes de analizar,
                           usada como prior de alta confianza (no reemplaza la
                           verificación contra el contenido real de la imagen).
-            model:        Modelo OpenRouter ('google/gemini-2.5-flash' recomendado para docs).
+            model:        Modelo OpenRouter ('google/gemini-3.5-flash' recomendado para docs).
 
         Returns:
             dict con status_code, data, msg.

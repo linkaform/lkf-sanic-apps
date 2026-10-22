@@ -53,6 +53,23 @@ async def post_get_catalog_ubicaciones_formatted(request: Request):
         search=payload.get("search", ""),
         search_fields=payload.get("search_fields", []),
         ubicacion=payload.get("ubicacion", ""),
+        facets=payload.get("facets", []) or [],
+    )
+    return json({"data": response}, status=200)
+
+
+@location_bp.get("/get_search_fields_ubicaciones")
+async def get_search_fields_ubicaciones(request: Request):
+    return json({"data": service.get_search_fields_ubicaciones()}, status=200)
+
+
+@location_bp.post("/get_search_counts_ubicaciones")
+async def post_get_search_counts_ubicaciones(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_search_counts_ubicaciones(
+        locations=payload.get("locations", []),
+        facets=payload.get("facets", []) or [],
+        candidates=payload.get("candidates", []) or [],
     )
     return json({"data": response}, status=200)
 
