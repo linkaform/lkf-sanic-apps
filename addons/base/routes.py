@@ -4,11 +4,13 @@ from sanic.response import json
 
 from config.account_settings import *
 
-from lkf_addons.base.app import ScriptLogs, UserActivation
+from lkf_addons.base.app import ScriptLogs, UserActivation, UsersAdmin
 
 script_logs_service = ScriptLogs(settings)
 
 user_activation_service = UserActivation(settings)
+
+users_admin_service = UsersAdmin(settings)
 
 base_bp = Blueprint("base", url_prefix="/base")
 
@@ -84,6 +86,56 @@ async def get_get_workflow_log_filters(request: Request):
 @base_bp.post("/get_workflow_log_detail")
 async def post_get_workflow_log_detail(request: Request):
     response = workflow_logs_service.get_workflow_log_detail(_payload(request).get("log_id", ""))
+    return json({"data": response}, status=200)
+
+
+# ---- Pantalla Administracion > Usuarios ----
+
+@base_bp.post("/list_users")
+async def post_list_users(request: Request):
+    p = _payload(request)
+    response = users_admin_service.list_users(
+        limit=p.get('limit', 25),
+        skip=p.get('skip', 0),
+        status=p.get('status'),
+        name=p.get('name', ''),
+        username=p.get('username', ''),
+        email=p.get('email', ''),
+        search=p.get('search', ''),
+    )
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/get_user_detail")
+async def post_get_user_detail(request: Request):
+    response = users_admin_service.get_user_detail(_payload(request).get("record_id", ""))
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/create_user")
+async def post_create_user(request: Request):
+    p = _payload(request)
+    response = users_admin_service.create_user(
+        name=p.get('name', ''), username=p.get('username', ''), email=p.get('email', ''),
+        phone=p.get('phone', ''), role=p.get('role', ''),
+        empleado=p.get('empleado', ''), empleado_nombre=p.get('empleado_nombre', ''),
+    )
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/update_user")
+async def post_update_user(request: Request):
+    p = _payload(request)
+    response = users_admin_service.update_user(
+        record_id=p.get('record_id', ''), name=p.get('name'), phone=p.get('phone'),
+        role=p.get('role'), email=p.get('email'),
+    )
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/reset_password")
+async def post_reset_password(request: Request):
+    response = users_admin_service.reset_password(_payload(request).get("record_id", ""))
     return json({"data": response}, status=200)
 
 

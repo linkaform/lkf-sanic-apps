@@ -2549,16 +2549,17 @@ class WorkflowLogs(ScriptLogs):
 
 class UserActivation(Base):
     """
-    Ultimo paso del alta de usuarios (form Usuarios): el usuario abre el enlace
-    del correo de bienvenida y fija su contraseña. Ruta publica, igual que el
-    alta de contratistas: no hay JWT de usuario, todo corre con el API key de la
-    cuenta (APIKEY_JWT_KEY).
+    Ultimo paso del alta de usuarios (form Usuarios) y de la restauracion de
+    contraseña: el usuario abre el enlace del correo y fija su contraseña. Ruta
+    publica, igual que el alta de contratistas: no hay JWT de usuario, todo corre
+    con el API key de la cuenta (APIKEY_JWT_KEY).
 
     El enlace lleva record_id + token. El token lo genera create_user_account
-    (lkf_addons/addons/base/app.py) y es de un solo uso: al cambiar la
-    contraseña se borra del registro y el estatus pasa a 'activado'. Mientras el
-    estatus no sea 'creado' (create_user_account lo deja asi al dar de alta) no se
-    cambia nada; tras usarse queda 'activado'.
+    (alta, estatus 'creado') o reset_password (restauracion, estatus
+    'restaurar'), ambos en lkf_addons/addons/base/app.py, y es de un solo uso: al
+    cambiar la contraseña se borra del registro y el estatus pasa a 'activado'.
+    Mientras el estatus no sea 'creado' ni 'restaurar' no se cambia nada; tras
+    usarse queda 'activado'.
     El usuario nace inactivo en LinkaForm: aqui se activa justo antes de cambiar
     la contraseña, asi que solo queda activo quien completo el flujo.
     """
@@ -2575,8 +2576,12 @@ class UserActivation(Base):
         'token':    '6a2f1c0e5b3d4a7c9e8f1a01',
     }
 
+    # Estatus en los que un enlace puede fijar contraseña: alta ('creado') y
+    # restauracion ('restaurar').
+    LINK_STATUSES = ('creado', 'restaurar')
+
     # Mismo mensaje y status para record_id inexistente, token incorrecto,
-    # estatus distinto de 'creado' o enlace ya usado: la ruta no debe servir de
+    # estatus fuera de LINK_STATUSES o enlace ya usado: la ruta no debe servir de
     # oraculo para adivinar record_ids ni para saber en que estado esta un alta.
     INVALID = {'msg': 'El enlace no es válido o ya fue utilizado.', 'status_code': 400}
 
@@ -2609,7 +2614,7 @@ class UserActivation(Base):
 
         valid = (
             record
-            and answers.get(f['status']) == 'creado'
+            and answers.get(f['status']) in self.LINK_STATUSES
             and saved_token
             and token
             and hmac.compare_digest(str(saved_token), str(token))
@@ -2663,3 +2668,298 @@ class UserActivation(Base):
                        'Avisa a tu administrador.',
                 'status_code': 500})
         return {'activated': True}
+
+
+class UsersAdmin(Base):
+    """
+    Pantalla "Usuarios" (Administracion) del front clave10: lista y detalle de
+    los registros del form Usuarios, mas los empleados ligados a cada usuario.
+
+    La relacion vive en el empleado (su bloque Usuario, catalogo `usuarios`,
+    guarda el Id de Usuario), no en el usuario: un usuario puede tener varios
+    empleados ligados.
+    """
+
+    # Ids del form Usuarios (lkf_addons/addons/base/model.py, self.f['new_user_*'])
+    # y del form Empleados (employee/app.py, employee_fields), en dict LOCAL para
+    # no pisar self.f, que es compartido por el singleton.
+    user_fields = {
+        'status':   '679d023876ad7f5ba642f4ed',
+        'user_id':  '638a9a99616398d2e392a9f5',
+        'name':     '638a9a7767c332f5d459fc81',
+        'username': '6759e4a7a9a6e13c7b26da33',
+        'email':    '638a9a7767c332f5d459fc82',
+        'phone':    '67be0c43a31e5161c47f2bba',
+        'role':     '67be0c43a31e5161c47f2bbb',
+        'token':    '6a2f1c0e5b3d4a7c9e8f1a01',
+        'link':     '6a2f1c0e5b3d4a7c9e8f1a02',
+        'empleado': '6a30a1b2c3d4e5f607182901',
+        'empleado_nombre': '6a30a1b2c3d4e5f607182902',
+    }
+    employee_fields = {
+        'name':     '62c5ff407febce07043024dd',
+        'status':   '663bcbe2274189281359eb77',
+        'position': '663bc4c79b8046ce89e97cf4',
+        'department': '663bc4ed8a6b120eab4d7f1e',
+        'user_id':  '638a9a99616398d2e392a9f5',
+    }
+    TEXT_FILTERS = ('name', 'username', 'email')
+
+    WEB_URL = 'https://web.clave10.com'
+    EMPLEADO_CREAR = 'crear_empleado'
+    EMPLEADO_LIGAR = 'ligar_empleado'
+    # Estatus en los que el usuario ya existe en LinkaForm (hay Id de Usuario).
+    EDITABLE_STATUSES = ('creado', 'activado', 'restaurar')
+    EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+    # El username se interpola sin urlencode en get_user_by_username (utils.py).
+    USERNAME_RE = re.compile(r'^[\w.@+\-]+$')
+    OK_CODES = (200, 201, 202, 204)
+
+    @property
+    def usuarios_form(self):
+        return self.lkm.form_id('usuarios', 'id')
+
+    @property
+    def empleados_form(self):
+        return self.lkm.form_id('empleados', 'id')
+
+    @staticmethod
+    def _one(value):
+        """ Los campos de catalogo vienen como lista de un elemento. """
+        if isinstance(value, list):
+            value = value[0] if value else ''
+        return '' if value is None else value
+
+    def _answer(self, answers, field_id):
+        """ Respuesta por field_id: de primer nivel o dentro de un bloque de
+        catalogo (un nivel), que es donde LinkaForm guarda los catalog-detail. """
+        if field_id in answers:
+            return self._one(answers[field_id])
+        for value in answers.values():
+            if isinstance(value, dict) and field_id in value:
+                return self._one(value[field_id])
+        return ''
+
+    @staticmethod
+    def _created_at(record):
+        created = record.get('created_at')
+        if hasattr(created, 'isoformat'):
+            return created.isoformat() + 'Z'
+        return str(created) if created else None
+
+    def _user_row(self, record):
+        f = self.user_fields
+        a = record.get('answers') or {}
+        return {
+            'id': str(record['_id']),
+            'folio': record.get('folio') or '',
+            'user_id': self._one(a.get(f['user_id'])) or None,
+            'name': self._one(a.get(f['name'])),
+            'username': self._one(a.get(f['username'])),
+            'email': self._one(a.get(f['email'])),
+            'phone': self._one(a.get(f['phone'])),
+            'role': self._one(a.get(f['role'])),
+            'status': self._one(a.get(f['status'])),
+            'created_at': self._created_at(record),
+        }
+
+    def _build_match(self, status=None, name='', username='', email='', search=''):
+        f = self.user_fields
+        match = {'form_id': self.usuarios_form, 'deleted_at': {'$exists': False}}
+        statuses = status if isinstance(status, list) else ([status] if status else [])
+        statuses = [s for s in statuses if s]
+        if statuses:
+            match[f"answers.{f['status']}"] = {'$in': statuses}
+        filters = {'name': name, 'username': username, 'email': email}
+        for key in self.TEXT_FILTERS:
+            # Un chip del buscador puede traer varios valores (OR): lista o texto.
+            values = filters[key] if isinstance(filters[key], list) else [filters[key]]
+            values = [str(v).strip() for v in values if v and str(v).strip()]
+            if values:
+                match[f"answers.{f[key]}"] = {
+                    '$regex': '|'.join(re.escape(v) for v in values), '$options': 'i'}
+        search = (search or '').strip()
+        if search:
+            rx = {'$regex': re.escape(search), '$options': 'i'}
+            match['$or'] = [{f"answers.{f[key]}": rx} for key in self.TEXT_FILTERS]
+        return match
+
+    def list_users(self, limit=25, skip=0, **filters):
+        match = self._build_match(**filters)
+        limit = int(limit or 25)
+        skip = int(skip or 0)
+        total_records = self.cr.count_documents(match)
+        cursor = self.cr.find(match, {'answers': 1, 'folio': 1, 'created_at': 1}) \
+            .sort('_id', -1).skip(skip).limit(limit)
+        records = [self._user_row(r) for r in cursor]
+        return {
+            'records': records,
+            'total_records': total_records,
+            'total_pages': (total_records + limit - 1) // limit if limit else 1,
+            'actual_page': (skip // limit) + 1 if limit else 1,
+            'records_on_page': len(records),
+        }
+
+    def _linked_employees(self, user_id):
+        """ Empleados cuyo bloque Usuario trae este Id de Usuario. El Id se
+        guarda como entero (lista de un elemento en los catalog-detail). """
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return []
+        e = self.employee_fields
+        match = {
+            'form_id': self.empleados_form,
+            'deleted_at': {'$exists': False},
+            f"answers.{self.USUARIOS_OBJ_ID}.{e['user_id']}": user_id,
+        }
+        employees = []
+        for r in self.cr.find(match, {'answers': 1, 'folio': 1}).sort('_id', 1):
+            a = r.get('answers') or {}
+            employees.append({
+                'id': str(r['_id']),
+                'folio': r.get('folio') or '',
+                'name': self._answer(a, e['name']),
+                'status': self._answer(a, e['status']),
+                'position': self._answer(a, e['position']),
+                'department': self._answer(a, e['department']),
+            })
+        return employees
+
+    def get_user_detail(self, record_id=''):
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(record_id)
+        except (InvalidId, TypeError):
+            raise self.LKFException({'msg': 'El usuario no es válido.', 'status_code': 400})
+        record = self.cr.find_one(
+            {'_id': oid, 'form_id': self.usuarios_form, 'deleted_at': {'$exists': False}},
+            {'answers': 1, 'folio': 1, 'created_at': 1})
+        if not record:
+            raise self.LKFException({'msg': 'No se encontró el usuario.', 'status_code': 404})
+        user = self._user_row(record)
+        return {'user': user, 'employees': self._linked_employees(user['user_id'])}
+
+    def _fail(self, msg, status_code=400):
+        raise self.LKFException({'msg': msg, 'status_code': status_code})
+
+    @staticmethod
+    def _detail(res):
+        """ Texto del error que regresa LinkaForm (o el workflow "before" que
+        aborta el guardado), para mostrarlo tal cual al administrador. """
+        if not isinstance(res, dict):
+            return str(res)
+        detail = res.get('json') or res.get('data') or res.get('error') or res
+        return str(detail)
+
+    def _get_user_record(self, record_id, statuses=None):
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(record_id)
+        except (InvalidId, TypeError):
+            self._fail('El usuario no es válido.')
+        record = self.cr.find_one(
+            {'_id': oid, 'form_id': self.usuarios_form, 'deleted_at': {'$exists': False}},
+            {'form_id': 1, 'answers': 1})
+        if not record:
+            self._fail('No se encontró el usuario.', 404)
+        status = self._one((record.get('answers') or {}).get(self.user_fields['status']))
+        if statuses and status not in statuses:
+            self._fail(f"El usuario está en estatus '{status}' y no admite esta acción.")
+        return record
+
+    def create_user(self, name='', username='', email='', phone='', role='',
+                    empleado='', empleado_nombre=''):
+        """ Alta: guarda el registro de Usuarios con estatus 'crear'. El workflow
+        "Creacion de usuario" (runtime "before", script de addons) crea el usuario
+        en LinkaForm, deja el estatus en 'creado' y el workflow de correo manda la
+        liga de activacion. Si ese script rechaza el alta (usuario duplicado,
+        empleado a ligar inexistente) LinkaForm regresa el error y no se guarda. """
+        f = self.user_fields
+        name, username, email, phone, role = [
+            (v or '').strip() for v in (name, username, email, phone, role)]
+        empleado = (empleado or '').strip()
+        empleado_nombre = (empleado_nombre or '').strip()
+        if not (name and username and email and phone and role):
+            self._fail('Nombre, username, email, teléfono y rol son obligatorios.')
+        if not self.EMAIL_RE.match(email):
+            self._fail('El email no es válido.')
+        if not self.USERNAME_RE.match(username):
+            self._fail('El username solo puede llevar letras, números, punto, guion, + y @.')
+        if empleado and empleado not in (self.EMPLEADO_CREAR, self.EMPLEADO_LIGAR):
+            self._fail('La opción de empleado no es válida.')
+        if empleado == self.EMPLEADO_LIGAR and not empleado_nombre:
+            self._fail('Escribe el nombre completo del empleado a ligar.')
+
+        answers = {
+            f['status']: 'crear',
+            f['name']: name, f['username']: username, f['email']: email,
+            f['phone']: phone, f['role']: role,
+        }
+        if empleado:
+            answers[f['empleado']] = empleado
+        if empleado == self.EMPLEADO_LIGAR:
+            answers[f['empleado_nombre']] = empleado_nombre
+        metadata = self.lkf_api.get_metadata(form_id=self.usuarios_form)
+        metadata.update({'answers': answers})
+        res = self.lkf_api.post_forms_answers(metadata)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail(self._detail(res), (res or {}).get('status_code') or 400)
+        return {'created': True}
+
+    def update_user(self, record_id='', name=None, phone=None, role=None, email=None):
+        """ Edicion de nombre, telefono, rol y email. Primero se actualiza el
+        usuario de LinkaForm y solo si responde bien se guarda el registro, para
+        que no queden desalineados. username e Id de Usuario no se editan. """
+        f = self.user_fields
+        record = self._get_user_record(record_id, self.EDITABLE_STATUSES)
+        answers = record.get('answers') or {}
+        user_id = self._one(answers.get(f['user_id']))
+        if not user_id:
+            self._fail('El usuario no tiene Id de Usuario; no se puede editar.')
+
+        values = {'name': name, 'phone': phone, 'role': role, 'email': email}
+        values = {k: v.strip() for k, v in values.items() if isinstance(v, str) and v.strip()}
+        if not values:
+            self._fail('No hay cambios que guardar.')
+        if 'email' in values and not self.EMAIL_RE.match(values['email']):
+            self._fail('El email no es válido.')
+
+        # Campos del usuario de LinkaForm (mismos nombres que en create_user).
+        lkf_names = {'name': 'first_name', 'phone': 'phone', 'role': 'position', 'email': 'email'}
+        body = {lkf_names[k]: v for k, v in values.items()}
+        endpoint = self.lkf_api.api_url.users['update_password']
+        res = self.lkf_api.network.dispatch(
+            url=endpoint['url'].format(int(user_id)), method='PATCH', data=body)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudo actualizar el usuario en LinkaForm: ' + self._detail(res))
+
+        res = self.lkf_api.patch_multi_record(
+            answers={f[k]: v for k, v in values.items()},
+            form_id=record['form_id'], record_id=[str(record_id)])
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('El usuario se actualizó en LinkaForm pero no se pudo guardar el registro: '
+                       + self._detail(res), 500)
+        return {'updated': list(values.keys())}
+
+    def reset_password(self, record_id=''):
+        """ Restaura la contraseña de un usuario activado: token nuevo + liga y
+        estatus 'restaurar'. El workflow "Envio de correo de restauracion"
+        (runtime "after", por estatus 'restaurar') manda la liga al email del
+        registro; UserActivation.set_user_password la consume igual que la de
+        activacion: borra el token y regresa el estatus a 'activado'. """
+        import secrets
+        f = self.user_fields
+        record = self._get_user_record(record_id, ('activado',))
+        account_id = self.user.get('parent_id')
+        if not account_id:
+            self._fail('No se pudo resolver la cuenta para armar la liga.')
+        token = secrets.token_urlsafe(32)
+        link = (f"{self.WEB_URL}/auth/set-password?record_id={record_id}"
+                f"&user={account_id}&token={token}")
+        res = self.lkf_api.patch_multi_record(
+            answers={f['token']: token, f['link']: link, f['status']: 'restaurar'},
+            form_id=record['form_id'], record_id=[str(record_id)])
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudo restaurar la contraseña: ' + self._detail(res), 500)
+        return {'status': 'restaurar'}
