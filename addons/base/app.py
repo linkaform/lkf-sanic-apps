@@ -2275,11 +2275,16 @@ class ScriptLogs(Base):
         limit = int(limit or 25)
         skip = int(skip or 0)
         cr = self.script_log_cr
-        total_records = cr.count_documents(match)
-        cursor = cr.find(match).sort('start_date', -1).skip(skip).limit(limit)
+        # Sin count_documents: la coleccion tiene millones de logs. Se pide una fila
+        # de mas para saber si hay pagina siguiente.
+        cursor = cr.find(match).sort('start_date', -1).skip(skip).limit(limit + 1)
 
         records = []
+        has_next = False
         for r in cursor:
+            if len(records) == limit:
+                has_next = True
+                break
             tb = r.get('traceback') or ''
             records.append({
                 'id': str(r['_id']),
@@ -2297,9 +2302,8 @@ class ScriptLogs(Base):
             })
         return {
             'records': records,
-            'total_records': total_records,
-            'total_pages': (total_records + limit - 1) // limit if limit else 1,
-            'actual_page': (skip // limit) + 1 if limit else 1,
+            'has_next': has_next,
+            'actual_page': (skip // limit) + 1,
             'records_on_page': len(records),
         }
 
@@ -2438,12 +2442,12 @@ class WorkflowLogs(ScriptLogs):
         limit = int(limit or 25)
         skip = int(skip or 0)
         cr = self.workflow_log_cr
-        total_records = cr.count_documents(match)
+        # Sin count_documents (ver list_script_logs): limit + 1 para detectar has_next.
         pipeline = [
             {'$match': match},
             {'$sort': {'created_at': -1}},
             {'$skip': skip},
-            {'$limit': limit},
+            {'$limit': limit + 1},
             {'$project': {
                 'workflow_sucess': 1, 'name': 1, 'workflow_rule': 1, 'workflow_rule_name': 1,
                 'record_status': 1, 'form_id': 1, 'folio': 1, 'user_id': 1, 'created_at': 1,
@@ -2456,7 +2460,11 @@ class WorkflowLogs(ScriptLogs):
         users = self._name_maps()['users']
         forms = self._form_names()
         records = []
+        has_next = False
         for r in cr.aggregate(pipeline):
+            if len(records) == limit:
+                has_next = True
+                break
             rule = r.get('workflow_rule')
             head = r.get('response_head') or ''
             log_url = head if (rule == self.SCRIPT_RULE and head.startswith(self.LOG_PREFIXES)) else ''
@@ -2484,9 +2492,8 @@ class WorkflowLogs(ScriptLogs):
             })
         return {
             'records': records,
-            'total_records': total_records,
-            'total_pages': (total_records + limit - 1) // limit if limit else 1,
-            'actual_page': (skip // limit) + 1 if limit else 1,
+            'has_next': has_next,
+            'actual_page': (skip // limit) + 1,
             'records_on_page': len(records),
         }
 
