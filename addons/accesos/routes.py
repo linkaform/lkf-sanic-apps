@@ -1078,6 +1078,11 @@ async def post_update_incidence_seguimiento(request: Request):
     )
     return json({"data": records}, status=200)
 
+@accesos_bp.get("/get_incidence_permissions")
+async def get_incidence_permissions(request: Request):
+    records = service.get_incidence_permissions()
+    return json({"data": records}, status=200)
+
 @accesos_bp.get("/delete_incidence")
 async def get_delete_incidence(request: Request):
     folio = request.args.getlist("folio")
