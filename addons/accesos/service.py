@@ -5947,6 +5947,46 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             tipos.append({'incidente': incidente, 'categoria': categoria, 'sub_categoria': sub_categoria})
         return sorted(tipos, key=lambda t: t['incidente'].lower())
 
+    # Categoría con la que entran los tipos que la persona escribe a mano ("Otro"
+    # en el front); el supervisor los mueve después a su categoría real.
+    CATEGORIA_SIN_CLASIFICAR = 'Sin clasificar'
+
+    def agregar_tipo_al_catalogo(self, incidente, categoria='', sub_categoria=''):
+        """ Si el tipo de incidencia no existe en el catálogo lista_de_incidentes, lo
+        da de alta (sin categoría, en "Sin clasificar"). Se compara solo el nombre,
+        sin mayúsculas, acentos ni espacios de más, para no duplicar un tipo que ya
+        está en otra categoría. Nunca lanza: la incidencia ya quedó guardada. """
+        incidente = ' '.join(str(incidente or '').split())
+        if not incidente:
+            return None
+        plano = lambda t: unicodedata.normalize('NFD', ' '.join(str(t or '').split()).lower()) \
+            .encode('ascii', 'ignore').decode()
+        try:
+            if any(plano(t['incidente']) == plano(incidente) for t in self.catalogo_incidencias_plano()):
+                return None
+            f = self.incidence_fields
+            categoria = (categoria or '').strip() or self.CATEGORIA_SIN_CLASIFICAR
+            answers = {f['incidencia']: incidente, f['categoria']: categoria}
+            # El registro lleva el icono de su categoría, igual que los demás: se toma
+            # del catálogo categora_incidentes y, si la categoría no está ahí (como
+            # "Sin clasificar"), el de "Otros".
+            id_icono = '686807d46e41614d708f6fca'
+            cat_categorias = self.lkm.catalog_id('categora_incidentes').get('id')
+            registro_cat = next((r for r in (self.lkf_api.search_catalog(cat_categorias, {'selector': {}, 'limit': 500}) or [])
+                                 if isinstance(r, dict) and plano(self.unlist(r.get(f['categoria'], ''))) == plano(categoria)), None)
+            answers[id_icono] = (registro_cat or {}).get(id_icono) or '<CircleHelp />'
+            if (sub_categoria or '').strip():
+                answers[f['sub_categoria']] = sub_categoria.strip()
+            metadata = self.lkf_api.get_catalog_metadata(catalog_id=self.LISTA_INCIDENCIAS_CAT_ID)
+            metadata.update({'answers': answers})
+            res = self.lkf_api.post_catalog_answers(metadata)
+            if not isinstance(res, dict) or res.get('status_code') not in (200, 201, 202):
+                print('catalogo incidencias: no se agregó el tipo', incidente, str(res)[:300])
+            return res
+        except Exception as e:
+            print('catalogo incidencias: error al agregar el tipo', incidente, e)
+            return None
+
     def catalogo_vehiculos(self, options={}):
         catalog_id = self.AF.TIPO_DE_VEHICULO_ID
         form_id = self.PASE_ENTRADA
@@ -8038,6 +8078,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                                 self.incidence_fields['documento'] :c.get('documento')
                             }
                         )
+                    # El monto es decimal y opcional: si viene vacío no se manda.
+                    for c in ap_list:
+                        if c.get(self.incidence_fields['monto_estimado']) in ('', None):
+                            c.pop(self.incidence_fields['monto_estimado'], None)
                     answers.update({self.incidence_fields['afectacion_patrimonial_incidencia']:ap_list})
             elif key == 'datos_deposito_incidencia':
                 depositos = data_incidences.get('datos_deposito_incidencia',[])
@@ -8074,9 +8118,16 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         # print("RESPUESTAS", simplejson.dumps(answers, indent=4))
         metadata.update({'answers':answers})
         response = self.lkf_api.post_forms_answers(metadata)
-        if falla_id and isinstance(response, dict) and response.get('status_code') in (200, 201, 202):
+        creada = isinstance(response, dict) and response.get('status_code') in (200, 201, 202)
+        if falla_id and creada:
             response['falla'] = self._crear_falla_de_incidencia(
                 data_incidences, reportar_falla, falla_id, incidencia_id)
+        if creada:
+            self.agregar_tipo_al_catalogo(
+                data_incidences.get('incidencia') or data_incidences.get('incidente'),
+                data_incidences.get('categoria'), data_incidences.get('sub_categoria'))
+            self.registrar_cambios_incidencia(
+                None, record_id=metadata.get('id') or (response.get('json') or {}).get('id'))
         return response
 
     def _url_registro_lkf(self, record_id):
@@ -9102,6 +9153,15 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         texto = unicodedata.normalize('NFD', str(texto or '')).encode('ascii', 'ignore').decode('ascii')
         return texto.strip().lower().replace(' ', '_')
 
+    # Estatus de las tareas: la forma ahora tiene abierta/cerrada/cancelada. Los
+    # registros viejos traen pendiente/completada: se traducen al leer y al
+    # guardar, así cada incidencia se corrige sola la siguiente vez que se guarda.
+    ESTATUS_TAREA_ANTERIOR = {'pendiente': 'abierta', 'en_proceso': 'abierta', 'completada': 'cerrada'}
+
+    def _estatus_tarea(self, estatus):
+        valor = self._valor_opcion(estatus) or 'abierta'
+        return self.ESTATUS_TAREA_ANTERIOR.get(valor, valor)
+
     def _answers_acciones_correctivas(self, acciones):
         grupo = []
         for c in acciones or []:
@@ -9113,7 +9173,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 self.incidence_fields['causa_accion_correctiva']: c.get('causa', ''),
                 self.incidence_fields['tipo_responsable_accion_correctiva']: self._valor_opcion(c.get('responsable_tipo') or 'empleado'),
                 self.incidence_fields['responsable_accion_correctiva']: c.get('responsable', ''),
-                self.incidence_fields['estatus_accion_correctiva']: self._valor_opcion(c.get('estatus') or 'pendiente'),
+                self.incidence_fields['estatus_accion_correctiva']: self._estatus_tarea(c.get('estatus')),
             })
         return grupo
 
@@ -9121,7 +9181,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         etiquetas_responsable = {'empleado': 'Empleado', 'area': 'Área', 'rol': 'Rol'}
         res = []
         for r in data or []:
-            estatus = r.get(self.incidence_fields['estatus_accion_correctiva'], '') or 'pendiente'
+            estatus = self._estatus_tarea(r.get(self.incidence_fields['estatus_accion_correctiva'], ''))
             res.append({
                 'tipo': (r.get(self.incidence_fields['tipo_accion_correctiva'], '') or 'correctiva').capitalize(),
                 'accion': r.get(self.incidence_fields['accion_correctiva'], ''),
@@ -9158,6 +9218,235 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             row['documento'] = r.get(self.incidence_fields['documento'],[])
             res.append(row)
         return res
+
+    # ------------------------------------------------------------------
+    # Historial de cambios de incidencias (forma HISTORIAL_INCIDENCIAS)
+    # ------------------------------------------------------------------
+    # Lo escribe el back y no el front: después de cada guardado exitoso se
+    # relee la incidencia, se compara con la versión de antes y se guarda un
+    # registro por cada cambio. Si el historial falla, la incidencia ya quedó
+    # guardada: nunca se propaga el error.
+
+    # Campos sueltos que se comparan, con su etiqueta para la línea de tiempo.
+    HISTORIAL_CAMPOS_DATOS = {
+        'incidencia': 'el tipo de incidente',
+        'categoria': 'la categoría',
+        'sub_categoria': 'la subcategoría',
+        'ubicacion_incidencia': 'la ubicación',
+        'area_incidencia': 'el área',
+        'fecha_hora_incidencia': 'la fecha y hora',
+        'reporta_incidencia': 'quién reporta',
+        'comentario_incidencia': 'la descripción',
+        'prioridad_incidencia': 'la gravedad',
+        'dano_incidencia': 'el daño',
+        'notificacion_incidencia': 'la notificación',
+    }
+
+    def _incidencia_formateada(self, folio=None, record_id=None):
+        """ La incidencia como la regresa get_list_incidences (llaves del front),
+        para comparar antes y después de un guardado. None si no se encuentra. """
+        try:
+            if not folio and record_id:
+                doc = self.cr.find_one({'_id': ObjectId(str(record_id))}, {'folio': 1}) or {}
+                folio = doc.get('folio')
+            if not folio:
+                return None
+            encontradas = self.get_list_incidences([], None, folio=folio)
+            return encontradas[0] if encontradas else None
+        except Exception as e:
+            print('historial: no se pudo leer la incidencia', folio, record_id, e)
+            return None
+
+    def _historial_texto(self, valor):
+        """ Valor de un campo como texto comparable y legible. """
+        if valor is None:
+            return ''
+        if isinstance(valor, list):
+            return ', '.join(self._historial_texto(v) for v in valor if v not in (None, ''))
+        if isinstance(valor, dict):
+            return ', '.join(self._historial_texto(v) for v in valor.values() if v not in (None, ''))
+        return str(valor).strip()
+
+    def _historial_monto(self, monto):
+        try:
+            texto = f"{float(str(monto).replace(',', '').replace('$', '')):,.2f}"
+        except (TypeError, ValueError):
+            return str(monto or '')
+        return '$' + (texto[:-3] if texto.endswith('.00') else texto)
+
+    def _historial_grupo(self, antes, despues, clave):
+        """ Compara dos listas de un grupo repetitivo. Regresa (agregados,
+        eliminados, editados=[(antes, después)]). Primero se descartan los que
+        no cambiaron; los que quedan se emparejan por `clave` (ej. la fecha del
+        seguimiento) y, si sobran los mismos de los dos lados, por posición. """
+        norm = lambda x: simplejson.dumps(x, sort_keys=True, default=str)
+        resto_a = list(antes or [])
+        resto_b = []
+        for item in despues or []:
+            igual = next((i for i, x in enumerate(resto_a) if norm(x) == norm(item)), None)
+            if igual is None:
+                resto_b.append(item)
+            else:
+                resto_a.pop(igual)
+        editados = []
+        for item in list(resto_b):
+            k = clave(item)
+            par = next((x for x in resto_a if k and clave(x) == k), None)
+            if par is not None:
+                resto_a.remove(par)
+                resto_b.remove(item)
+                editados.append((par, item))
+        if resto_a and len(resto_a) == len(resto_b):
+            editados += list(zip(resto_a, resto_b))
+            resto_a, resto_b = [], []
+        return resto_b, resto_a, editados
+
+    def _historial_eventos(self, a, b):
+        """ Eventos (tipo, accion, descripcion, anterior, nuevo) entre dos
+        versiones formateadas de la incidencia. """
+        eventos = []
+        a, b = a or {}, b or {}
+
+        ea, eb = self._historial_texto(a.get('estatus')), self._historial_texto(b.get('estatus'))
+        if ea.lower() != eb.lower():
+            eventos.append(('estatus', 'cambio', f"Cambió el estatus a {eb or 'sin estatus'}", ea, eb))
+
+        for campo, etiqueta in self.HISTORIAL_CAMPOS_DATOS.items():
+            va, vb = self._historial_texto(a.get(campo)), self._historial_texto(b.get(campo))
+            if va != vb:
+                eventos.append(('datos', 'cambio', f"Cambió {etiqueta}", va, vb))
+
+        for campo, nombre in (('evidencia_incidencia', 'foto'), ('documento_incidencia', 'archivo')):
+            urls = lambda r: {x.get('file_url') for x in (r.get(campo) or []) if isinstance(x, dict) and x.get('file_url')}
+            agregados, quitados = len(urls(b) - urls(a)), len(urls(a) - urls(b))
+            if agregados:
+                eventos.append(('evidencia', 'agrego', f"Agregó {agregados} {nombre}{'s' if agregados > 1 else ''}", '', ''))
+            if quitados:
+                eventos.append(('evidencia', 'elimino', f"Quitó {quitados} {nombre}{'s' if quitados > 1 else ''}", '', ''))
+
+        # Seguimientos: la fecha identifica a cada uno.
+        texto_seg = lambda s: self._historial_texto(s.get('accion_correctiva_incidencia'))
+        agr, eli, edi = self._historial_grupo(a.get('seguimientos_incidencia'), b.get('seguimientos_incidencia'),
+                                              lambda s: s.get('fecha_inicio_seg'))
+        eventos += [('seguimiento', 'agrego', 'Agregó un seguimiento', '', texto_seg(s)) for s in agr]
+        eventos += [('seguimiento', 'elimino', 'Eliminó un seguimiento', texto_seg(s), '') for s in eli]
+        eventos += [('seguimiento', 'edito', 'Editó un seguimiento', texto_seg(x), texto_seg(y)) for x, y in edi if texto_seg(x) != texto_seg(y)]
+
+        # Tareas (acciones correctivas): el texto identifica a cada una.
+        agr, eli, edi = self._historial_grupo(a.get('acciones_correctivas_incidencia'), b.get('acciones_correctivas_incidencia'),
+                                              lambda t: (t.get('accion') or '').strip().lower())
+        # "Agregó la tarea correctiva: …"; el tipo "tarea" no se repite.
+        tipo_tarea = lambda t: f" {t['tipo'].lower()}" if (t.get('tipo') or '').lower() not in ('', 'tarea') else ''
+        eventos += [('tarea', 'agrego', f"Agregó la tarea{tipo_tarea(t)}: {t.get('accion', '')}", '', t.get('accion', '')) for t in agr]
+        eventos += [('tarea', 'elimino', f"Eliminó la tarea: {t.get('accion', '')}", t.get('accion', ''), '') for t in eli]
+        for x, y in edi:
+            if (x.get('estatus') or '') != (y.get('estatus') or '') and \
+                    {k: v for k, v in x.items() if k != 'estatus'} == {k: v for k, v in y.items() if k != 'estatus'}:
+                eventos.append(('tarea', 'cambio', f"Tarea \"{y.get('accion', '')}\": {y.get('estatus', '')}", x.get('estatus', ''), y.get('estatus', '')))
+            else:
+                eventos.append(('tarea', 'edito', f"Editó la tarea: {y.get('accion', '')}", x.get('accion', ''), y.get('accion', '')))
+
+        # Afectaciones: tipo + descripción identifican a cada una.
+        def resumen_af(f):
+            monto = f" ({self._historial_monto(f.get('monto_estimado'))})" if f.get('monto_estimado') not in (None, '') else ''
+            return f"{f.get('tipo_afectacion', '')}{monto}"
+        agr, eli, edi = self._historial_grupo(a.get('afectacion_patrimonial_incidencia'), b.get('afectacion_patrimonial_incidencia'),
+                                              lambda f: (f.get('tipo_afectacion'), f.get('descripcion_afectacion')))
+        eventos += [('afectacion', 'agrego', f"Agregó afectación: {resumen_af(f)}", '', resumen_af(f)) for f in agr]
+        eventos += [('afectacion', 'elimino', f"Eliminó afectación: {resumen_af(f)}", resumen_af(f), '') for f in eli]
+        eventos += [('afectacion', 'edito', f"Editó afectación: {resumen_af(y)}", resumen_af(x), resumen_af(y)) for x, y in edi]
+
+        # Grupos que solo se cuentan (personas involucradas, acciones tomadas, depósitos).
+        for campo, nombre, clave in (
+                ('personas_involucradas_incidencia', 'persona involucrada', lambda p: p.get('nombre_completo')),
+                ('acciones_tomadas_incidencia', 'acción tomada', lambda p: p.get('acciones_tomadas')),
+                ('datos_deposito_incidencia', 'depósito', lambda p: None)):
+            agr, eli, edi = self._historial_grupo(a.get(campo), b.get(campo), clave)
+            eventos += [('datos', 'agrego', f"Agregó {nombre}", '', self._historial_texto(clave(x) or '')) for x in agr]
+            eventos += [('datos', 'elimino', f"Eliminó {nombre}", self._historial_texto(clave(x) or ''), '') for x in eli]
+            eventos += [('datos', 'edito', f"Editó {nombre}", '', '') for _ in edi]
+        return eventos
+
+    def registrar_historial_incidencia(self, incidencia, eventos):
+        """ Guarda un registro de HISTORIAL_INCIDENCIAS por evento. Nunca lanza. """
+        if not incidencia or not eventos:
+            return 0
+        try:
+            f = self.historial_incidencia_fields
+            usuario = self._reporta_sesion() or self.user.get('name') or self.user.get('email', '')
+            zona = pytz.timezone(self.user.get('timezone') or 'America/Mexico_City')
+            ahora = datetime.now(zona).strftime('%Y-%m-%d %H:%M:%S')
+            guardados = 0
+            for tipo, accion, descripcion, anterior, nuevo in eventos:
+                metadata = self.lkf_api.get_metadata(form_id=self.HISTORIAL_INCIDENCIAS)
+                metadata.update({
+                    'properties': {'device_properties': {
+                        'System': 'Script', 'Module': 'Accesos',
+                        'Process': 'Historial de incidencias', 'Action': 'registrar_historial_incidencia',
+                    }},
+                    'answers': {
+                        f['id_incidencia']: str(incidencia.get('_id', '')),
+                        f['folio']: str(incidencia.get('folio', '')),
+                        f['fecha']: ahora,
+                        f['usuario']: usuario,
+                        f['tipo_evento']: tipo,
+                        f['accion']: accion,
+                        f['descripcion']: descripcion[:500],
+                        f['valor_anterior']: self._historial_texto(anterior)[:2000],
+                        f['valor_nuevo']: self._historial_texto(nuevo)[:2000],
+                    },
+                })
+                res = self.lkf_api.post_forms_answers(metadata)
+                if isinstance(res, dict) and res.get('status_code') in (200, 201, 202):
+                    guardados += 1
+                else:
+                    print('historial: no se guardó el evento', tipo, accion, str(res)[:300])
+            return guardados
+        except Exception as e:
+            print('historial: error al registrar', e)
+            return 0
+
+    def registrar_cambios_incidencia(self, antes, folio=None, record_id=None):
+        """ Relee la incidencia y registra lo que cambió contra `antes`.
+        Sin `antes` (alta) registra solo "Se levantó el reporte". """
+        despues = self._incidencia_formateada(folio=folio, record_id=record_id)
+        if not despues:
+            return 0
+        if antes is None:
+            tipo = despues.get('incidencia') or despues.get('categoria') or ''
+            eventos = [('alta', 'agrego', 'Se levantó el reporte' + (f": {tipo}" if tipo else ''), '', '')]
+        else:
+            eventos = self._historial_eventos(antes, despues)
+        return self.registrar_historial_incidencia(despues, eventos)
+
+    def get_historial_incidencia(self, record_id):
+        """ Eventos del historial de una incidencia, del más reciente al más antiguo. """
+        if not record_id:
+            return []
+        f = self.historial_incidencia_fields
+        query = [
+            {'$match': {
+                'form_id': self.HISTORIAL_INCIDENCIAS,
+                'deleted_at': {'$exists': False},
+                f"answers.{f['id_incidencia']}": str(record_id),
+            }},
+            {'$project': {
+                '_id': 0,
+                'fecha': f"$answers.{f['fecha']}",
+                'usuario': f"$answers.{f['usuario']}",
+                'tipo_evento': f"$answers.{f['tipo_evento']}",
+                'accion': f"$answers.{f['accion']}",
+                'descripcion': f"$answers.{f['descripcion']}",
+                'valor_anterior': f"$answers.{f['valor_anterior']}",
+                'valor_nuevo': f"$answers.{f['valor_nuevo']}",
+                'created_at': 1,
+            }},
+            {'$sort': {'fecha': -1, 'created_at': -1}},
+        ]
+        eventos = list(self.cr.aggregate(query))
+        for e in eventos:
+            e.pop('created_at', None)
+        return eventos
 
     def format_comentarios(self, data):
         res = []
@@ -12982,6 +13271,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                                 self.incidence_fields['documento'] :c.get('documento')
                             }
                         )
+                    # El monto es decimal y opcional: si viene vacío no se manda.
+                    for c in ap_list:
+                        if c.get(self.incidence_fields['monto_estimado']) in ('', None):
+                            c.pop(self.incidence_fields['monto_estimado'], None)
                     answers.update({self.incidence_fields['afectacion_patrimonial_incidencia']:ap_list})
             elif key == 'datos_deposito_incidencia':
                 acciones = incidencia_seg.get('datos_deposito_incidencia',[])
@@ -13041,10 +13334,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 })
             print(simplejson.dumps(metadata, indent=3))
             res= self.net.patch_forms_answers(metadata)
-            if res.get('status_code') == 201 or res.get('status_code') == 202:
-                return res
-            else:
-                return res
+            if isinstance(res, dict) and res.get('status_code') in (200, 201, 202):
+                # incidence_selected es la versión de antes (ya formateada).
+                self.registrar_cambios_incidencia(incidence_selected, folio=folio)
+            return res
         else:
             self.LKFException('No se mandarón parametros para actualizar')
 
@@ -13073,6 +13366,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         '''
             Realiza una actualización sobre cualquier nota, actualizando imagenes, status etc
         '''
+        # Versión de antes, para el historial de cambios.
+        antes = self._incidencia_formateada(folio=folio)
         answers = {}
         # answers[self.incidence_fields['estatus']]="abierto"
         for key, value in data_incidences.items():
@@ -13170,6 +13465,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                                 self.incidence_fields['documento'] :c.get('documento')
                             }
                         )
+                    # El monto es decimal y opcional: si viene vacío no se manda.
+                    for c in ap_list:
+                        if c.get(self.incidence_fields['monto_estimado']) in ('', None):
+                            c.pop(self.incidence_fields['monto_estimado'], None)
                     answers.update({self.incidence_fields['afectacion_patrimonial_incidencia']:ap_list})
 
             elif key == 'datos_deposito_incidencia':
@@ -13216,14 +13515,22 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                         "device_properties":{
                             "system": "Addons",
                             "process":"Actualizacion de Incidencias", 
-                            "accion":'update_incidence', 
-                            "folio": folio, 
+                            "accion":'update_incidence',
+                            "folio": folio,
                             "archive": "incidencias.py"
                         }
                     },
                     'answers': answers
                 })
-            return self.net.patch_forms_answers(metadata)
+            res = self.net.patch_forms_answers(metadata)
+            if isinstance(res, dict) and res.get('status_code') in (200, 201, 202):
+                if data_incidences.get('incidencia') or data_incidences.get('incidente'):
+                    self.agregar_tipo_al_catalogo(
+                        data_incidences.get('incidencia') or data_incidences.get('incidente'),
+                        data_incidences.get('categoria'), data_incidences.get('sub_categoria'))
+                if antes:
+                    self.registrar_cambios_incidencia(antes, folio=folio)
+            return res
             # return self.lkf_api.patch_multi_record( answers = answers, form_id=self.BITACORA_INCIDENCIAS, folios=[folio])
         else:
             self.LKFException('No se mandarón parametros para actualizar')

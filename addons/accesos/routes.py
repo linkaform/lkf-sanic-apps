@@ -1078,9 +1078,15 @@ async def post_update_incidence_seguimiento(request: Request):
     )
     return json({"data": records}, status=200)
 
+<<<<<<< Updated upstream
 @accesos_bp.get("/get_incidence_permissions")
 async def get_incidence_permissions(request: Request):
     records = service.get_incidence_permissions()
+=======
+@accesos_bp.get("/get_historial_incidencia")
+async def get_get_historial_incidencia(request: Request):
+    records = service.get_historial_incidencia(request.args.get("record_id", ""))
+>>>>>>> Stashed changes
     return json({"data": records}, status=200)
 
 @accesos_bp.get("/delete_incidence")
