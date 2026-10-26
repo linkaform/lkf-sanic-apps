@@ -51,6 +51,7 @@ class ConnectionClient(object):
         return self.session.get(url, params=params, **kwargs)
 
     def post(self, url, json=None, **kwargs):
+        print('url....', url)
         return self.session.post(url, json=json, **kwargs)
 
     def put(self, url, json=None, **kwargs):
@@ -145,7 +146,7 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = f"http://0.0.0.0:{os.getenv('PORT', 8000)}/{module}/{end_point}"
+    url = f"http://0.0.0.0:{os.getenv('PORT', 8080)}/{module}/{end_point}"
     print('url', url)
     if method == 'get':
         response = _connection_client.get(url, params=params, headers=headers)

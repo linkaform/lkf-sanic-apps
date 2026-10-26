@@ -69,6 +69,9 @@ services:
       # existe en dev. En produccion se deja sin setear.
       USE_LOCAL_SETTINGS: ${USE_LOCAL_SETTINGS:-1}
       PORT: 8010
+      # main.py lee WORKERS (default 1). Con 1 solo worker una peticion que se
+      # queda esperando a otro servicio deja sordo al /health y a todo lo demas.
+      WORKERS: ${WORKERS:-4}
     build:
      context: ../
      dockerfile: ./Dockerfile

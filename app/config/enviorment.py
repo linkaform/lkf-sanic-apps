@@ -37,7 +37,7 @@ COUCH_ENV = config.get('COUCH_ENV')
 
 if ENV == 'local':
     PROTOCOL = 'http'
-    HOST = '{}:8000'.format(LOCAL_IP)
+    HOST = '{}:8080'.format(LOCAL_IP)
     mongo_hosts = '{}:27017'.format(LOCAL_IP)
     COUCH_ENV = 'prod'
 
