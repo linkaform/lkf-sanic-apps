@@ -10851,6 +10851,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             f"answers.{self.mf['codigo_qr']}":qr,
         }
         if record_id:
+            if not ObjectId.is_valid(record_id):
+                self.LKFException({"status_code":400, "msg":"El registro indicado no es válido."})
             match_query["_id"] = ObjectId(record_id)
         res = self.cr.find(
             match_query, 
