@@ -2159,7 +2159,6 @@ class ScriptLogs(Base):
         de linkaform y cacheados por 5 minutos (cambian poco).
         """
         import time
-        print('regresa')
         uid_key = self.user_id
         cached = self._names_cache.get(uid_key)
         if cached and time.time() - cached['ts'] < 300:
@@ -2169,7 +2168,6 @@ class ScriptLogs(Base):
             for u in self.lkf_api.get_all_users() or []:
                 uid = u.get('id')
 
-                print('regresa3',uid)
                 name = (u.get('name') or
                         ' '.join(x for x in [u.get('first_name'), u.get('last_name')] if x) or
                         u.get('username') or u.get('email') or '')
@@ -2179,7 +2177,6 @@ class ScriptLogs(Base):
             print('ScriptLogs: no se pudieron resolver usuarios', e)
         try:
             res = self.lkf_api.get_user_scripts(self.user_id, flat=True) or {}
-            print('regresa4')
             items = res.get('data', []) if isinstance(res, dict) else []
             if isinstance(items, list):
                 for s in items:
@@ -2189,13 +2186,11 @@ class ScriptLogs(Base):
                         scripts[int(sid)] = name
         except Exception as e:
             print('ScriptLogs: no se pudieron resolver scripts', e)
-        print('scripts=', scripts)
         maps = {'users': users, 'scripts': scripts}
         # 'scripts' = solo los scripts que el usuario puede ver (los demas no se
         # resuelven). Si la consulta fallo (vacio) no se cachea para reintentar.
         if scripts:
             self._names_cache[uid_key] = {'ts': time.time(), 'maps': maps}
-        print('regresa')
         return maps
 
     @staticmethod
@@ -2242,21 +2237,19 @@ class ScriptLogs(Base):
     def list_script_logs(self, limit=25, skip=0, status=None, script_ids=None, script_name='',
                          user_ids=None, user_name='', date1=None, date2=None,
                          min_duration=None, max_duration=None, run_success=None):
-        print('adui..222')
 
         maps = self._name_maps()
-        print('squi3..')
         if not script_ids:
             script_ids = list(maps.get('scripts',{}).keys())
-        print('3')
         match = {}
+
         if status:
             match['status'] = status
+
         if run_success in (True, False):
             match['run_success'] = run_success
-        print('3')
         s_ids = self._as_int_list(script_ids)
-        print('34')
+
         if script_name:
             s_ids = (s_ids or []) + (self._ids_by_name(maps['scripts'], script_name) )
         if s_ids:
