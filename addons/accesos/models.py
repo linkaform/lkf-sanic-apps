@@ -45,6 +45,9 @@ class AccesosModel(Base):
         self.BITACORA_OBJETOS_PERDIDOS = self.lkm.form_id('bitacora_objetos_perdidos','id')
         self.BITACORA_FALLAS = self.lkm.form_id('bitacora_de_fallas','id')
         self.BITACORA_INCIDENCIAS = self.lkm.form_id('bitacora_de_incidencias','id')
+        # Forma creada a mano en LinkaForm (no viene de un módulo instalado, así que
+        # lkm.form_id no la encuentra): el id es el de la cuenta de seguridad.
+        self.HISTORIAL_INCIDENCIAS = 184796
         self.BITACORA_GAFETES_LOCKERS = self.lkm.form_id('bitacora_de_gafetes_y_lockers','id')
         self.CARGA_PERMISOS_VISITANTES = self.lkm.form_id('carga_de_permisos_de_visitantes','id')
         self.CHECKIN_CASETAS = self.lkm.form_id('checkin_checkout_casetas','id')
@@ -854,6 +857,19 @@ class AccesosModel(Base):
             'ubicacion_incidencia_catalog': f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}",
             #Robo de cableado
             'valor_estimado': '684c3e6821796d7880117f22',
+        }
+
+        #- Historial de cambios de incidencias: un registro por evento.
+        self.historial_incidencia_fields = {
+            'id_incidencia': '6adba1c52cbef45977bb7562',
+            'folio': '6adba1c52cbef45977bb7563',
+            'fecha': '6adba1c52cbef45977bb7564',
+            'usuario': '6adba1c52cbef45977bb7565',
+            'tipo_evento': '6adba1c52cbef45977bb7566',
+            'accion': '6adba2a101bca30ca9337305',
+            'descripcion': '6adba1c52cbef45977bb7568',
+            'valor_anterior': '6adba1c52cbef45977bb7569',
+            'valor_nuevo': '6adba1c52cbef45977bb756a',
         }
 
         #- Para creación , edición y lista de gafetes y lockers
