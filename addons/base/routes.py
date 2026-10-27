@@ -1,3 +1,5 @@
+import asyncio
+
 from sanic import Blueprint
 from sanic.request import Request
 from sanic.response import json
@@ -115,10 +117,14 @@ async def post_get_user_detail(request: Request):
 @base_bp.post("/create_user")
 async def post_create_user(request: Request):
     p = _payload(request)
-    response = users_admin_service.create_user(
+    # create_user hace requests sincronos al backend (workflow + script); en un
+    # hilo para no congelar el event loop de Sanic mientras espera.
+    response = await asyncio.to_thread(
+        users_admin_service.create_user,
         name=p.get('name', ''), username=p.get('username', ''), email=p.get('email', ''),
         phone=p.get('phone', ''), role=p.get('role', ''),
         empleado=p.get('empleado', ''), empleado_nombre=p.get('empleado_nombre', ''),
+        timezone=p.get('timezone', ''), language=p.get('language', ''),
     )
     return json({"data": response}, status=200)
 
@@ -129,6 +135,7 @@ async def post_update_user(request: Request):
     response = users_admin_service.update_user(
         record_id=p.get('record_id', ''), name=p.get('name'), phone=p.get('phone'),
         role=p.get('role'), email=p.get('email'),
+        timezone=p.get('timezone'), language=p.get('language'),
     )
     return json({"data": response}, status=200)
 
@@ -136,6 +143,32 @@ async def post_update_user(request: Request):
 @base_bp.post("/reset_password")
 async def post_reset_password(request: Request):
     response = users_admin_service.reset_password(_payload(request).get("record_id", ""))
+    return json({"data": response}, status=200)
+
+
+@base_bp.get("/get_user_options")
+async def get_get_user_options(request: Request):
+    return json({"data": users_admin_service.get_user_options()}, status=200)
+
+
+@base_bp.post("/create_user_account")
+async def post_create_user_account(request: Request):
+    p = _payload(request)
+    response = users_admin_service.create_user_account(p.get("record_id", ""), p.get("answers", {}))
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/create_users")
+async def post_create_users(request: Request):
+    p = _payload(request)
+    response = users_admin_service.create_users(
+        rows=p.get("rows", []), create_employee=bool(p.get("create_employee", False)))
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/setup_user_employee")
+async def post_setup_user_employee(request: Request):
+    response = users_admin_service.setup_user_employee(_payload(request).get("answers", {}))
     return json({"data": response}, status=200)
 
 

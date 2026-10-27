@@ -2159,6 +2159,7 @@ class ScriptLogs(Base):
         de linkaform y cacheados por 5 minutos (cambian poco).
         """
         import time
+        print('regresa')
         uid_key = self.user_id
         cached = self._names_cache.get(uid_key)
         if cached and time.time() - cached['ts'] < 300:
@@ -2167,6 +2168,8 @@ class ScriptLogs(Base):
         try:
             for u in self.lkf_api.get_all_users() or []:
                 uid = u.get('id')
+
+                print('regresa3',uid)
                 name = (u.get('name') or
                         ' '.join(x for x in [u.get('first_name'), u.get('last_name')] if x) or
                         u.get('username') or u.get('email') or '')
@@ -2176,6 +2179,7 @@ class ScriptLogs(Base):
             print('ScriptLogs: no se pudieron resolver usuarios', e)
         try:
             res = self.lkf_api.get_user_scripts(self.user_id, flat=True) or {}
+            print('regresa4')
             items = res.get('data', []) if isinstance(res, dict) else []
             if isinstance(items, list):
                 for s in items:
@@ -2191,6 +2195,7 @@ class ScriptLogs(Base):
         # resuelven). Si la consulta fallo (vacio) no se cachea para reintentar.
         if scripts:
             self._names_cache[uid_key] = {'ts': time.time(), 'maps': maps}
+        print('regresa')
         return maps
 
     @staticmethod
@@ -2237,16 +2242,21 @@ class ScriptLogs(Base):
     def list_script_logs(self, limit=25, skip=0, status=None, script_ids=None, script_name='',
                          user_ids=None, user_name='', date1=None, date2=None,
                          min_duration=None, max_duration=None, run_success=None):
+        print('adui..222')
+
         maps = self._name_maps()
+        print('squi3..')
         if not script_ids:
             script_ids = list(maps.get('scripts',{}).keys())
+        print('3')
         match = {}
         if status:
             match['status'] = status
         if run_success in (True, False):
             match['run_success'] = run_success
-
+        print('3')
         s_ids = self._as_int_list(script_ids)
+        print('34')
         if script_name:
             s_ids = (s_ids or []) + (self._ids_by_name(maps['scripts'], script_name) )
         if s_ids:
@@ -2592,6 +2602,18 @@ class UserActivation(Base):
     # oraculo para adivinar record_ids ni para saber en que estado esta un alta.
     INVALID = {'msg': 'El enlace no es válido o ya fue utilizado.', 'status_code': 400}
 
+    def _is_user_active(self, user_id):
+        """ is_active del usuario en LinkaForm. Si no se puede consultar cuenta
+        como inactivo: ante la duda no se da por activado a nadie. """
+        try:
+            user = self.lkf_api.get_user_by_id(int(user_id), jwt_settings_key=self.JWT_CLIENTE)
+        except Exception as e:
+            print('set_user_password: no se pudo consultar al usuario', user_id, type(e).__name__)
+            return False
+        if isinstance(user, list):
+            user = user[0] if user else {}
+        return bool((user or {}).get('is_active'))
+
     def set_user_password(self, record_id='', token='', password='', password2=''):
         import hmac
         from bson.errors import InvalidId
@@ -2642,8 +2664,10 @@ class UserActivation(Base):
             raise self.LKFException(self.INVALID)
 
         # POST /api/infosync/activate_user/ responde 202 al activar y 400 si ya
-        # estaba activo (reenvio / reintento tras un fallo posterior), asi que el
-        # 400 no se trata como error; 404/5xx si: sin activar no podria entrar.
+        # estaba activo (reenvio / reintento tras un fallo posterior). Pero tambien
+        # responde 400 cuando la activacion FALLA en el backend, asi que el 400 no
+        # basta: se confirma con is_active. 404/5xx son error: sin activar no
+        # podria entrar.
         username = answers.get(f['username'])
         if isinstance(username, list):
             username = username[0] if username else None
@@ -2651,6 +2675,14 @@ class UserActivation(Base):
         if not res or res.get('status_code') not in (200, 201, 202, 400):
             raise self.LKFException({
                 'msg': 'No pudimos activar tu cuenta. Intenta de nuevo.',
+                'status_code': 400})
+        if res.get('status_code') == 400 and not self._is_user_active(user_id):
+            # Sin esto la contraseña se cambiaba y el registro pasaba a 'activado'
+            # con el usuario todavia inactivo en LinkaForm.
+            print('set_user_password: activate_user respondio 400 y el usuario sigue inactivo:',
+                  {'user_id': user_id, 'respuesta': str(res.get('json') or res.get('data'))[:200]})
+            raise self.LKFException({
+                'msg': 'No pudimos activar tu cuenta. Intenta de nuevo o avisa a tu administrador.',
                 'status_code': 400})
 
         res = self.lkf_api.update_user_password(
@@ -2702,6 +2734,8 @@ class UsersAdmin(Base):
         'link':     '6a2f1c0e5b3d4a7c9e8f1a02',
         'empleado': '6a30a1b2c3d4e5f607182901',
         'empleado_nombre': '6a30a1b2c3d4e5f607182902',
+        'timezone': '6a31d4e6f8a0b2c4d6e8f101',
+        'language': '6a31d4e6f8a0b2c4d6e8f102',
     }
     employee_fields = {
         'name':     '62c5ff407febce07043024dd',
@@ -2721,6 +2755,25 @@ class UsersAdmin(Base):
     # El username se interpola sin urlencode en get_user_by_username (utils.py).
     USERNAME_RE = re.compile(r'^[\w.@+\-]+$')
     OK_CODES = (200, 201, 202, 204)
+
+    # Uso Horario e Idioma del usuario. LinkaForm guarda `timezone` como texto y
+    # `lang` como {code}; el alta (POST) ignora timezone, por eso se parchea.
+    # Para ofrecer otro idioma basta agregarlo a LANGUAGES (code -> nombre).
+    TIMEZONE_DEFAULT = 'America/Mexico_City'
+    # Por ahora solo se ofrecen las zonas de America. Es la misma lista del select
+    # de usuarios.xml: si se cambia el prefijo hay que regenerar ese select.
+    TIMEZONE_PREFIX = 'America/'
+    LANGUAGE_DEFAULT = 'es_MX'
+    LANGUAGES = {'es_MX': 'Español', 'en_US': 'English'}
+    LANGUAGE_ALIASES = {'spanish': 'es_MX', 'ingles': 'en_US'}
+
+    # Fase 2 del alta (setup_user_employee). Misma lógica que tenía addons.
+    # Menús que se asignan en Configuración Accesos: las llaves de
+    # PERMISSION_MODULE_MAP de lkf_addons/addons/accesos/app.py (los 9 menús del form).
+    ACCESOS_MENUS = ['bitacoras', 'accesos', 'rondines', 'articulos', 'incidencias',
+                     'notas', 'pases', 'turnos', 'reportes']
+    # Configuración Accesos: campo "menus" (accesos/model.py, conf_accesos_fields).
+    CONF_ACCESOS_MENUS_FIELD = '6722472f162366c38ebe1c64'
 
     @property
     def usuarios_form(self):
@@ -2747,6 +2800,50 @@ class UsersAdmin(Base):
                 return self._one(value[field_id])
         return ''
 
+    def _timezones(self):
+        """ Zonas que ofrece el select del form Usuarios (pytz.common_timezones
+        de America, la misma lista de usuarios.xml). """
+        import pytz
+        return [z for z in pytz.common_timezones if z.startswith(self.TIMEZONE_PREFIX)]
+
+    def _valid_timezone(self, timezone):
+        """ Zona horaria dentro de las del select: LinkaForm rechaza al guardar el
+        registro un valor que no sea una de sus opciones. """
+        tz = (timezone or '').strip() or self.TIMEZONE_DEFAULT
+        if tz not in self._timezones():
+            self._fail(f'La zona horaria "{tz}" no es válida (por ejemplo, America/Mexico_City).')
+        return tz
+
+    def get_user_options(self):
+        """ Opciones de Uso Horario e Idioma para los selects del front (y los
+        valores por defecto), para que el front y el backend usen una sola lista. """
+        return {
+            'timezones': self._timezones(),
+            'languages': [{'value': code, 'label': name} for code, name in self.LANGUAGES.items()],
+            'defaults': {'timezone': self.TIMEZONE_DEFAULT, 'language': self.LANGUAGE_DEFAULT},
+        }
+
+    def _valid_language(self, language):
+        """ Código del idioma a partir del código ('es_MX'), del nombre ('Español',
+        'English') o de un alias; vacío = el idioma por defecto. """
+        import unicodedata
+        norm = lambda t: unicodedata.normalize('NFD', str(t)).encode('ascii', 'ignore').decode().strip().lower()
+        value = norm(language or '')
+        if not value:
+            return self.LANGUAGE_DEFAULT
+        options = {norm(code): code for code in self.LANGUAGES}
+        options.update({norm(name): code for code, name in self.LANGUAGES.items()})
+        options.update(self.LANGUAGE_ALIASES)
+        if value not in options:
+            self._fail(f'El idioma "{language}" no es válido. Opciones: {", ".join(self.LANGUAGES.values())}.')
+        return options[value]
+
+    def _patch_lkf_user(self, user_id, body):
+        """ PATCH /api/infosync/user_admin/{id}/ del usuario de LinkaForm. """
+        endpoint = self.lkf_api.api_url.users['update_password']
+        return self.lkf_api.network.dispatch(
+            url=endpoint['url'].format(int(user_id)), method='PATCH', data=body)
+
     @staticmethod
     def _created_at(record):
         created = record.get('created_at')
@@ -2767,6 +2864,9 @@ class UsersAdmin(Base):
             'phone': self._one(a.get(f['phone'])),
             'role': self._one(a.get(f['role'])),
             'status': self._one(a.get(f['status'])),
+            'timezone': self._one(a.get(f['timezone'])),
+            'language': self._one(a.get(f['language'])),
+            'language_label': self.LANGUAGES.get(self._one(a.get(f['language'])), ''),
             'created_at': self._created_at(record),
         }
 
@@ -2876,7 +2976,7 @@ class UsersAdmin(Base):
         return record
 
     def create_user(self, name='', username='', email='', phone='', role='',
-                    empleado='', empleado_nombre=''):
+                    empleado='', empleado_nombre='', timezone='', language=''):
         """ Alta: guarda el registro de Usuarios con estatus 'crear'. El workflow
         "Creacion de usuario" (runtime "before", script de addons) crea el usuario
         en LinkaForm, deja el estatus en 'creado' y el workflow de correo manda la
@@ -2897,11 +2997,13 @@ class UsersAdmin(Base):
             self._fail('La opción de empleado no es válida.')
         if empleado == self.EMPLEADO_LIGAR and not empleado_nombre:
             self._fail('Escribe el nombre completo del empleado a ligar.')
+        timezone, language = self._valid_timezone(timezone), self._valid_language(language)
 
         answers = {
             f['status']: 'crear',
             f['name']: name, f['username']: username, f['email']: email,
             f['phone']: phone, f['role']: role,
+            f['timezone']: timezone, f['language']: language,
         }
         if empleado:
             answers[f['empleado']] = empleado
@@ -2914,8 +3016,9 @@ class UsersAdmin(Base):
             self._fail(self._detail(res), (res or {}).get('status_code') or 400)
         return {'created': True}
 
-    def update_user(self, record_id='', name=None, phone=None, role=None, email=None):
-        """ Edicion de nombre, telefono, rol y email. Primero se actualiza el
+    def update_user(self, record_id='', name=None, phone=None, role=None, email=None,
+                    timezone=None, language=None):
+        """ Edicion de nombre, telefono, rol, email, zona horaria e idioma. Primero se actualiza el
         usuario de LinkaForm y solo si responde bien se guarda el registro, para
         que no queden desalineados. username e Id de Usuario no se editan. """
         f = self.user_fields
@@ -2927,17 +3030,23 @@ class UsersAdmin(Base):
 
         values = {'name': name, 'phone': phone, 'role': role, 'email': email}
         values = {k: v.strip() for k, v in values.items() if isinstance(v, str) and v.strip()}
-        if not values:
+        if not values and not (isinstance(timezone, str) and timezone.strip()) \
+                and not (isinstance(language, str) and language.strip()):
             self._fail('No hay cambios que guardar.')
         if 'email' in values and not self.EMAIL_RE.match(values['email']):
             self._fail('El email no es válido.')
+        if isinstance(timezone, str) and timezone.strip():
+            values['timezone'] = self._valid_timezone(timezone)
+        if isinstance(language, str) and language.strip():
+            values['language'] = self._valid_language(language)
 
         # Campos del usuario de LinkaForm (mismos nombres que en create_user).
-        lkf_names = {'name': 'first_name', 'phone': 'phone', 'role': 'position', 'email': 'email'}
-        body = {lkf_names[k]: v for k, v in values.items()}
-        endpoint = self.lkf_api.api_url.users['update_password']
-        res = self.lkf_api.network.dispatch(
-            url=endpoint['url'].format(int(user_id)), method='PATCH', data=body)
+        lkf_names = {'name': 'first_name', 'phone': 'phone', 'role': 'position', 'email': 'email',
+                     'timezone': 'timezone'}
+        body = {lkf_names[k]: v for k, v in values.items() if k in lkf_names}
+        if 'language' in values:
+            body['lang'] = {'code': values['language']}
+        res = self._patch_lkf_user(user_id, body)
         if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
             self._fail('No se pudo actualizar el usuario en LinkaForm: ' + self._detail(res))
 
@@ -2970,3 +3079,257 @@ class UsersAdmin(Base):
         if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
             self._fail('No se pudo restaurar la contraseña: ' + self._detail(res), 500)
         return {'status': 'restaurar'}
+
+    def create_user_account(self, record_id='', answers=None):
+        """ Fase 1 del alta (workflow "Creacion de usuario", runtime "before", por
+        estatus 'crear'): da de alta el usuario en LinkaForm y deja el registro en
+        'creado' con Id de Usuario, token de un solo uso y liga para fijar la
+        contraseña. El workflow de correo (runtime "after", estatus 'creado') manda
+        la liga.
+
+        Regresa las respuestas completas ya mutadas: el script puente las devuelve
+        al workflow como `replace_ans`, porque este paso corre ANTES de que
+        LinkaForm guarde el registro y una escritura aparte (patch_multi_record) la
+        pisaría ese guardado posterior. """
+        import secrets, time
+        f = self.user_fields
+        answers = dict(answers or {})
+        if self._one(answers.get(f['status'])) in ('creado', 'activado'):
+            self._fail('Este usuario ya está creado.')
+
+        name = self._one(answers.get(f['name']))
+        email = self._one(answers.get(f['email']))
+        username = self._one(answers.get(f['username']))
+        phone = self._one(answers.get(f['phone']))
+        position = self._one(answers.get(f['role']))
+        # Si hay que ligar a un empleado existente se valida ANTES de crear el
+        # usuario: si no existe (o hay varios) no debe quedar un usuario huérfano.
+        # El empleado y Configuración Accesos se crean DESPUÉS (setup_user_employee,
+        # al activarse el usuario): el bloque Usuario de esos forms es un catálogo y
+        # LinkaForm rechaza valores que aún no están en él.
+        if self._one(answers.get(f['empleado'])) == self.EMPLEADO_LIGAR:
+            self._find_employee_to_link(self._one(answers.get(f['empleado_nombre'])))
+        account_id = self.user.get('parent_id')
+        if not account_id:
+            self._fail('No se pudo resolver la cuenta para armar la liga.')
+
+        # Zona e idioma se validan ANTES de crear: un valor inválido no debe dejar
+        # un usuario huérfano. Vacíos toman el valor por defecto.
+        timezone = self._valid_timezone(self._one(answers.get(f['timezone'])))
+        language = self._valid_language(self._one(answers.get(f['language'])))
+
+        # La contraseña la fija el propio usuario con la liga del correo
+        # (UserActivation.set_user_password). Aquí solo se crea una aleatoria que
+        # nadie ve, porque create_user la exige.
+        password = secrets.token_urlsafe(24)
+        created_epoch = int(time.time())
+        res = self.lkf_api.create_user({
+            "first_name": name,
+            "email": email,
+            "username": username,
+            "password": password,
+            "password2": password,
+            "position": position or '',
+            "phone": phone,
+            "permissions": [],
+            "company": "",
+            "send_welcome": False,
+        })
+        # Un fallo aborta el guardado: si se tragara, el registro quedaría en 'crear'
+        # sin usuario real.
+        if not isinstance(res, dict) or res.get('status_code') not in (200, 201, 202):
+            self._fail(f"No se pudo crear el usuario: LinkaForm respondió "
+                       f"{(res or {}).get('status_code')}: {self._detail(res)}",
+                       (res or {}).get('status_code') or 400)
+
+        # create_user no regresa el user_id y no hay otra consulta que lo identifique
+        # sin ambigüedad (get_user_by_username ya no filtra, el email no es único).
+        # Se usa get_updated_users desde justo antes del alta y se filtra por
+        # username exacto, que sí es único en la plataforma.
+        recent_users = self.lkf_api.get_updated_users(created_epoch) or []
+        new_user_id = next((u.get('id') for u in recent_users if u.get('username') == username), None)
+        if not new_user_id:
+            self._fail(f'El usuario {username} se creó en LinkaForm pero no se pudo obtener su Id de Usuario. '
+                       'Revísalo en LinkaForm antes de volver a intentar el alta.', 500)
+
+        # El alta ignora timezone y deja la zona de la plataforma: se parchea ahora.
+        res = self._patch_lkf_user(new_user_id, {'timezone': timezone, 'lang': {'code': language}})
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail(f'El usuario {username} se creó en LinkaForm pero no se pudo aplicar su zona horaria '
+                       f'e idioma: {self._detail(res)}. Revísalo en LinkaForm antes de volver a intentar el alta.', 500)
+
+        token = secrets.token_urlsafe(32)
+        answers[f['timezone']] = timezone
+        answers[f['language']] = language
+        answers[f['user_id']] = new_user_id
+        answers[f['token']] = token
+        answers[f['link']] = (f"{self.WEB_URL}/auth/set-password?record_id={record_id}"
+                              f"&user={account_id}&token={token}")
+        answers[f['status']] = 'creado'
+        return {'answers': answers}
+
+    @property
+    def conf_accesos_form(self):
+        return self.lkm.form_id('configuracion_accesos', 'id')
+
+    @property
+    def empleado_cat_obj_id(self):
+        """ obj_id del catálogo Empleados (Configuración Accesos guarda ahí a su usuario). """
+        cat = self.lkm.catalog_id('empleados') or self.lkm.catalog_id('employee')
+        return cat.get('obj_id')
+
+    def _find_employee_to_link(self, name):
+        """ Empleado existente que se va a ligar al usuario. Se busca por nombre
+        EXACTO; sin coincidencia o con varias se detiene el proceso. """
+        name = (name or '').strip()
+        if not name:
+            self._fail('Escribe el nombre completo del empleado a ligar.')
+        found = list(self.cr.find(
+            {'form_id': self.empleados_form, 'deleted_at': {'$exists': False},
+             f"answers.{self.employee_fields['name']}": name},
+            {'_id': 1}))
+        if not found:
+            self._fail(f'No existe un empleado con el nombre "{name}". Debe coincidir exactamente.')
+        if len(found) > 1:
+            self._fail(f'Hay {len(found)} empleados con el nombre "{name}"; no se puede ligar sin ambigüedad.')
+        return found[0]
+
+    def _employee_user_answers(self, name, email, username, user_id):
+        """ Bloque del catálogo Usuarios dentro del form Empleados.
+
+        Forma que guarda LinkaForm en los empleados reales: el Nombre (el
+        catalog-select) va como texto y los catalog-detail (Email, Username, Id)
+        como LISTA. Mandar Email/Username como texto se rechaza con "No es una
+        respuesta valida". """
+        f = self.user_fields
+        return {
+            self.USUARIOS_OBJ_ID: {
+                f['name']: name,
+                f['email']: [email],
+                f['username']: [username],
+                f['user_id']: [user_id],
+            }
+        }
+
+    def setup_user_employee(self, answers=None):
+        """ Fase 2 del alta (workflow "after" cuando el usuario fija su contraseña y
+        el registro pasa a 'activado'): crea o liga el empleado y crea su
+        Configuración Accesos. Hasta entonces el registro de Usuarios lleva tiempo
+        guardado y su catálogo ya está sincronizado.
+
+        Idempotente: al restaurar contraseña el registro vuelve a 'activado' y el
+        workflow puede dispararse otra vez; si el usuario ya tiene un empleado
+        ligado, la fase 2 ya corrió y se omite. """
+        f = self.user_fields
+        answers = answers or {}
+        option = self._one(answers.get(f['empleado']))
+        if self._one(answers.get(f['status'])) != 'activado' or \
+                option not in (self.EMPLEADO_CREAR, self.EMPLEADO_LIGAR):
+            return {'skipped': True}
+        user_id = self._one(answers.get(f['user_id']))
+        if user_id and self._linked_employees(user_id):
+            return {'skipped': True}
+
+        name = self._one(answers.get(f['name']))
+        email = self._one(answers.get(f['email']))
+        username = self._one(answers.get(f['username']))
+        employee = None
+        if option == self.EMPLEADO_LIGAR:
+            employee = self._find_employee_to_link(self._one(answers.get(f['empleado_nombre'])))
+        self._setup_employee_and_access(option, employee, name, email, username, user_id)
+        return {'skipped': False}
+
+    def _setup_employee_and_access(self, option, employee, name, email, username, user_id):
+        """ Crea (o liga) el registro de Empleados del usuario y su Configuración
+        Accesos con todos los menús. Corre en la fase 2, con el usuario y su
+        registro ya guardados; si algo falla se avisa con su user_id para
+        completarlo a mano. """
+        e, f = self.employee_fields, self.user_fields
+        user_answers = self._employee_user_answers(name, email, username, user_id)
+
+        def fail(step, res):
+            self._fail(f'El usuario {username} (id {user_id}) se creó en LinkaForm, pero falló '
+                       f'{step}: {res.get("status_code")} {res.get("json") or res.get("data")}')
+
+        if option == self.EMPLEADO_CREAR:
+            metadata = self.lkf_api.get_metadata(form_id=self.empleados_form)
+            emp_answers = {
+                e['name']: name,
+                # el filtro de empleados solo trae los 'activo' por default
+                e['status']: 'activo',
+            }
+            emp_answers.update(user_answers)
+            metadata.update({'answers': emp_answers})
+            res = self.retry_catalog(lambda: self.lkf_api.post_forms_answers(metadata))
+            if res.get('status_code') not in self.OK_CODES:
+                fail('la creación del registro de empleado', res)
+        else:
+            employee_id = str(employee['_id'])
+            res = self.retry_catalog(lambda: self.lkf_api.patch_multi_record(
+                answers=user_answers, form_id=self.empleados_form, record_id=[employee_id]))
+            if res.get('status_code') not in self.OK_CODES:
+                fail('la actualización del empleado existente', res)
+
+        # Configuración Accesos: con empleado y con TODOS los menús.
+        metadata = self.lkf_api.get_metadata(form_id=self.conf_accesos_form)
+        metadata.update({'answers': {
+            self.empleado_cat_obj_id: {
+                f['username']: username,
+                f['user_id']: [user_id],
+            },
+            self.CONF_ACCESOS_MENUS_FIELD: list(self.ACCESOS_MENUS),
+        }})
+        res = self.retry_catalog(lambda: self.lkf_api.post_forms_answers(metadata))
+        if res.get('status_code') not in self.OK_CODES:
+            fail('la creación de Configuración Accesos', res)
+
+    # ---- Alta masiva de usuarios nuevos (spec 02) ----
+    # Cada alta corre el workflow completo (crear usuario en LinkaForm, correo...)
+    # y tarda unos segundos: el front manda lotes chicos y un lote grande se
+    # pasaria del tiempo maximo del runner de scripts.
+    MAX_CREATE_ROWS = 10
+
+    @staticmethod
+    def _error_text(e):
+        """ Texto legible de una excepcion de LKFException (JSON con el mensaje). """
+        text = str(e)
+        try:
+            msg = simplejson.loads(text)['exception']['msg']
+            return ' '.join(msg) if isinstance(msg, list) else str(msg)
+        except Exception:
+            return text[:300]
+
+    def create_users(self, rows=None, create_employee=False):
+        """ Alta de varios usuarios nuevos: a cada fila le corre el mismo alta que
+        create_user (registro en 'crear' -> workflow -> usuario en LinkaForm y
+        correo de activacion). Una fila rechazada (campos invalidos, username que
+        ya existe, error de LinkaForm) no detiene a las demas.
+
+        `create_employee` aplica a todas las filas (crea su empleado al activarse). """
+        f = self.user_fields
+        if not isinstance(rows, list) or not rows:
+            self._fail('No hay filas para dar de alta.')
+        if len(rows) > self.MAX_CREATE_ROWS:
+            self._fail(f'Máximo {self.MAX_CREATE_ROWS} filas por llamada; manda el archivo por lotes.')
+
+        created, rejected = 0, []
+        for i, raw in enumerate(rows, start=1):
+            raw = raw or {}
+            text = lambda k: str(raw.get(k) if raw.get(k) is not None else '').strip()
+            username = text('username')
+            try:
+                # Se revisa antes de llamar para no esperar el workflow por un username
+                # que ya esta; si no esta en el form pero si en LinkaForm, lo rechaza el alta.
+                if username and self.cr.find_one(
+                        {'form_id': self.usuarios_form, 'deleted_at': {'$exists': False},
+                         f"answers.{f['username']}": username}, {'_id': 1}):
+                    self._fail(f'El username "{username}" ya existe.')
+                self.create_user(
+                    name=text('name'), username=username, email=text('email'),
+                    phone=text('phone'), role=text('role'),
+                    empleado=self.EMPLEADO_CREAR if create_employee else '',
+                    timezone=text('timezone'), language=text('language'))
+                created += 1
+            except Exception as e:
+                rejected.append({'row': i, 'username': username, 'msg': self._error_text(e)})
+        return {'created': created, 'rejected': rejected}
