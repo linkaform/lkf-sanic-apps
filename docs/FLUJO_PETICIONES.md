@@ -13,7 +13,7 @@ lleva su referencia `archivo:línea`.
 ```
                         ┌──────────────────────────────────────────┐
    Cliente HTTP  ─────► │  Sanic  app = Sanic("clave10_api")       │
-   (front / curl)       │  main.py:39   puerto 8080                │
+   (front / curl)       │  main.py:39   puerto 8010                │
                         └───────────────┬──────────────────────────┘
                                         │
                     ┌───────────────────▼───────────────────┐
@@ -251,7 +251,7 @@ app/main.py:128  @app.get("/health")     → {"status","database","version"}
 
 ```python
 app/main.py:144-151
-host="0.0.0.0", port=PORT|8080, access_log=True, debug=True,
+host="0.0.0.0", port=PORT|8010, access_log=True, debug=True,
 auto_reload=True, workers=int(os.getenv("WORKERS", 1))
 ```
 
@@ -627,7 +627,7 @@ middleware.auth.dispatch(endpoint, module=..., params=..., method=...)
    │  auth.py:108-125
    │  POST http://0.0.0.0:$PORT/<module>/<endpoint>
    ▼
-♻ ENTRA POR EL MISMO PUERTO 8080 — vuelve al paso 5.2
+♻ ENTRA POR EL MISMO PUERTO 8010 — vuelve al paso 5.2
 ```
 
 `app/middleware/auth.py:108-125`:
@@ -681,7 +681,7 @@ ARRANQUE (una vez)
  9. @before_server_start → db_pool, dependencies
 10. app.blueprint(...) por cada módulo
 11. setup_error_handlers(app); setup_auth(app)
-12. app.run(0.0.0.0:$PORT, default 8080)
+12. app.run(0.0.0.0:$PORT, default 8010)
 
 POR PETICIÓN (cada vez)
  a. Sanic parsea el Request
@@ -822,14 +822,14 @@ montan como volúmenes, así que editar `addons/` o `app/` recarga en caliente
 ../addons  → site-packages/lkf_addons/
 ../app     → /srv/lkf-sanic-app/app
 ../../linkaform_api/linkaform_api → site-packages/linkaform_api/
-puerto     8888 (host) → 8080 (contenedor)
+puerto     8010 (host) → 8010 (contenedor)
 ```
 
 **Variables de entorno relevantes:**
 
 | Variable | Default | Usada en |
 |---|---|---|
-| `PORT` | `8000` | `main.py:146` |
+| `PORT` | `8010` | `app/middleware/auth.py` (`SANIC_PORT`; lo usan `main.py` y `dispatch`) |
 | `WORKERS` | `1` | `main.py:151` |
 | `SANIC_API_KEY` | `""` | `main.py:47` → `auth.py:56` |
 | `ACCOUNT_ID` | `126` | `loader.py:17` → rutas de override |

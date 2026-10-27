@@ -5,6 +5,12 @@ import logging
 import os
 import warnings
 
+# Puerto de sanic: main.py escucha en él y dispatch() lo usa para que los scripts
+# *_sdk.py le hablen a su propio servidor. Un solo valor por defecto (8010, la
+# familia 10) para que los dos no se desalineen; con PORT definido manda PORT.
+# OJO: el 8080 es el backend de LinkaForm, no sanic.
+SANIC_PORT = int(os.getenv('PORT', 8010))
+
 # linkaform_api importa couchdb, que emite un UserWarning de pkg_resources al
 # importarse. Los scripts *_sdk.py corren como subprocess y el runner de
 # produccion trata cualquier escritura a stderr como fallo (success=False,
@@ -146,7 +152,7 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
     }
-    url = f"http://0.0.0.0:{os.getenv('PORT', 8080)}/{module}/{end_point}"
+    url = f"http://0.0.0.0:{SANIC_PORT}/{module}/{end_point}"
     print('url', url)
     if method == 'get':
         response = _connection_client.get(url, params=params, headers=headers)

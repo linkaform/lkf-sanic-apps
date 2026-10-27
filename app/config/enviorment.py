@@ -24,7 +24,7 @@ def _env_activo():
 
 ENV = _env_activo()
 
-# IP de la maquina de desarrollo, donde corren mongo (27017) y el backend (8000).
+# IP de la maquina de desarrollo, donde corren mongo (27017) y el backend (8080).
 # Es la misma que usa addons/config/local_settings.py; LKF_LOCAL_IP la cambia sin
 # editar codigo si tu maquina tiene otra.
 LOCAL_IP = os.environ.get('LKF_LOCAL_IP', '').strip() or '192.168.100.30'

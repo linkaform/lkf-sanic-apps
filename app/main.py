@@ -14,7 +14,7 @@ from dependencies import init_dependencies
 
 # Middleware
 from middleware.error_handlers import setup_error_handlers
-from middleware.auth import setup_auth
+from middleware.auth import SANIC_PORT, setup_auth
 
 # Addons Routes
 
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     
     app.run(
         host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000)),
+        port=SANIC_PORT,
         access_log=True,
         debug=_USE_LOCAL_SETTINGS, 
         auto_reload=_USE_LOCAL_SETTINGS, 
@@ -184,4 +184,4 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
 #     print('>>>>>>>>>>> LODING MAIN2 <<<<<<<<<<<<')
 #     app = create_app()
-#     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)), debug=True)
+#     app.run(host="0.0.0.0", port=SANIC_PORT, debug=True)
