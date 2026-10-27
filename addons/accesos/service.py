@@ -10867,7 +10867,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'ubicacion_entrada': f"$answers.{self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['ubicacion']}",
                 'status_gafete':f"$answers.{self.bitacora_fields['status_gafete']}"
                 }
-            ).sort('updated_at', -1).limit(1)
+            ).sort([
+                (f"answers.{self.bitacora_fields['fecha_entrada']}", -1),
+                ('_id', -1),
+            ]).limit(1)
         return self.format_cr(res, get_one=True)
         # return self.format_cr_result(self.cr.aggregate(query), get_one=True)
 
