@@ -147,10 +147,25 @@ def console_run(sys_module):
     print(f"python {argv[0].split('/')[-1]} '{argv[1]}' '{argv[2]}'")
 
 
+def _print_trace(response):
+    """Vuelca a stdout el traceback que sanic manda en un error: el runner lo
+    regresa a LinkaForm en `log` y el desarrollador ve el error completo."""
+    if response.status_code < 400:
+        return
+    try:
+        body = response.json()
+    except ValueError:
+        return
+    if isinstance(body, dict) and body.get('traceback'):
+        print(f"--- traceback sanic [request_id={body.get('request_id')}] "
+              f"HTTP {response.status_code} ---\n{body['traceback']}")
+
+
 def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
     headers = {
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
+        'X-LKF-Trace': '1',
     }
     url = f"http://0.0.0.0:{SANIC_PORT}/{module}/{end_point}"
     print('url', url)
@@ -164,4 +179,5 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         response = _connection_client.delete(url, params=params, headers=headers)
     else:
         response = _connection_client.get(url, params=params, headers=headers)
+    _print_trace(response)
     return response
