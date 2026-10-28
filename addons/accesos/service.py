@@ -11107,14 +11107,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         return self.format_lockers(self.lkf_api.search_catalog( self.LOCKERS_CAT_ID, mango_query))
 
     def get_list_bitacora(self, location=None, area=None, prioridades=[], dateFrom='', dateTo='', filterDate="", dynamic_filters={}, limit=10, offset=0):
-        #---limit/offset pueden llegar como texto en llamadas directas; se convierten
-        #   y se validan antes de llegar a $skip/$limit
-        try:
-            limit, offset = int(limit), int(offset)
-            paginacion_ok = limit > 0 and offset >= 0
-        except (TypeError, ValueError):
-            paginacion_ok = False
-        if not paginacion_ok:
+        #---limit/offset deben ser enteros (no texto ni bool) antes de llegar a $skip/$limit
+        if not (type(limit) is int and limit > 0 and type(offset) is int and offset >= 0):
             self.LKFException({
                 'title': 'Paginación inválida',
                 'msg': 'limit debe ser un entero mayor a 0 y offset un entero mayor o igual a 0.',
