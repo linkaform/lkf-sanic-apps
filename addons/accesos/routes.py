@@ -221,14 +221,6 @@ async def post_update_bitacora_entrada(request: Request):
     records = service.update_bitacora_entrada(payload, record_id=record_id, folio=folio)
     return json({"data": records}, status=200)
 
-@accesos_bp.post("/update_bitacora_entrada_many")
-async def post_update_bitacora_entrada_many(request: Request):
-    payload = _ocr_payload(request)
-    record_id = payload.get("record_id")
-    folio = payload.get("folio")
-    records = service.update_bitacora_entrada_many(payload, record_id=record_id, folio=folio)
-    return json({"data": records}, status=200)
-
 @accesos_bp.get("/vehiculo_tipo")
 async def get_vehiculo_tipo(request: Request):
     tipo = request.args.get("tipo")
