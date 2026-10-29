@@ -2256,6 +2256,7 @@ async def get_get_pass_transportista(request: Request):
     response = service.get_pass_transportista(
         record_id=request.args.get("record_id"),
         token=request.args.get("token"),
+        folio=request.args.get("folio"),
     )
     return json({"data": response}, status=200)
 

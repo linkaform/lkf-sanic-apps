@@ -16126,6 +16126,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'estatus':               f'$answers.{f["estatus"]}',
                 'fecha_hora_ingreso':    f'$answers.{f["fecha_hora_ingreso"]}',
                 'fecha_hora_descarga':   f'$answers.{f["fecha_hora_descarga"]}',
+                'fecha_hora_terminado':  f'$answers.{f["fecha_hora_terminado"]}',
                 'num_de_pase':           f'$answers.{f["num_de_pase"]}',
                 'empresa_transportista': f'$answers.{f["empresa_transportista"]}',
                 'tipo_de_operacion':     f'$answers.{f["tipo_de_operacion"]}',
@@ -16138,12 +16139,15 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'year_vehiculo':         f'$answers.{f["year_vehiculo"]}',
                 'color_vehiculo':        f'$answers.{f["color_vehiculo"]}',
                 'conductor':             f'$answers.{f["conductor"]}',
+                'telefono_conductor':    f'$answers.{f["telefono_conductor"]}',
                 'ayudante':              f'$answers.{f["ayudante"]}',
                 'num_licencia':          f'$answers.{f["num_licencia"]}',
                 'firma_conductor':       f'$answers.{f["firma_conductor"]}',
                 'anden_asignado':        f'$answers.{f["anden_asignado"]}',
                 'proveedor_cliente':     f'$answers.{f["proveedor_cliente"]}',
                 'orden_de_compra':       f'$answers.{f["orden_de_compra"]}',
+                'ubicacion':             f'$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf["ubicacion"]}',
+                'area':                  f'$answers.{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf["nombre_area"]}',
                 'documentos': {'$map': {
                     'input': {'$ifNull': [f'$answers.{f["grupo_fotos_y_documentos"]}', []]},
                     'as': 'doc',
@@ -16162,8 +16166,24 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                         'lote':              f'$$m.{f["lote_material"]}',
                         'cantidad':          f'$$m.{f["cantidad_material"]}',
                         'cantidad_fisica':   f'$$m.{f["cantidad_fisica_material"]}',
+                        'cantidad_buena':    f'$$m.{f["cantidad_buena_material"]}',
+                        'cantidad_danada':   f'$$m.{f["cantidad_danada_material"]}',
+                        'cantidad_faltante': f'$$m.{f["cantidad_faltante_material"]}',
                         'peso':              f'$$m.{f["peso_material"]}',
                         'volumen':           f'$$m.{f["volumen_material"]}',
+                        'evidencia':         {'$ifNull': [f'$$m.{f["evidencia_material"]}', []]},
+                        'comentario':        f'$$m.{f["comentario_material"]}',
+                    },
+                }},
+                'desglose_empaque': {'$map': {
+                    'input': {'$ifNull': [f'$answers.{f["grupo_desglose_empaque"]}', []]},
+                    'as': 'd',
+                    'in': {
+                        'no_referencia_material': f'$$d.{f["no_referencia_material_desglose"]}',
+                        'nivel':                  f'$$d.{f["nivel_desglose"]}',
+                        'tipo_unidad_empaque':    f'$$d.{f["tipo_unidad_empaque_desglose"]}',
+                        'cantidad':               f'$$d.{f["cantidad_desglose"]}',
+                        'cantidad_acumulada':     f'$$d.{f["cantidad_acumulada_desglose"]}',
                     },
                 }},
                 'remolques': {'$map': {
@@ -16236,6 +16256,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                                          search=None, skip=0, limit=None, pagination=False, facets=[]):
         f = self.bitacora_transportista_fields
         match_filters = self.transportistas_base_match(date_from, date_to)
+        # Buscador avanzado: los filtros del panel y las búsquedas llegan como facets.
         facet_conditions = self.build_facets_match(self.transportistas_search_fields(), facets)
         if facet_conditions:
             match_filters['$and'] = facet_conditions
@@ -16360,11 +16381,16 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         Args:
             dia: 0=lunes … 6=domingo. None = todos los días acumulados.
 
+        Returns:
+            list de dicts con 'hora' (str HH:00) y 'count' (int),
+            cubriendo el rango 06:00–21:00.
+
         Nota: cada pase cuenta en todas las horas que abarca su rango
         hora_inicial→hora_final (excluyendo la hora de salida).
         """
         f = self.pass_fields_transportista
 
+        from datetime import date
         hoy = date.today()
         cuatrimestre = (hoy.month - 1) // 4
         mes_inicio = cuatrimestre * 4 + 1
@@ -16395,6 +16421,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
 
         for record in self.format_cr(res):
             if dia is not None:
+                from datetime import datetime, timedelta
                 fecha_desde_str = record.get('fecha_desde', '')
                 fecha_hasta_str = record.get('fecha_hasta', '') or fecha_desde_str
                 try:
@@ -16443,18 +16470,23 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         dia_label = DIAS_SEMANA[dia] if dia is not None else 'todos'
         return {'dia': dia_label, 'horarios': resultado}
 
-    def get_pass_transportista(self, record_id=None, token=None):
+    def get_pass_transportista(self, record_id=None, token=None, folio=None):
         f = self.pass_fields_transportista
         match = {
             'form_id': self.PASE_ENTRADA_TRANSPORTISTA,
             'deleted_at': {'$exists': False},
         }
+        if record_id and not ObjectId.is_valid(record_id):
+            folio = folio or record_id
+            record_id = None
         if record_id:
             match['_id'] = ObjectId(record_id)
         elif token:
             match[f'answers.{f["token_transportista"]}'] = token
+        elif folio:
+            match['folio'] = folio
         else:
-            self.LKFException({'title': 'Se requiere record_id o token', 'status_code': 400})
+            self.LKFException({'title': 'Se requiere record_id, token o folio', 'status_code': 400})
         query = [
             {'$match': match},
             {'$project': {
@@ -16473,6 +16505,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'proveedor':          f'$answers.{f["proveedor"]}',
                 'proveedor_email':    f'$answers.{f["proveedor_email"]}',
                 'proveedor_telefono': f'$answers.{f["proveedor_telefono"]}',
+                'empresa_transportista': f'$answers.{f["empresa_transportista"]}',
 
                 # material
                 'proveedor_cliente_material': f'$answers.{f["proveedor_cliente_material"]}',
@@ -16496,6 +16529,9 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                         'peso':       f'$$item.{f["peso"]}',
                         'sello':      f'$$item.{f["sello"]}',
                         'contenedor': f'$$item.{f["contenedor"]}',
+                        'producto':      f'$$item.{f["producto"]}',
+                        'lote':          f'$$item.{f["lote"]}',
+                        'no_referencia': f'$$item.{f["no_referencia"]}',
                     },
                 }},
 
@@ -16526,6 +16562,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'conductor_no_licencia':      f'$answers.{f["conductor_no_licencia"]}',
                 'conductor_lugar_expedicion': f'$answers.{f["conductor_lugar_expedicion"]}',
                 'conductor_vigencia':         f'$answers.{f["conductor_vigencia"]}',
+                'conductor_rfc':              f'$answers.{f["conductor_rfc"]}',
                 'conductor_foto_licencia':    f'$answers.{f["conductor_foto_licencia"]}',
 
                 # ayudante
@@ -16544,6 +16581,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'vehiculo_placas':              f'$answers.{f["vehiculo_placas"]}',
                 'vehiculo_no_economico':        f'$answers.{f["vehiculo_no_economico"]}',
                 'vehiculo_niv':                 f'$answers.{f["vehiculo_niv"]}',
+                'vehiculo_color':               f'$answers.{f["vehiculo_color"]}',
                 'vehiculo_tarjeta_circulacion': f'$answers.{f["vehiculo_tarjeta_circulacion"]}',
 
                 # contenedores
@@ -16565,7 +16603,39 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'token':                f'$answers.{f["token_transportista"]}',
             }},
         ]
-        return self.format_cr(self.cr.aggregate(query), get_one=True)
+        result = self.format_cr(self.cr.aggregate(query), get_one=True)
+        if not result and (record_id or folio):
+            # El folio/_id buscado puede ser el de la bitácora (visible en el
+            # kanban) y no el del pase — se liga por num_de_pase al _id del pase.
+            bf = self.bitacora_transportista_fields
+            bitac_match = {
+                'form_id': self.BITACORA_TRANSPORTISTAS,
+                'deleted_at': {'$exists': False},
+            }
+            if record_id:
+                bitac_match['_id'] = ObjectId(record_id)
+            else:
+                bitac_match['folio'] = folio
+            bitac = self.cr.find_one(bitac_match, {f'answers.{bf["num_de_pase"]}': 1})
+            pase_record_id = bitac and bitac.get('answers', {}).get(bf['num_de_pase'])
+            if pase_record_id:
+                return self.get_pass_transportista(record_id=pase_record_id)
+        if result and result.get('_id'):
+            # Bitácora ligada a este pase (stub "programado" creado desde que
+            # se generó el pase, ver create_pass_transportista) — permite que
+            # el frontend redirija a la pantalla de detalle de acceso real en
+            # vez de quedarse en la vista pública del pase.
+            bf = self.bitacora_transportista_fields
+            bitac = self.cr.find_one(
+                {
+                    'form_id': self.BITACORA_TRANSPORTISTAS,
+                    'deleted_at': {'$exists': False},
+                    f'answers.{bf["num_de_pase"]}': result['_id'],
+                },
+                {'_id': 1},
+            )
+            result['bitacora_id'] = str(bitac['_id']) if bitac else None
+        return result
 
     def generate_submit_token_transportista(self, record_id):
         f = self.pass_fields_transportista
@@ -16706,6 +16776,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 f['conductor_no_licencia']:      conductor.get('licencia', ''),
                 f['conductor_lugar_expedicion']: conductor.get('lugar_expedicion', ''),
                 f['conductor_vigencia']:         conductor.get('vigencia', ''),
+                f['conductor_rfc']:              conductor.get('rfc', ''),
                 f['conductor_foto_licencia']:    [{'file_name': foto.get('file_name', ''), 'file_url': foto['file_url']}] if foto.get('file_url') else [],
             })
 
@@ -16730,6 +16801,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 f['vehiculo_placas']:              vehiculo.get('placas', ''),
                 f['vehiculo_no_economico']:        vehiculo.get('economico', ''),
                 f['vehiculo_niv']:                 vehiculo.get('niv', ''),
+                f['vehiculo_color']:               vehiculo.get('color', ''),
                 f['vehiculo_tarjeta_circulacion']: [{'file_name': foto.get('file_name', ''), 'file_url': foto['file_url']}] if foto.get('file_url') else [],
             })
 
@@ -16759,6 +16831,15 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         f = self.bitacora_transportista_fields
         answers = {}
 
+        if data.get('estatus'):
+            answers[f['estatus']] = data['estatus']
+            tz_name = self.user.get('timezone', 'America/Mexico_City')
+            fecha_hora_actual = datetime.now(pytz.timezone(tz_name)).strftime('%Y-%m-%d %H:%M:%S')
+            if data['estatus'] == 'carga_/_descarga':
+                answers[f['fecha_hora_descarga']] = fecha_hora_actual
+            elif data['estatus'] == 'terminado':
+                answers[f['fecha_hora_terminado']] = fecha_hora_actual
+
         vehiculo = data.get('vehiculo') or {}
         if vehiculo:
             answers.update({
@@ -16769,6 +16850,9 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 f['year_vehiculo']:      vehiculo.get('modelo', ''),
                 f['color_vehiculo']:     vehiculo.get('color', ''),
             })
+
+        if data.get('anden'):
+            answers[f['anden_asignado']] = data['anden']
 
         embarque = data.get('embarque') or {}
         if embarque:
@@ -16786,7 +16870,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             answers[f['grupo_remolques']] = {
                 (item['index'] if item.get('index') is not None else -(i + 1)): {
                     f['tipo_remolque']:            item.get('tipo', ''),
-                    f['num_caja_contenedor']:      item.get('no_caja', ''),
+                    # Los remolques solo traen no_caja; los contenedores traen
+                    # además no_contenedor (su propio ID/ISO), que se prefiere
+                    # cuando está presente — si no, ambos comparten esta columna.
+                    f['num_caja_contenedor']:      item.get('no_contenedor') or item.get('no_caja', ''),
                     f['num_sello']:                item.get('no_sello', ''),
                     f['placas_de_caja']:           item.get('placas', ''),
                     f['color_remolque_contenedor']: item.get('color', ''),
@@ -16804,24 +16891,57 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     f['lote_material']:            m.get('lote', ''),
                     f['cantidad_material']:        m.get('cant_esperada', ''),
                     f['cantidad_fisica_material']: m.get('cant_fisica', ''),
+                    f['cantidad_buena_material']:   m.get('cant_buena', ''),
+                    f['cantidad_danada_material']:  m.get('cant_danada', ''),
+                    f['cantidad_faltante_material']: m.get('cant_faltante', ''),
                     f['peso_material']:            m.get('peso', ''),
                     f['volumen_material']:         m.get('volumen', ''),
                     f['no_referencia_material']:   m.get('ref', ''),
                     f['lugar_material']:           'contenedor' if str(m.get('ref', '')).startswith('contenedor') else 'remolque' if str(m.get('ref', '')).startswith('remolque') else 'vehiculo',
+                    f['evidencia_material']:       m.get('evidencia', []),
+                    f['comentario_material']:      m.get('comentario', ''),
                 }
                 for i, m in enumerate(materiales)
             }
 
-        documento = data.get('documentos_adicionales') or {}
-        if documento:
-            idx = documento.get('index')
-            key = idx if idx is not None else -1
-            answers[f['grupo_fotos_y_documentos']] = {
-                key: {
-                    f['tipo_de_documento']: documento.get('tipo', '').lower().replace(' ', '_'),
-                    f['documento']: [{'file_name': documento['file_name'], 'file_url': documento['file_url']}],
+        # El front siempre reenvía el set completo del desglose (no ediciones
+        # incrementales a filas existentes), así que se reemplaza el grupo
+        # entero en vez de usar patch_multi_record con índices negativos
+        # (eso solo inserta filas nuevas y duplicaría el desglose en cada guardado).
+        if 'desglose_empaque' in data:
+            nuevo_grupo_desglose = [
+                {
+                    f['no_referencia_material_desglose']: d.get('no_referencia_material', ''),
+                    f['nivel_desglose']:                  d.get('nivel', ''),
+                    f['tipo_unidad_empaque_desglose']:    d.get('tipo_unidad_empaque', ''),
+                    f['cantidad_desglose']:               d.get('cantidad', ''),
+                    f['cantidad_acumulada_desglose']:     d.get('cantidad_acumulada', ''),
                 }
-            }
+                for d in (data.get('desglose_empaque') or [])
+            ]
+            self.cr.update_one(
+                {'_id': ObjectId(record_id), 'form_id': self.BITACORA_TRANSPORTISTAS, 'deleted_at': {'$exists': False}},
+                {'$set': {f'answers.{f["grupo_desglose_empaque"]}': nuevo_grupo_desglose}}
+            )
+
+        documentos_raw = data.get('documentos_adicionales') or []
+        if isinstance(documentos_raw, dict):
+            documentos_raw = [documentos_raw]
+        if documentos_raw:
+            new_counter = -1
+            docs_patch = {}
+            for doc in documentos_raw:
+                idx = doc.get('index')
+                if idx is not None:
+                    key = idx
+                else:
+                    key = new_counter
+                    new_counter -= 1
+                docs_patch[key] = {
+                    f['tipo_de_documento']: doc.get('tipo', '').lower().replace(' ', '_'),
+                    f['documento']: [{'file_name': doc['file_name'], 'file_url': doc['file_url']}],
+                }
+            answers[f['grupo_fotos_y_documentos']] = docs_patch
 
         if data.get('delete_remolques') or data.get('delete_contenedores') or data.get('delete_materiales') or data.get('delete_documentos'):
             self.delete_bitac_transportista_items(record_id, data)
@@ -16880,6 +17000,9 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     f['lote_material']:            m.get('lote', ''),
                     f['cantidad_material']:        m.get('cantidad', ''),
                     f['cantidad_fisica_material']: m.get('cantidad_fisica', ''),
+                    f['cantidad_buena_material']:   m.get('cantidad_buena', ''),
+                    f['cantidad_danada_material']:  m.get('cantidad_danada', ''),
+                    f['cantidad_faltante_material']: m.get('cantidad_faltante', ''),
                     f['peso_material']:            m.get('peso', ''),
                     f['volumen_material']:         m.get('volumen', ''),
                 }
@@ -16913,26 +17036,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
     def save_inspecciones(self, record_id, data):
         f_bit = self.bitacora_transportista_fields
 
-        TRACTOR_CAMPOS = [
-            'defensa',
-            'motor_caja_de_la_bateria_caja_y_filtros_de_aire',
-            'llantas_y_rines_tractor_y_remolque',
-            'piso_tractor',
-            'tanque_de_combustible',
-            'cabina_dormitorio_puertas_y_compartimientos_de_herramientas_seccion_de_pasajero_y_techo',
-            'tanque_de_aire',
-            'ejes_de_transmision',
-            'quinta_rueda',
-            'chasis',
-            'puertas_externa',
-            'piso_externo_trailer_contenedor_caja',
-            'paredes_externa',
-            'pared_frontal_externa',
-            'techo_externo',
-            'unidad_de_refrigeracion',
-            'escape_mofles',
-        ]
-
+        # Rama "remolque" muerta desde 2026-07-31 (sin UI que la dispare) — se deja
+        # intacta, sigue dependiendo de esta lista fija por no estar en uso real.
         REMOLQUE_CAMPOS = [
             'tanque_de_aire',
             'ejes_de_transmision',
@@ -16947,14 +17052,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             'escape_mofles',
         ]
 
-        CONTENEDOR_PUNTO_MAP = {
-            'Exterior / parte inferior del contenedor (bastidor o chasis)': 'exterior_parte_inferior_del_contenedor_bastidor_o_chasis',
-            'Puertas interiores / exteriores':  'puertas_interiores_exteriores',
-            'Pared interior lado derecho':       'pared_interior_lado_derecho',
-            'Pared interior lado izquierdo':     'pared_interior_lado_izquierdo',
-            'Pared interior frontal':            'pared_interior_frontal',
-            'Techo / cubierta superior':         'techo_cubierta_superior',
-            'Piso (interior)':                   'piso_interior',
+        # field_id "universales" de las 3 medidas de contenedor — mismos que asume
+        # el frontend (CONTENEDOR_MEDIDA_FIELD_IDS en useInspeccionPuntosTransportista.ts),
+        # estables sin importar qué forma (default o custom) esté resuelta.
+        CONTENEDOR_MEDIDA_FIELD_IDS_UNIVERSAL = {
+            'altura':    'd412fb9f428dfc231c9bc3f0',
+            'ancho':     '6477c73222d9b7e8dd1de3b9',
+            'longitud':  'd7c19cbd2cfe6b19f848d697',
         }
 
         inspecciones_creadas = []
@@ -16963,27 +17067,33 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             tipo   = inspeccion.get('tipo', '')
             unidad = inspeccion.get('unidad')
             tipo_label = f'{tipo}_{unidad}' if unidad else tipo
+            tipo_base = tipo.replace('salida_', '')
+            es_default = False
 
-            if tipo == 'tractor':
+            if tipo_base == 'tractor':
+                # Guardado siempre por field_id — funciona igual para la forma
+                # default de cuenta 10 o cualquier forma custom resuelta por
+                # ubicación, porque el frontend ya detecta cada punto y su
+                # comentario/evidencia propios por adyacencia (ver extractPuntos
+                # en useInspeccionPuntosTransportista.ts), no por posición fija.
                 puntos = inspeccion.get('puntos', [])
                 if not any(p.get('resultado') for p in puntos):
                     continue
-                form_id = self.INSPECCION_ENTRADA_CTPAT_TRACTOR
-                f_ins   = self.inspeccion_entrada_tractor_fields
+                form_id = inspeccion.get('form_id') or self.INSPECCION_ENTRADA_CTPAT_TRACTOR
+                # El frontend manda form_id como string; self.INSPECCION_ENTRADA_CTPAT_TRACTOR
+                # es int — comparar como string para no fallar por tipo.
+                es_default = str(form_id) == str(self.INSPECCION_ENTRADA_CTPAT_TRACTOR)
                 answers = {}
                 for punto in puntos:
-                    num = punto.get('numero', 0) - 1
-                    if 0 <= num < len(TRACTOR_CAMPOS):
-                        campo = TRACTOR_CAMPOS[num]
-                        resultado = (punto.get('resultado') or '').lower()
-                        if resultado:
-                            answers[f_ins[campo]] = resultado
-                        if punto.get('comentario'):
-                            answers[f_ins[f'{campo}_comentarios']] = punto['comentario']
-                        if punto.get('fotos'):
-                            answers[f_ins[f'{campo}_evidencia']] = punto['fotos']
+                    resultado = (punto.get('resultado') or '').lower()
+                    if punto.get('field_id') and resultado:
+                        answers[punto['field_id']] = resultado
+                    if punto.get('comentario_field_id') and punto.get('comentario'):
+                        answers[punto['comentario_field_id']] = punto['comentario']
+                    if punto.get('evidencia_field_id') and punto.get('fotos'):
+                        answers[punto['evidencia_field_id']] = punto['fotos']
 
-            elif tipo == 'remolque':
+            elif tipo_base == 'remolque':
                 puntos = inspeccion.get('puntos', [])
                 if not any(p.get('resultado') for p in puntos):
                     continue
@@ -17001,7 +17111,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     num = punto.get('numero', 0) - 1
                     if 0 <= num < len(REMOLQUE_CAMPOS):
                         campo = REMOLQUE_CAMPOS[num]
-                        resultado = (punto.get('resultado') or '').lower().replace('í', 'i')
+                        resultado = (punto.get('resultado') or '').lower()
                         if resultado:
                             answers[f_ins[campo]] = resultado
                         if punto.get('comentario'):
@@ -17009,33 +17119,78 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                         if punto.get('fotos'):
                             answers[f_ins[f'{campo}_evidencia']] = punto['fotos']
 
-            elif tipo == 'contenedor':
-                filas   = inspeccion.get('filas', [])
-                medidas = inspeccion.get('medidas', {}) or {}
-                has_data = (
-                    any(fila.get('valores') for fila in filas)
-                    or any(medidas.get(k) for k in ['longitud', 'ancho', 'altura'])
-                )
-                if not has_data:
-                    continue
-                form_id = self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR
-                f_ins   = self.inspeccion_entrada_ctpat_contenedor_fields
-                answers = {}
-                if medidas.get('longitud'):
-                    answers[f_ins['longitud_interior']] = medidas['longitud']
-                if medidas.get('ancho'):
-                    answers[f_ins['ancho_interior']] = medidas['ancho']
-                if medidas.get('altura'):
-                    answers[f_ins['altura_interior']] = medidas['altura']
-                for fila in filas:
-                    campo = CONTENEDOR_PUNTO_MAP.get(fila.get('punto', ''))
-                    if not campo:
+            elif tipo_base == 'contenedor':
+                puntos = inspeccion.get('puntos') or []
+                if puntos:
+                    # Forma custom tipo Patrón A (ej. BASC): mismo tratamiento
+                    # que tractor — radio + comentario + evidencia propios por
+                    # punto, detectados por adyacencia en el frontend.
+                    if not any(p.get('resultado') for p in puntos):
                         continue
-                    valores = fila.get('valores') or []
-                    if valores:
-                        answers[f_ins[campo]] = [v.lower() for v in valores]
+                    form_id = inspeccion.get('form_id') or self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR
+                    es_default = str(form_id) == str(self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR)
+                    answers = {}
+                    for punto in puntos:
+                        resultado = (punto.get('resultado') or '').lower()
+                        if punto.get('field_id') and resultado:
+                            answers[punto['field_id']] = resultado
+                        if punto.get('comentario_field_id') and punto.get('comentario'):
+                            answers[punto['comentario_field_id']] = punto['comentario']
+                        if punto.get('evidencia_field_id') and punto.get('fotos'):
+                            answers[punto['evidencia_field_id']] = punto['fotos']
+                else:
+                    # Forma CTPAT default (Patrón B): filas + medidas
+                    # universales, sin la lista fija de labels de antes.
+                    filas   = inspeccion.get('filas', [])
+                    medidas = inspeccion.get('medidas', {}) or {}
+                    has_data = (
+                        any(fila.get('valores') for fila in filas)
+                        or any(medidas.get(k) for k in ['longitud', 'ancho', 'altura'])
+                    )
+                    if not has_data:
+                        continue
+                    form_id = inspeccion.get('form_id') or self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR
+                    es_default = str(form_id) == str(self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR)
+                    answers = {}
+                    for medida_key, field_id in CONTENEDOR_MEDIDA_FIELD_IDS_UNIVERSAL.items():
+                        if medidas.get(medida_key):
+                            answers[field_id] = medidas[medida_key]
+                    for fila in filas:
+                        field_id = fila.get('field_id')
+                        valores  = fila.get('valores') or []
+                        if field_id and valores:
+                            answers[field_id] = [v.lower() for v in valores]
             else:
                 continue
+
+            # Comentario/evidencia generales de toda la inspección — remolque
+            # (rama muerta) conserva su propio manejo arriba y no entra aquí.
+            if tipo_base in ('tractor', 'contenedor'):
+                comentario_general_field_id = inspeccion.get('comentario_general_field_id')
+                if comentario_general_field_id and inspeccion.get('comentario_general'):
+                    answers[comentario_general_field_id] = inspeccion['comentario_general']
+
+                evidencias = inspeccion.get('evidencias') or []
+                if evidencias:
+                    if es_default:
+                        f_ins = (
+                            self.inspeccion_entrada_tractor_fields if tipo_base == 'tractor'
+                            else self.inspeccion_entrada_ctpat_contenedor_fields
+                        )
+                        answers[f_ins['fotos_y_documentos']] = [
+                            {
+                                f_ins['tipo_de_documento']: ev.get('tipo', ''),
+                                f_ins['documento']:         [{'file_name': ev['file_name'], 'file_url': ev['file_url']}],
+                            }
+                            for ev in evidencias
+                        ]
+                    else:
+                        evidencia_general_field_id = inspeccion.get('evidencia_general_field_id')
+                        if evidencia_general_field_id:
+                            answers[evidencia_general_field_id] = [
+                                {'file_name': ev['file_name'], 'file_url': ev['file_url']}
+                                for ev in evidencias
+                            ]
 
             metadata = self.lkf_api.get_metadata(form_id=form_id)
             inspeccion_id = self.object_id()
@@ -17058,8 +17213,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             inspecciones_creadas.append((tipo_label, inspeccion_id))
 
         if inspecciones_creadas:
+            es_salida = any(t.startswith('salida_') for t, _ in inspecciones_creadas)
+            nuevo_estatus = self._resolver_estatus_tras_inspeccion(es_salida)
             answers_bitacora = {
-                f_bit['estatus']: 'inspeccion_entrada',
+                f_bit['estatus']: nuevo_estatus,
                 f_bit['grupo_inspecciones']: {
                     -(i + 1): {
                         f_bit['tipo_inspeccion']: tipo_label,
@@ -17068,6 +17225,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     for i, (tipo_label, inspeccion_id) in enumerate(inspecciones_creadas)
                 }
             }
+            if nuevo_estatus in ('carga_/_descarga', 'terminado'):
+                tz_name = self.user.get('timezone', 'America/Mexico_City')
+                fecha_hora_actual = datetime.now(pytz.timezone(tz_name)).strftime('%Y-%m-%d %H:%M:%S')
+                if nuevo_estatus == 'carga_/_descarga':
+                    answers_bitacora[f_bit['fecha_hora_descarga']] = fecha_hora_actual
+                elif nuevo_estatus == 'terminado':
+                    answers_bitacora[f_bit['fecha_hora_terminado']] = fecha_hora_actual
             res_bit = self.lkf_api.patch_multi_record(
                 answers=answers_bitacora,
                 form_id=self.BITACORA_TRANSPORTISTAS,
@@ -17100,7 +17264,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         inspecciones_creadas = []
 
         for inspeccion in data:
-            if inspeccion.get('tipo') != 'sello':
+            tipo_bitacora = inspeccion.get('tipo')
+            if tipo_bitacora not in ('sello', 'salida_sello'):
                 continue
 
             answers = {}
@@ -17144,7 +17309,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             if res.get('status_code') not in [200, 201, 202]:
                 self.LKFException({'title': f'Error al crear inspección de sello unidad {inspeccion.get("unidad")}', 'msg': res})
 
-            tipo_label = f'sello_{inspeccion.get("unidad", "")}'
+            tipo_label = f'{tipo_bitacora}_{inspeccion.get("unidad", "")}'
             inspecciones_creadas.append((tipo_label, inspeccion_id))
 
         if inspecciones_creadas:
@@ -17166,6 +17331,71 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 self.LKFException({'title': 'Error al actualizar inspecciones de sello en bitácora', 'msg': res_bit})
 
         return {'status_code': 200, 'msg': 'OK', 'inspecciones_creadas': [t for t, _ in inspecciones_creadas]}
+
+    def get_config_flujo_transportistas(self):
+        """Etapas activas y columnas visibles del kanban del flujo de transportistas
+        para esta cuenta. Registro singleton (un solo record) en la forma
+        "Configuración de Flujo de Transportistas". Si no existe el registro
+        todavía, regresa los defaults fail-open (mismo comportamiento que antes
+        de estos toggles)."""
+        f = self.conf_flujo_transportistas_fields
+        query = [
+            {'$match': {
+                'form_id': self.CONFIGURACION_FLUJO_TRANSPORTISTAS,
+                'deleted_at': {'$exists': False},
+            }},
+            {'$sort': {'updated_at': -1}},
+            {'$limit': 1},
+            {'$project': {
+                '_id': 0,
+                'etapas_activas': f'$answers.{f["etapas_activas"]}',
+                'kanban_view': f'$answers.{f["kanban_view"]}',
+            }},
+        ]
+        data = self.format_cr(self.cr.aggregate(query), get_one=True)
+        # Valores tal cual quedaron las opciones del checkbox `etapas_activas` en Linkaform.
+        # 'inspeccion_materiales' es un toggle aparte (no una etapa del kanban): si carga/
+        # descarga es solo informativa, esto controla si además exige inspeccionar cantidad
+        # física de materiales antes de dejar avanzar a inspección de salida.
+        etapas_activas = (data or {}).get('etapas_activas') or [
+            'inspeccion_de_entrada', 'carga_/_descarga', 'inspeccion_salida', 'inspeccion_materiales',
+        ]
+        # Kanban View: qué columnas del kanban se muestran para esta cuenta — es
+        # puramente visual, no afecta el flujo/estatus real de la bitácora (a
+        # diferencia de `etapas_activas`). Valores tal cual las opciones del
+        # checkbox `kanban_view` en Linkaform. Fail-open: todas visibles si la
+        # cuenta todavía no configuró este campo.
+        kanban_view = (data or {}).get('kanban_view') or [
+            'programados', 'arribo', 'inspeccion_de_entrada', 'carga_/_descarga', 'inspeccion_salida', 'terminados',
+        ]
+        return {'etapas_activas': etapas_activas, 'kanban_view': kanban_view}
+
+    def _resolver_estatus_tras_inspeccion(self, es_salida):
+        """A qué estatus debe pasar la bitácora tras guardar una inspección de
+        entrada o de salida — respeta qué etapas están activas para la cuenta
+        (mismo criterio que ORDEN_ESTATUS en el frontend, page.tsx), en vez de
+        asumir siempre 'inspeccion_entrada'/'inspeccion_salida' como antes.
+        Si esa etapa conceptual no está activa, salta al siguiente estatus activo
+        después de donde normalmente caería."""
+        etapas_activas = self.get_config_flujo_transportistas()['etapas_activas']
+        orden = ['arribo']
+        if 'inspeccion_de_entrada' in etapas_activas:
+            orden.append('inspeccion_entrada')
+        if 'carga_/_descarga' in etapas_activas:
+            orden.append('carga_/_descarga')
+        if 'inspeccion_salida' in etapas_activas:
+            orden.append('inspeccion_salida')
+        orden.append('terminado')
+
+        objetivo = 'inspeccion_salida' if es_salida else 'inspeccion_entrada'
+        if objetivo in orden:
+            return objetivo
+
+        ancla = 'carga_/_descarga' if es_salida else 'arribo'
+        if ancla not in orden:
+            ancla = 'arribo'
+        idx = orden.index(ancla)
+        return orden[idx + 1] if idx + 1 < len(orden) else orden[-1]
 
     def create_custom_qr(self, url_for_qr, name_qr, form_id, img_field_id):
         lkf_qr = generar_qr.LKF_QR(self.settings)
@@ -17219,6 +17449,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             f['proveedor']:                      recibe.get('nombre', ''),
             f['proveedor_email']:                recibe.get('email', ''),
             f['proveedor_telefono']:             recibe.get('telefono', ''),
+            f['empresa_transportista']:          data.get('empresa_transportista', ''),
             f['proveedor_cliente_material']:     mat.get('proveedor_cliente', ''),
             f['orden_de_compra']:                mat.get('orden_compra', ''),
             f['grupo_documentos_para_ocr']:       [
@@ -17237,6 +17468,9 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     f['peso']:       item.get('peso', ''),
                     f['sello']:      item.get('sello', ''),
                     f['contenedor']: item.get('contenedor', ''),
+                    f['producto']:      item.get('producto', ''),
+                    f['lote']:          item.get('lote', ''),
+                    f['no_referencia']: item.get('no_referencia', ''),
                 }
                 for item in mat.get('items', [])
             ],
@@ -17279,6 +17513,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 f['responsable']:                   transporte.get('responsable', ''),
                 f['responsable_email']:             transporte.get('email', ''),
                 f['responsable_telefono']:          transporte.get('telefono', ''),
+                # f['metodo_de_embarque']:            recoleccion.get('metodo_embarque', '').lower(),
+                # f['incoterm']:                      recoleccion.get('incoterm', '').lower(),
             })
 
         metadata.update({'answers': answers})
@@ -17286,6 +17522,47 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         if res.get('status_code') not in [200, 201, 202]:
             self.LKFException({'title': 'Error al crear pase transportista', 'msg': res})
         res['qr_pase_transportista'] = qr_pase_transportista
+
+        # Reserva visible en el kanban de bitácora (columna "Programados") desde
+        # que se crea el pase — se liga por num_de_pase y se sustituye por el
+        # registro real de arribo en create_visit_transportista.
+        try:
+            bf = self.bitacora_transportista_fields
+            fecha_programada = (lugar.get('fecha_pase_transportista_desde') or '').strip()
+            if fecha_programada and ' ' not in fecha_programada:
+                fecha_programada = f'{fecha_programada} 00:00:00'
+            # La bitácora solo acepta "entrega"/"recolección" (binario); el pase
+            # maneja 4 valores (entrega_de_materia_prima, recoleccion_de_..., etc.)
+            tipo_operacion_pase = data.get('tipo_de_operacion', '') or ''
+            tipo_operacion_bitacora = 'recolección' if tipo_operacion_pase.startswith('recoleccion') else 'entrega'
+            b_metadata = self.lkf_api.get_metadata(form_id=self.BITACORA_TRANSPORTISTAS)
+            b_metadata.update({
+                'properties': {
+                    'device_properties': {
+                        'System': 'Script',
+                        'Module': 'Accesos',
+                        'Process': 'Pase Transportista',
+                        'Action': 'create_pass_transportista',
+                        'File': 'accesos/service.py',
+                    }
+                },
+                'answers': {
+                    bf['estatus']:               'programado',
+                    bf['fecha_hora_ingreso']:    fecha_programada,
+                    bf['num_de_pase']:           pass_id,
+                    bf['tipo_de_operacion']:     tipo_operacion_bitacora,
+                    bf['empresa_transportista']: data.get('empresa_transportista', ''),
+                    bf['proveedor_cliente']:     mat.get('proveedor_cliente', ''),
+                    bf['orden_de_compra']:       mat.get('orden_compra', ''),
+                    bf['anden_asignado']:        lugar.get('anden', ''),
+                },
+            })
+            res_stub = self.lkf_api.post_forms_answers(b_metadata)
+            if res_stub.get('status_code') not in [200, 201, 202]:
+                print(f'No se pudo crear el registro programado de bitácora para el pase {pass_id}: {res_stub}')
+        except Exception as e:
+            print(f'No se pudo crear el registro programado de bitácora para el pase {pass_id}: {e}')
+
         return res
 
     def create_visit_transportista(self, data):
@@ -17315,17 +17592,19 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         answers = {
             f['estatus']:               'arribo',
             f['fecha_hora_ingreso']:    fecha_ingreso,
-            f['tipo_de_operacion']:     data.get('tipo_operacion', '').lower().replace(' ', '_'),
+            f['num_de_pase']:           data.get('num_de_pase', ''),
+            f['tipo_de_operacion']:     (data.get('tipo_operacion') or '').lower().replace(' ', '_'),
             f['empresa_transportista']: vehiculo.get('transportista', ''),
             f['procedencia']:           vehiculo.get('procedencia', ''),
             f['tipo_de_vehiculo']:      vehiculo.get('tipo_vehiculo', ''),
             f['placas_de_vehiculo']:                    vehiculo.get('placa', ''),
             f['placas_de_vehiculo_tarjeta_circulacion']: vehiculo.get('placa_tarjeta_circulacion', ''),
-            f['num_eco_num_rotulo']:    vehiculo.get('no_economico', ''),
+            f['num_eco_num_rotulo']:                    vehiculo.get('no_economico', ''),
             f['marca_vehiculo']:        vehiculo.get('marca', ''),
             f['year_vehiculo']:         vehiculo.get('modelo', ''),
             f['color_vehiculo']:        vehiculo.get('color', ''),
             f['conductor']:             conductor.get('nombre', ''),
+            f['telefono_conductor']:    conductor.get('celular') or '',
             f['ayudante']:              conductor.get('acompanante', ''),
             f['num_licencia']:          conductor.get('no_licencia', ''),
             f['vigencia_licencia']:     conductor.get('vigencia_licencia', ''),
@@ -17335,6 +17614,18 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             f['orden_de_compra']:       embarque.get('no_orden_compra', ''),
         }
 
+        # Ubicación + área del turno activo desde donde se registró la visita — se
+        # usa después para resolver qué forma de inspección aplica en ese sitio.
+        # Campo "Áreas de las Ubicaciones" agregado por Paco a esta forma (mismo
+        # catálogo que usan paquetería/incidencias/casetas).
+        ubicacion = data.get('ubicacion')
+        area = data.get('area')
+        if ubicacion or area:
+            answers[self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID] = {
+                self.mf['ubicacion']: ubicacion or '',
+                self.mf['nombre_area']: area or '',
+            }
+
         remolques    = data.get('remolques', []) or []
         contenedores = data.get('contenedores', []) or []
         grupo = remolques + contenedores
@@ -17342,7 +17633,10 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             answers[f['grupo_remolques']] = [
                 {
                     f['tipo_remolque']:             item.get('tipo', ''),
-                    f['num_caja_contenedor']:        item.get('no_caja', ''),
+                    # Los remolques solo traen no_caja; los contenedores traen
+                    # además no_contenedor (su propio ID/ISO), que se prefiere
+                    # cuando está presente — si no, ambos comparten esta columna.
+                    f['num_caja_contenedor']:        item.get('no_contenedor') or item.get('no_caja', ''),
                     f['num_sello']:                  item.get('no_sello', ''),
                     f['placas_de_caja']:             item.get('placas', ''),
                     f['color_remolque_contenedor']:  item.get('color', ''),
@@ -17356,7 +17650,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         if docs:
             answers[f['grupo_fotos_y_documentos']] = [
                 {
-                    f['tipo_de_documento']: doc.get('tipo', ''),
+                    f['tipo_de_documento']: doc.get('tipo', '').lower().replace(' ', '_'),
                     f['documento']:         [{'file_name': doc.get('file_name', ''), 'file_url': doc['file_url']}] if doc.get('file_url') else [],
                 }
                 for doc in docs
@@ -17378,10 +17672,46 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 for m in materiales
             ]
 
-        metadata.update({'answers': answers})
-        res = self.lkf_api.post_forms_answers(metadata)
-        if res.get('status_code') not in [200, 201, 202]:
-            self.LKFException({'title': 'Error al crear visita de transportista', 'msg': res})
+        num_de_pase = data.get('num_de_pase')
+        programado = None
+        if num_de_pase:
+            programado = self.cr.find_one({
+                'form_id': self.BITACORA_TRANSPORTISTAS,
+                'deleted_at': {'$exists': False},
+                f'answers.{f["num_de_pase"]}': num_de_pase,
+                f'answers.{f["estatus"]}': 'programado',
+            })
+
+        if programado:
+            # El pase ya reservó su lugar en el kanban (columna "Programados") al
+            # crearse — actualizamos ese mismo registro a "arribo" en vez de crear
+            # uno duplicado. patch_forms_answers reescribe el documento de answers
+            # completo, así que hay que mezclar con lo que ya existía (ej. andén)
+            # o se pierde cualquier campo que este payload no vuelva a mandar.
+            merged_answers = {**programado.get('answers', {}), **answers}
+            metadata.update({'answers': merged_answers, '_id': programado['_id']})
+            res = self.net.patch_forms_answers(metadata)
+            if res.get('status_code') not in [200, 201, 202]:
+                self.LKFException({'title': 'Error al actualizar visita de transportista', 'msg': res})
+            res['id'] = str(programado['_id'])
+            res['folio'] = programado.get('folio')
+            res['created_at'] = self.get_date_str(programado.get('created_at'))
+        else:
+            metadata.update({'answers': answers})
+            res = self.lkf_api.post_forms_answers(metadata)
+            if res.get('status_code') not in [200, 201, 202]:
+                self.LKFException({'title': 'Error al crear visita de transportista', 'msg': res})
+
+        if num_de_pase:
+            try:
+                self.lkf_api.patch_multi_record(
+                    answers={self.pass_fields_transportista['estado_transportista']: 'completado'},
+                    form_id=self.PASE_ENTRADA_TRANSPORTISTA,
+                    record_id=[num_de_pase],
+                )
+            except Exception as e:
+                print(f'No se pudo marcar el pase {num_de_pase} como completado: {e}')
+
         return res
 
     # Portado de modules/accesos/accesos_utils.py (2610-1382): misma versión
