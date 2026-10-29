@@ -60,6 +60,7 @@ class AccesosModel(Base):
         self.BITACORA_TRANSPORTISTAS = self.lkm.form_id('bitacora_de_transportistas','id')
         # El slug real en Linkaform es "configuracin..." (sin "ó"); no corregirlo.
         self.CONFIGURACION_FLUJO_TRANSPORTISTAS = self.lkm.form_id('configuracin_de_flujo_de_transportistas','id')
+        self.ENVIO_DE_NOTIFICACIONES_FORM = self.lkm.form_id('envio_de_notificaciones', 'id')
         self.INSPECCION_ENTRADA_CTPAT_TRACTOR = self.lkm.form_id('inspeccion_de_entrada_ctpat_tractor_cabezal','id')
         self.INSPECCION_ENTRADA_CTPAT_REMOLQUE = self.lkm.form_id('inspeccion_de_entrada_ctpat_remolque','id')
         self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR = self.lkm.form_id('inspeccion_de_entrada_ctpat_contenedor','id')
@@ -1615,6 +1616,23 @@ class AccesosModel(Base):
             'tipo_de_inspeccion': '6a750a1afd4ed68d7c57c24d',
             'norma': '6a7e2c5c23fb366f1918dea8',
             'subtipo': '6a7e2c5c23fb366f1918dea9',
+        }
+
+        self.envio_correo_fields.update({
+            'phone_to': '699f302213e8f8740c465bfc',
+            'tipo_de_notificacion': '699dfe3b82be0dbe0319d38c',
+            # Radio general/transportista: la regla de correo del workflow exige 'general'.
+            'clase': '6a77cd140ad8005cec5d9700',
+        })
+        self.envio_notificacion_transportista_fields = {
+            'estatus':               '6a7775df8997b1604c8d34b1',
+            'folio':                 '6a7775df8997b1604c8d34b2',
+            'tipo_de_operacion':     '6a7775df8997b1604c8d34b3',
+            'empresa_transportista': '6a7775df8997b1604c8d34b4',
+            'proveedor_cliente':     '6a7775df8997b1604c8d34b5',
+            'fecha_hora_ingreso':    '6a7775df8997b1604c8d34b6',
+            'fecha_hora_descarga':   '6a7775df8997b1604c8d34b7',
+            'fecha_hora_terminado':  '6a7775df8997b1604c8d34b8',
         }
 
         ### Offline sync (migrado de offline_services.py / lkf_addons.addons.accesos.app) ###

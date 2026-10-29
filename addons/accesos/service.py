@@ -5580,6 +5580,70 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         ]
 
     @_get_mongo_distinct_list
+    def get_transportistas_estatus(self):
+        return {
+            "form_id": self.BITACORA_TRANSPORTISTAS,
+            "field": f"answers.{self.bitacora_transportista_fields['estatus']}"
+        }
+
+    @_get_mongo_distinct_list
+    def get_transportistas_tipo_vehiculo(self):
+        return {
+            "form_id": self.BITACORA_TRANSPORTISTAS,
+            "field": f"answers.{self.bitacora_transportista_fields['tipo_de_vehiculo']}"
+        }
+
+    @_get_mongo_distinct_list
+    def get_transportistas_empresa(self):
+        return {
+            "form_id": self.BITACORA_TRANSPORTISTAS,
+            "field": f"answers.{self.bitacora_transportista_fields['proveedor_cliente']}"
+        }
+
+    @_get_mongo_distinct_list
+    def get_transportistas_anden(self):
+        return {
+            "form_id": self.BITACORA_TRANSPORTISTAS,
+            "field": f"answers.{self.bitacora_transportista_fields['anden_asignado']}"
+        }
+
+    def get_filters_transportistas(self):
+        estatus = self.get_transportistas_estatus()
+        tipo_vehiculo = self.get_transportistas_tipo_vehiculo()
+        empresa = self.get_transportistas_empresa()
+        anden = self.get_transportistas_anden()
+        return [
+            {
+                "defaultDisplayOpen": True,
+                "key": "estatus",
+                "label": "Estatus",
+                "type": "multiple",
+                "options": [{"label": i.capitalize().replace('_', ' '), "value": i} for i in estatus]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "tipo_de_vehiculo",
+                "label": "Tipo de vehículo",
+                "type": "multiselect",
+                "options": [{"label": i, "value": i} for i in tipo_vehiculo]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "proveedor_cliente",
+                "label": "Empresa / Transportista",
+                "type": "multiselect",
+                "options": [{"label": i, "value": i} for i in empresa]
+            },
+            {
+                "defaultDisplayOpen": False,
+                "key": "anden_asignado",
+                "label": "Andén asignado",
+                "type": "multiselect",
+                "options": [{"label": i, "value": i} for i in anden]
+            },
+        ]
+
+    @_get_mongo_distinct_list
     def get_areas_tipo(self):
         return {
             "form_id": self.Location.AREAS_DE_LAS_UBICACIONES,
@@ -17396,6 +17460,340 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             ancla = 'arribo'
         idx = orden.index(ancla)
         return orden[idx + 1] if idx + 1 < len(orden) else orden[-1]
+
+    def get_search_fields_transportistas(self):
+        return self.search_fields_config(self.transportistas_search_fields())
+
+    def get_search_counts_transportistas(self, date_from=None, date_to=None, facets=[], candidates=[]):
+        base_match = self.transportistas_base_match(date_from, date_to)
+        return self.count_facet_candidates(base_match, self.transportistas_search_fields(), facets, candidates)
+
+    def get_inspeccion_record(self, record_id, tipo):
+        FORM_MAP = {
+            'tractor':           (self.INSPECCION_ENTRADA_CTPAT_TRACTOR,    self.inspeccion_entrada_tractor_fields),
+            'remolque':          (self.INSPECCION_ENTRADA_CTPAT_REMOLQUE,   self.inspeccion_entrada_ctpat_remolque_fields),
+            'contenedor':        (self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR, self.inspeccion_entrada_ctpat_contenedor_fields),
+            'sello':             (self.INSPECCION_SELLO,                    self.inspeccion_de_sello_fields),
+        }
+        tipo_base = tipo
+        if tipo_base.startswith('salida_'):
+            tipo_base = tipo_base[len('salida_'):]
+        # strip numeric suffix: contenedor_1 → contenedor
+        if '_' in tipo_base and tipo_base.rsplit('_', 1)[-1].isdigit():
+            tipo_base = tipo_base.rsplit('_', 1)[0]
+        entry = FORM_MAP.get(tipo_base)
+        if not entry:
+            self.LKFException({'title': f'Tipo de inspección no válido: {tipo}', 'status_code': 400})
+
+        form_id_default, fields = entry
+        query = [
+            {'$match': {
+                'deleted_at': {'$exists': False},
+                '_id': ObjectId(record_id),
+            }},
+            {'$project': {
+                '_id': 1,
+                'folio': 1,
+                'created_at': 1,
+                'form_id': 1,
+                'answers': 1,
+            }},
+        ]
+        # OJO: NO usar self.format_cr/self._labels sobre el documento completo
+        # antes de decidir la rama — _labels() APLANA cualquier dict anidado
+        # (incluida 'answers') hacia el nivel superior, perdiendo la llave
+        # 'answers' por completo (misma clase de bug que en get_formas_inspeccion).
+        # Se lee el documento crudo primero y solo se aplica _labels() en la rama
+        # default, donde SÍ se quiere ese aplanado (traducido por `fields`).
+        resultados = list(self.cr.aggregate(query))
+        data = resultados[0] if resultados else None
+        if not data:
+            return data
+        # format_cr normalmente convierte _id/created_at antes de _labels() —
+        # como aquí se evita format_cr, se replica manualmente para las 2 ramas.
+        if data.get('_id') is not None:
+            data['_id'] = str(data['_id'])
+        if data.get('created_at'):
+            data['created_at'] = self.get_date_str(data['created_at'])
+        if data.get('form_id') == form_id_default:
+            return self._labels(data, ids_label_dct=fields)
+        # Forma custom resuelta por ubicación — no hay diccionario de slugs
+        # conocido de antemano, se regresan las respuestas crudas por field_id.
+        # Limitación aceptada: el visor de registros ya guardados no las agrupa
+        # en secciones para este caso (igual que useGetInspeccionRecord.ts, que
+        # ya quedó fuera de la dinamización previa).
+        return {
+            '_id':        data.get('_id'),
+            'folio':      data.get('folio'),
+            'created_at': data.get('created_at'),
+            'answers':    data.get('answers'),
+        }
+
+    def get_form_fields(self, form_ids):
+        if isinstance(form_ids, str):
+            form_ids = [form_ids]
+
+        def normaliza_field(field):
+            return {
+                'field_id':   field.get('field_id'),
+                'label':      field.get('label'),
+                'field_type': field.get('field_type'),
+                'options':    field.get('options', []),
+                'required':   field.get('required', False),
+            }
+
+        resultado = []
+        for form_id in form_ids:
+            form_data = self.lkf_api.get_form_id_fields(form_id)
+            if not form_data:
+                self.LKFException({'title': f'No se pudo obtener la forma {form_id}', 'status_code': 404})
+
+            form = form_data[0]
+            form_pages = form.get('form_pages') or []
+            if form_pages:
+                pages = [
+                    {
+                        'page_name': page.get('page_name', ''),
+                        'fields': [normaliza_field(f) for f in page.get('page_fields', [])],
+                    }
+                    for page in form_pages
+                ]
+            else:
+                pages = [{
+                    'page_name': '',
+                    'fields': [normaliza_field(f) for f in form.get('fields', [])],
+                }]
+
+            resultado.append({'form_id': form_id, 'pages': pages})
+
+        return resultado
+
+    def get_formas_inspeccion(self, ubicacion):
+        """Resuelve qué form_id de inspección usar para tractor/contenedor/sello en
+        una ubicación, leyendo el grupo `configuracion_de_inspecciones` de la forma
+        "Configuración de Flujo de Transportistas" (referencia al Catálogo de Formas,
+        `self.CATALOGO_FORMAS_CAT_OBJ_ID`, ya heredado de la capa base).
+        Fail-open: si no hay fila para esa ubicación+tipo (o no hay ubicación, o no
+        hay registro de config), cae al form_id hardcodeado de la cuenta.
+
+        Para `contenedor`, una fila puede además traer `subtipo` (ej. caja_seca,
+        refrigerado): esas filas NO pisan el catch-all `resueltas['contenedor']`,
+        se acumulan aparte en `contenedor_por_subtipo`. Una fila de contenedor sin
+        subtipo especificado es el catch-all — aplica a cualquier subtipo que no
+        tenga su propia fila.
+
+        `norma` en el resultado es un indicador derivado, solo para mostrar en el
+        front (ej. badge "BASC"/"CTPAT" en el detalle de la visita) — NO se usa
+        como criterio de match arriba: si la ubicación tiene alguna fila con
+        Norma=BASC se considera BASC en conjunto, si no tiene ninguna es CTPAT
+        por default. No valida que todas las filas de la ubicación compartan la
+        misma norma (esa validación queda pendiente, fuera de alcance por ahora)."""
+        # self.lkm.form_id() regresa int — se castea a str para que coincida en tipo
+        # con el form_id guardado en el catálogo (también numérico) y con las
+        # constantes del frontend (TRACTOR_FORM_ID = "157729", como string).
+        defaults = {
+            'tractor':    str(self.INSPECCION_ENTRADA_CTPAT_TRACTOR),
+            'contenedor': str(self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR),
+            'sello':      str(self.INSPECCION_SELLO),
+        }
+        if not ubicacion:
+            return dict(defaults, contenedor_por_subtipo={}, norma='ctpat')
+
+        f = self.conf_flujo_transportistas_fields
+        query = [
+            {'$match': {
+                'form_id': self.CONFIGURACION_FLUJO_TRANSPORTISTAS,
+                'deleted_at': {'$exists': False},
+            }},
+            {'$sort': {'updated_at': -1}},
+            {'$limit': 1},
+            {'$project': {
+                '_id': 0,
+                'filas': {'$ifNull': [f'$answers.{f["configuracion_de_inspecciones"]}', []]},
+            }},
+        ]
+        # OJO: NO usar self.format_cr aquí — sin un ids_label_dct explícito, _labels()
+        # cae a self.f (el diccionario GLOBAL de toda la cuenta) y re-etiqueta los
+        # field_id anidados del catálogo con el slug que sea que tengan registrado
+        # en CUALQUIER otro módulo (ej. "incidente_location" en vez de la ubicación
+        # real), rompiendo el match. Aquí necesitamos el documento crudo tal cual.
+        resultados = list(self.cr.aggregate(query))
+        data = resultados[0] if resultados else {}
+        filas = (data or {}).get('filas') or []
+        if isinstance(filas, dict):
+            filas = list(filas.values())
+
+        # field_id del sub-campo "ID de la forma" dentro del Catálogo de Formas.
+        # self.mf no trae 'form_id'/'form_name'/'form_type' en esta cadena de
+        # herencia (se pierden en algún punto del MRO) aunque sí trae 'ubicacion' —
+        # se usa el field_id fijo directo, mismo patrón que las medidas universales.
+        FORMA_ID_DE_LA_FORMA_FIELD = '5d810a982628de5556500d56'
+
+        resueltas = dict(defaults)
+        contenedor_por_subtipo = {}
+        normas_vistas = set()
+        for fila in filas:
+            fila_ubicacion = (fila.get(self.Location.UBICACIONES_CAT_OBJ_ID) or {}).get(self.mf['ubicacion'])
+            if fila_ubicacion != ubicacion:
+                continue
+            norma_fila = (fila.get(f['norma']) or '').strip()
+            if norma_fila:
+                normas_vistas.add(norma_fila)
+            tipo = fila.get(f['tipo_de_inspeccion'])
+            subtipo = (fila.get(f['subtipo']) or '').strip()
+            forma_id = (fila.get(self.CATALOGO_FORMAS_CAT_OBJ_ID) or {}).get(FORMA_ID_DE_LA_FORMA_FIELD)
+            if not forma_id or tipo not in resueltas:
+                continue
+            if tipo == 'contenedor' and subtipo:
+                contenedor_por_subtipo[subtipo] = str(forma_id)
+            else:
+                resueltas[tipo] = str(forma_id)
+        resueltas['contenedor_por_subtipo'] = contenedor_por_subtipo
+        resueltas['norma'] = 'basc' if 'basc' in normas_vistas else 'ctpat'
+        return resueltas
+
+    def send_aviso_correo_transportista(self, record_id, email_to):
+        if not email_to:
+            self.LKFException({'title': 'Se requiere al menos un correo destinatario', 'status_code': 400})
+        emails = email_to if isinstance(email_to, list) else [email_to]
+
+        record = self.get_bitac_transportista_record(record_id)
+        if not record:
+            self.LKFException({'title': 'Registro no encontrado', 'status_code': 404})
+
+        folio = record.get('folio', '')
+        titulo = f'Proceso de transportista terminado — Folio {folio}'
+        tf = self.envio_notificacion_transportista_fields
+
+        for email in emails:
+            metadata = self.lkf_api.get_metadata(form_id=self.ENVIO_DE_NOTIFICACIONES_FORM)
+            metadata.update({
+                "properties": {
+                    "device_properties": {
+                        "System": "Addons",
+                        "Process": "Creación de envio de correo",
+                        "Action": "send_aviso_correo_transportista",
+                        "File": "transportistas.py",
+                    }
+                },
+            })
+            answers = {
+                self.envio_correo_fields['tipo_de_notificacion']: 'email',
+                self.envio_correo_fields['clase']:                'transportista',
+                self.envio_correo_fields['titulo']:               titulo,
+                self.envio_correo_fields['nombre']:                titulo,
+                self.envio_correo_fields['msj']:                   titulo,
+                self.envio_correo_fields['email_from']:            'no-reply@linkaform.com',
+                self.envio_correo_fields['email_to']:              email,
+                self.envio_correo_fields['enviado_desde']:         'Bitácora de Transportistas',
+                tf['estatus']:               record.get('estatus', ''),
+                tf['folio']:                 folio,
+                tf['tipo_de_operacion']:     record.get('tipo_de_operacion', ''),
+                tf['empresa_transportista']: record.get('empresa_transportista', ''),
+                tf['proveedor_cliente']:     record.get('proveedor_cliente', ''),
+                tf['fecha_hora_ingreso']:    record.get('fecha_hora_ingreso', ''),
+                tf['fecha_hora_descarga']:   record.get('fecha_hora_descarga', ''),
+                tf['fecha_hora_terminado']:  record.get('fecha_hora_terminado', ''),
+            }
+            metadata.update({'answers': answers})
+            res = self.lkf_api.post_forms_answers(metadata)
+            if res.get('status_code') not in [200, 201, 202]:
+                self.LKFException({'title': f'Error al enviar aviso a {email}', 'msg': res.get('json'), 'status_code': 400})
+
+        return {'status_code': 200, 'msg': 'OK', 'enviado_a': emails}
+
+    def get_fotografias(self, registros):
+        FORM_MAP = {
+            'bitacora':   (self.BITACORA_TRANSPORTISTAS,            self.bitacora_transportista_fields),
+            'tractor':    (self.INSPECCION_ENTRADA_CTPAT_TRACTOR,    self.inspeccion_entrada_tractor_fields),
+            'remolque':   (self.INSPECCION_ENTRADA_CTPAT_REMOLQUE,   self.inspeccion_entrada_ctpat_remolque_fields),
+            'contenedor': (self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR, self.inspeccion_entrada_ctpat_contenedor_fields),
+            'sello':      (self.INSPECCION_SELLO,                   self.inspeccion_de_sello_fields),
+        }
+
+        FOTO_KEYS = {
+            'bitacora':   ['firma_conductor'],
+            'tractor':    [k for k in self.inspeccion_entrada_tractor_fields if k.endswith('_evidencia')],
+            'remolque':   [k for k in self.inspeccion_entrada_ctpat_remolque_fields if k.endswith('_evidencia')],
+            'contenedor': [],
+            'sello': [
+                '1_foto_del_sello',
+                '2_sello_colocado_en_las_puertas',
+                '3_puertas_completas_del_remolque',
+                '4_placas_o_economico',
+                '5_identificacion_del_operador',
+            ],
+        }
+
+        GRUPO_FOTOS_KEY = {
+            'bitacora':   'grupo_fotos_y_documentos',
+            'tractor':    'fotos_y_documentos',
+            'remolque':   'fotos_y_documentos',
+            'contenedor': 'fotos_y_documentos',
+            'sello':      None,
+        }
+
+        def normaliza_tipo(tipo):
+            tipo = (tipo or '').replace('salida_', '')
+            if '_' in tipo and tipo.rsplit('_', 1)[-1].isdigit():
+                tipo = tipo.rsplit('_', 1)[0]
+            return tipo
+
+        ids_por_tipo = {}
+        for registro in registros:
+            tipo = normaliza_tipo(registro.get('tipo_de_registro'))
+            record_id = registro.get('record_id')
+            if tipo in FORM_MAP and record_id:
+                ids_por_tipo.setdefault(tipo, []).append(record_id)
+
+        fotos_por_record = {}
+        for tipo, ids in ids_por_tipo.items():
+            form_id, fields = FORM_MAP[tipo]
+            query = [
+                {'$match': {
+                    'form_id': form_id,
+                    'deleted_at': {'$exists': False},
+                    '_id': {'$in': [ObjectId(i) for i in ids]},
+                }},
+                {'$project': {'_id': 1, 'answers': 1}},
+            ]
+            for reg_db in self.format_cr(self.cr.aggregate(query)):
+                labeled = self._labels(reg_db, ids_label_dct=fields)
+                fotos = []
+                for key in FOTO_KEYS[tipo]:
+                    imgs = labeled.get(key)
+                    if not imgs:
+                        continue
+                    if key.endswith('_evidencia'):
+                        comentario = labeled.get(key[:-len('_evidencia')] + '_comentarios')
+                    elif tipo == 'sello':
+                        comentario = labeled.get('comentarios')
+                    else:
+                        comentario = None
+                    for img in imgs:
+                        foto = dict(img)
+                        if comentario:
+                            foto['comentario'] = comentario
+                        fotos.append(foto)
+                grupo_key = GRUPO_FOTOS_KEY[tipo]
+                if grupo_key:
+                    grupo = labeled.get(grupo_key) or []
+                    if isinstance(grupo, dict):
+                        grupo = list(grupo.values())
+                    for fila in grupo:
+                        documento = (fila or {}).get('documento')
+                        if documento:
+                            fotos.extend(documento)
+                fotos_por_record[str(reg_db['_id'])] = fotos
+
+        return [
+            {
+                'record_id': registro['record_id'],
+                'tipo_de_registro': registro.get('tipo_de_registro'),
+                'fotografias': fotos_por_record.get(registro['record_id'], []),
+            }
+            for registro in registros
+        ]
 
     def create_custom_qr(self, url_for_qr, name_qr, form_id, img_field_id):
         lkf_qr = generar_qr.LKF_QR(self.settings)
