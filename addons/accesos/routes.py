@@ -336,7 +336,8 @@ async def post_update_active_pass(request: Request):
 @accesos_bp.get("/catalogos_pase_area")
 async def get_catalogos_pase_area(request: Request):
     location_name = request.args.get("location_name")
-    records = service.catalogos_pase_area(location_name)
+    uso = request.args.get("uso") or None
+    records = service.catalogos_pase_area(location_name, uso=uso)
     return json({"data": records}, status=200)
 
 @accesos_bp.get("/catalogos_pase_location")
@@ -1762,7 +1763,7 @@ async def post_create_rondin(request: Request):
 @accesos_bp.post("/claim_rondin")
 async def post_claim_rondin(request: Request):
     payload = _ocr_payload(request)
-    ok, data = service.claim_rondin(payload.get("record_id", ""))
+    ok, data = service.claim_rondin(payload.get("record_id", ""), user_id=payload.get("user_id"))
     return json({"success": ok, "data": data}, status=200 if ok else 400)
 
 @accesos_bp.post("/create_incidencia_by_rondin")
@@ -1787,64 +1788,139 @@ async def post_edit_areas_rondin(request: Request):
     )
     return json({"data": response}, status=200)
 
-@accesos_bp.get("/get_recorridos")
+
+
+def _rondines_params(request: Request) -> dict:
+    """ Parametros de los listados de rondines: query string (GET) o JSON/form (POST, para facets). """
+    if request.method == "POST":
+        return _ocr_payload(request) or {}
+    return {k: v[0] if isinstance(v, list) and len(v) == 1 else v for k, v in request.args.items()}
+
+def _rondines_int(value, default):
+    try:
+        return int(value) if value not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+@accesos_bp.route("/get_recorridos", methods=["GET", "POST"])
 async def get_get_recorridos(request: Request):
+    p = _rondines_params(request)
     response = service.get_recorridos(
-        date_from=request.args.get("date_from"),
-        date_to=request.args.get("date_to"),
-        area_details=_bool_param(request.args.get("area_details"), default=False),
-        limit=int(request.args.get("limit", 20)),
-        offset=int(request.args.get("offset", 0)),
+        date_from=p.get("date_from"),
+        date_to=p.get("date_to"),
+        area_details=_bool_param(p.get("area_details"), default=False),
+        limit=_rondines_int(p.get("limit"), 20),
+        offset=_rondines_int(p.get("offset"), 0),
+        facets=p.get("facets", []) or [],
+        paginated=_bool_param(p.get("paginated"), default=False),
     )
     return json({"data": response}, status=200)
 
-@accesos_bp.get("/get_bitacora")
+@accesos_bp.route("/get_bitacora", methods=["GET", "POST"])
 async def get_get_bitacora(request: Request):
+    p = _rondines_params(request)
     response = service.get_bitacora(
-        date_from=request.args.get("date_from"),
-        date_to=request.args.get("date_to"),
-        area_details=_bool_param(request.args.get("area_details"), default=False),
-        limit=int(request.args.get("limit", 15)),
-        offset=int(request.args.get("offset", 0)),
-        ubicacion=request.args.get("ubicacion", ""),
-        nombre_rondin=request.args.get("nombre_rondin", ""),
-        timezone=request.args.get("timezone"),
+        date_from=p.get("date_from"),
+        date_to=p.get("date_to"),
+        area_details=_bool_param(p.get("area_details"), default=False),
+        limit=_rondines_int(p.get("limit"), 15),
+        offset=_rondines_int(p.get("offset"), 0),
+        ubicacion=p.get("ubicacion", ""),
+        nombre_rondin=p.get("nombre_rondin", ""),
+        locations=_lista(p.get("locations")),
+        facets=p.get("facets", []) or [],
+        paginated=_bool_param(p.get("paginated"), default=False),
     )
     return json({"data": response}, status=200)
+
+@accesos_bp.route("/get_all_checks", methods=["GET", "POST"])
+async def get_get_all_checks(request: Request):
+    p = _rondines_params(request)
+    response = service.get_all_checks(
+        ubicacion=p.get("ubicacion", ""),
+        nombre_rondin=p.get("nombre_rondin", ""),
+        locations=_lista(p.get("locations")),
+        facets=p.get("facets", []) or [],
+        limit=_rondines_int(p.get("limit_checks", p.get("limit")), None),
+        skip=_rondines_int(p.get("skip"), 0),
+        dateFrom=p.get("dateFrom", ""),
+        dateTo=p.get("dateTo", ""),
+        filterDate=p.get("filterDate", ""),
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.route("/get_incidencias_rondines", methods=["GET", "POST"])
+async def get_get_incidencias_rondines(request: Request):
+    p = _rondines_params(request)
+    limit = _rondines_int(p.get("limit"), 20)
+    offset = _rondines_int(p.get("offset"), 0)
+    if _bool_param(p.get("paginated"), default=False):
+        # Buscador avanzado: paginado por incidencia, con filtros.
+        response = service.get_incidencias_rondines_page(
+            locations=_lista(p.get("locations")), date_from=p.get("date_from"), date_to=p.get("date_to"),
+            facets=p.get("facets", []) or [], limit=limit, skip=offset)
+    else:
+        response = service.get_incidencias_rondines(
+            location=p.get("ubicacion"), area=p.get("area"), date_from=p.get("date_from"),
+            date_to=p.get("date_to"), limit=limit, offset=offset)
+    return json({"data": response}, status=200)
+
+@accesos_bp.get("/get_search_fields_recorridos")
+async def get_search_fields_recorridos(request: Request):
+    return json({"data": service.get_search_fields_recorridos()}, status=200)
+
+@accesos_bp.post("/get_search_counts_recorridos")
+async def post_get_search_counts_recorridos(request: Request):
+    p = _ocr_payload(request)
+    return json({"data": service.get_search_counts_recorridos(
+        date_from=p.get("date_from"), date_to=p.get("date_to"),
+        facets=p.get("facets", []) or [], candidates=p.get("candidates", []) or [])}, status=200)
+
+@accesos_bp.get("/get_search_fields_rondines")
+async def get_search_fields_rondines(request: Request):
+    return json({"data": service.get_search_fields_rondines()}, status=200)
+
+@accesos_bp.post("/get_search_counts_rondines")
+async def post_get_search_counts_rondines(request: Request):
+    p = _ocr_payload(request)
+    return json({"data": service.get_search_counts_rondines(
+        date_from=p.get("date_from"), date_to=p.get("date_to"), locations=_lista(p.get("locations")),
+        facets=p.get("facets", []) or [], candidates=p.get("candidates", []) or [])}, status=200)
+
+@accesos_bp.get("/get_search_fields_check_areas")
+async def get_search_fields_check_areas(request: Request):
+    return json({"data": service.get_search_fields_check_areas()}, status=200)
+
+@accesos_bp.post("/get_search_counts_check_areas")
+async def post_get_search_counts_check_areas(request: Request):
+    p = _ocr_payload(request)
+    return json({"data": service.get_search_counts_check_areas(
+        locations=_lista(p.get("locations")), dateFrom=p.get("dateFrom", ""), dateTo=p.get("dateTo", ""),
+        filterDate=p.get("filterDate", ""), facets=p.get("facets", []) or [],
+        candidates=p.get("candidates", []) or [])}, status=200)
+
+@accesos_bp.get("/get_search_fields_incidencias_rondines")
+async def get_search_fields_incidencias_rondines(request: Request):
+    return json({"data": service.get_search_fields_incidencias_rondines()}, status=200)
+
+@accesos_bp.post("/get_search_counts_incidencias_rondines")
+async def post_get_search_counts_incidencias_rondines(request: Request):
+    p = _ocr_payload(request)
+    return json({"data": service.get_search_counts_incidencias_rondines(
+        locations=_lista(p.get("locations")), date_from=p.get("date_from"), date_to=p.get("date_to"),
+        facets=p.get("facets", []) or [], candidates=p.get("candidates", []) or [])}, status=200)
 
 @accesos_bp.get("/get_catalog_areas")
 async def get_get_catalog_areas(request: Request):
     response = service.get_catalog_areas(ubicacion=request.args.get("ubicacion", ""))
     return json({"data": response}, status=200)
 
-@accesos_bp.get("/get_all_checks")
-async def get_get_all_checks(request: Request):
-    response = service.get_all_checks(
-        ubicacion=request.args.get("ubicacion", ""),
-        nombre_rondin=request.args.get("nombre_rondin", ""),
-        area=request.args.get("area", ""),
-        date_from=request.args.get("date_from"),
-        date_to=request.args.get("date_to"),
-        limit=int(request.args.get("limit", 100)),
-    )
-    return json({"data": response}, status=200)
 
 @accesos_bp.get("/get_rondin_by_id")
 async def get_get_rondin_by_id(request: Request):
     response = service.get_rondin_by_id(record_id=request.args.get("record_id", ""))
     return json({"data": response}, status=200)
 
-@accesos_bp.get("/get_incidencias_rondines")
-async def get_get_incidencias_rondines(request: Request):
-    response = service.get_incidencias_rondines(
-        location=request.args.get("ubicacion"),
-        area=request.args.get("area"),
-        date_from=request.args.get("date_from"),
-        date_to=request.args.get("date_to"),
-        limit=int(request.args.get("limit", 20)),
-        offset=int(request.args.get("offset", 0)),
-    )
-    return json({"data": response}, status=200)
 
 @accesos_bp.get("/get_rondines_images")
 async def get_get_rondines_images(request: Request):

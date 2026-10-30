@@ -54,6 +54,7 @@ class AccesosModel(Base):
         self.CONCESSIONED_ARTICULOS = self.lkm.form_id('concesion_de_activos_unico','id')
         self.CONFIGURACION_AREA_FORM = self.lkm.form_id('configuracion_de_area','id')
         self.CONFIGURACION_RECORRIDOS_FORM = self.lkm.form_id('configuracion_de_recorridos','id')
+        self.CATALOGO_ITEMS_FORM = self.lkm.form_id('catalogo_de_items','id')
         self.CONF_PERFILES = self.lkm.form_id('configuracion_de_perfiles','id')
         self.PASE_ENTRADA = self.lkm.form_id('pase_de_entrada','id')
         self.PASE_ENTRADA_TRANSPORTISTA = self.lkm.form_id('pase_de_entrada_transportista','id')
@@ -104,6 +105,10 @@ class AccesosModel(Base):
         self.CONFIGURACION_RECORRIDOS = self.lkm.catalog_id('configuracion_de_recorridos')
         self.CONFIGURACION_RECORRIDOS_ID = self.CONFIGURACION_RECORRIDOS.get('id')
         self.CONFIGURACION_RECORRIDOS_OBJ_ID = self.CONFIGURACION_RECORRIDOS.get('obj_id')
+
+        self.ROL_CATALOG = self.lkm.catalog_id('rol')
+        self.ROL_CATALOG_ID = self.ROL_CATALOG.get('id')
+        self.ROL_CATALOG_OBJ_ID = self.ROL_CATALOG.get('obj_id')
 
         self.CONFIG_PERFILES = self.lkm.catalog_id('configuracion_de_perfiles')
         self.CONFIG_PERFILES_ID = self.CONFIG_PERFILES.get('id')
@@ -492,6 +497,7 @@ class AccesosModel(Base):
             'grupo_visitados': '663d4ba61b14fab90559ebb0',
             'guard_group':'663fae53fa005c70de59eb95',
             'id_grupo':'639b65dfaf316bacfc551ba2',
+            'nombre_grupo':'638a9ab3616398d2e392a9fa',
             'id_usuario':'638a9a99616398d2e392a9f5',
             'identificacion':'65ce34985fa9df3dbf9dd2d0',
             'locker_id':'66480101786e8cdb66e70124',
@@ -1149,6 +1155,16 @@ class AccesosModel(Base):
         self.f.update(self.checkin_fields)
         self.f.update({
             'areas_del_rondin': '66462aa5d4a4af2eea07e0d1',
+            'url_registro_rondin': '6750adb2936622aecd075607',
+            'areas': '66462aa5d4a4af2eea07e0d1',
+            'tipo_de_item': 'ccccc0000000000000000002',
+            'tipo_de_formulario': '6ac43687e43586b5c009d397',
+            'form_name': '5d810a982628de5556500d55',
+            'duracion_estimada': '6854459836ea891d9d2be7d9',
+            'comentario_area_rondin': '66462b9d7124d1540f962088',
+            'foto_evidencia_area_rondin': '66462b9d7124d1540f962087',
+            'nombre_del_recorrido': '6645050d873fc2d733961eba',
+            'url_incidencia_bitacora': '6927eb61d92ecf923b60a0de',
             'duracion_rondin':'6639b47565d8e5c06fe97cf3',
             'duracion_traslado_area':'6760a9581e31b10a38a22f1f',
             'fecha_inspeccion_area':'6760a908a43b1b0e41abad6b',
@@ -1187,7 +1203,12 @@ class AccesosModel(Base):
             'grupo_de_areas_recorrido': '6645052ef8bc829a5ccafaf5',
             'tipo_guardia': '68acee270f2af5e173b7f92e',
             'status_user': '6639b2744bb44059fc59eb62',
+            'estatus_del_recorrido': '6639b2744bb44059fc59eb62',
             'grupo_roles': '6a46f1d3b89f9975dfd0bae8',
+            'rol': '6a46f2730fc4d03a90da2209',
+            'form_id': '5d810a982628de5556500d56',
+            'start_shift': '6879828d0234f02649cad390',
+            'end_shift': '6879828d0234f02649cad391',
             'option_update_qr': '68928c76fc027d15895fa23c',
             'anterior_qr': '68928cfdc847e631ba2c157e',
             'new_qr': '68928cfdc847e631ba2c157f',

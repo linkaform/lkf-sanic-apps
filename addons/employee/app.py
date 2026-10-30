@@ -78,6 +78,7 @@ class Employee(Base):
             'company': f"{self.COMPANY_OBJ_ID}.663a8153e48382c5b1230918",
             'address':'663a7e0fe48382c5b1230902',
             'areas_group':'663cf9d77500019d1359eb9f',
+            'area_permiso': '6ad7eb02fe424836b2b5620d',
             'department_code':'670f571af57af9032464176e',
             'estatus_dentro_empresa':'663bcbe2274189281359eb77',
             'estatus_disponibilidad':'663bcbe2274189281359eb78',
@@ -88,6 +89,7 @@ class Employee(Base):
             'usuario_email': f"{self.USUARIOS_OBJ_ID}.638a9a7767c332f5d459fc82",
             'usuario_id': f"{self.USUARIOS_OBJ_ID}.638a9a99616398d2e392a9f5",
             'user_id_id': '638a9a99616398d2e392a9f5',
+            'roles_grupo': '6a8e10938910e8a112fbbc21',
             'username': '6653f3709c6d89925dc04b2e',
             'email':'6653f3709c6d89925dc04b2f',
             'area_default':'6653f2d49c6d89925dc04b27',
@@ -230,6 +232,77 @@ class Employee(Base):
             self.LKFException(msg)
         return caseta, user_booths
     
+    def get_ubicaciones_permitidas(self, user_id=None, username=None):
+        """
+        Ubicaciones y areas asignadas al empleado en configuracion_areas_y_empleados.
+        Un item con ubicacion pero sin nombre de area significa acceso a TODAS
+        las areas de esa ubicacion (sin_limite=True), misma semantica que
+        get_user_booth.
+        El empleado se resuelve por el user_id del jwt y, como llave secundaria,
+        por username. El email no se usa: en el back no es unico.
+        `escritura` es True si al menos un item de la ubicacion no esta marcado
+        como Permiso = solo_lectura (vacio cuenta como escritura).
+        Returns:
+        {ubicacion: {'areas': [...], 'areas_default': [...],
+                     'sin_limite': bool, 'es_default': bool,
+                     'escritura': bool}}
+        """
+        if user_id is None:
+            user_id = self.user.get('user_id')
+        if username is None:
+            username = self.user.get('username')
+
+        identidades = []
+        if user_id:
+            identidades.append(
+                {f"answers.{self.EMPLOYEE_OBJ_ID}.{self.employee_fields['user_id_id']}": user_id})
+        if username:
+            identidades.append(
+                {f"answers.{self.EMPLOYEE_OBJ_ID}.{self.f['new_user_username']}": username})
+        if not identidades:
+            # sin identidad no se asume acceso a nada
+            return {}
+
+        match_query = {
+            "deleted_at": {"$exists": False},
+            "form_id": self.CONF_AREA_EMPLEADOS,
+            "$or": identidades,
+            }
+        areas_path = self.f['areas_group']
+        cat_obj_id = self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID
+
+        permisos = {}
+        for doc in self.cr.find(match_query, {f"answers.{areas_path}": 1}):
+            for item in doc.get('answers', {}).get(areas_path, []) or []:
+                area_cat = item.get(cat_obj_id, {}) or {}
+                location = self.unlist(area_cat.get(self.Location.f['location']))
+                if not location:
+                    continue
+                area = self.unlist(area_cat.get(self.Location.f['area']))
+                es_default = item.get(self.f['area_default']) == 'default'
+                solo_lectura = item.get(self.f['area_permiso']) == 'solo_lectura'
+                permiso = permisos.setdefault(location, {
+                    'areas': [],
+                    'areas_default': [],
+                    'sin_limite': False,
+                    'es_default': False,
+                    'escritura': False,
+                    })
+                if es_default:
+                    permiso['es_default'] = True
+                if not solo_lectura:
+                    # basta un item con escritura para poder crear pases en la ubicacion
+                    permiso['escritura'] = True
+                if not area:
+                    # ubicacion sin area: acceso a todas las areas de la ubicacion
+                    permiso['sin_limite'] = True
+                    continue
+                if area not in permiso['areas']:
+                    permiso['areas'].append(area)
+                if es_default and area not in permiso['areas_default']:
+                    permiso['areas_default'].append(area)
+        return permisos
+
     def get_employee_pic(self, user_id):
         match_query = {
             "deleted_at":{"$exists":False},
