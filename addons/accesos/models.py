@@ -59,6 +59,9 @@ class AccesosModel(Base):
         self.PASE_ENTRADA = self.lkm.form_id('pase_de_entrada','id')
         self.PASE_ENTRADA_TRANSPORTISTA = self.lkm.form_id('pase_de_entrada_transportista','id')
         self.BITACORA_TRANSPORTISTAS = self.lkm.form_id('bitacora_de_transportistas','id')
+        # El slug real en Linkaform es "configuracin..." (sin "ó"); no corregirlo.
+        self.CONFIGURACION_FLUJO_TRANSPORTISTAS = self.lkm.form_id('configuracin_de_flujo_de_transportistas','id')
+        self.ENVIO_DE_NOTIFICACIONES_FORM = self.lkm.form_id('envio_de_notificaciones', 'id')
         self.INSPECCION_ENTRADA_CTPAT_TRACTOR = self.lkm.form_id('inspeccion_de_entrada_ctpat_tractor_cabezal','id')
         self.INSPECCION_ENTRADA_CTPAT_REMOLQUE = self.lkm.form_id('inspeccion_de_entrada_ctpat_remolque','id')
         self.INSPECCION_ENTRADA_CTPAT_CONTENEDOR = self.lkm.form_id('inspeccion_de_entrada_ctpat_contenedor','id')
@@ -1320,14 +1323,7 @@ class AccesosModel(Base):
         self.INSPECTION_ACCEPTED_TYPES = ['radio', 'checkbox', 'decimal', 'integer', 'text', 'slider']
 
         ### Transportistas (migrado de transportistas.py / transportistas_bitacoras.py) ###
-        self.f.update({
-            # NOTA: 'address_name' nunca se definio en el legacy (bug preexistente,
-            # create_pass_transportista lo referencia sin haberlo agregado nunca a self.f).
-            # Se alias temporalmente al mismo id que 'direccion' hasta confirmar el id real
-            # con el esquema de LinkaForm.
-            'address_name': '663a7e0fe48382c5b1230902',
-        })
-
+        # 'address_name' viene de base (663a7e0fe48382c5b1230901), igual que en addons.
         self.pass_fields_transportista = {
             "tipo_de_operacion": "6a1ddb53f5a36ba1c7dd029c",
 
@@ -1401,6 +1397,12 @@ class AccesosModel(Base):
             "contenedor_numero": "6a2addcfcee6b93e39ab8a51",
             "contenedor_sello": "6a2addcfcee6b93e39ab8a52",
             "contenedor_tipo": "6a2addcfcee6b93e39ab8a53",
+            'empresa_transportista': '6a09fdc32fa9d55259ae9d2b',
+            'producto': '6a3a6c2c9d500676ec5e3fbf',
+            'lote': '6ade55ab470ae4e36395ba2b',
+            'no_referencia': '6a5b4fc9651b28e19d6352a2',
+            'vehiculo_color': '6afbbf71031d00fe8bd50a41',
+            'conductor_rfc': '6a2c387c7df9203d2f98fcec',
         }
 
         self.bitacora_transportista_fields = {
@@ -1458,6 +1460,19 @@ class AccesosModel(Base):
             'grupo_inspecciones': '6a42a7068dcfbf362329a972',
             'tipo_inspeccion': '6a42c80b03f125df7ad2862b',
             'url_inspeccion': '6a42a71aec3f7153a3d2aea3',
+            'fecha_hora_terminado': '6a710409eaef5abc8b1a1a69',
+            'telefono_conductor': '6acd5b62a7d563ebafeb8762',
+            'cantidad_buena_material': '6a6ac379fab960f8931dcc77',
+            'cantidad_danada_material': '6a6ac35a71f64d908af42f69',
+            'cantidad_faltante_material': '6a7a4ee0e6092a8d37f6d448',
+            'evidencia_material': '6a9f34d31c217e8c3f8c1702',
+            'comentario_material': '6a9f34d31c217e8c3f8c1703',
+            'grupo_desglose_empaque': '6a6a4abe639ed7cad54be377',
+            'no_referencia_material_desglose': '6a6a4adc169fc82c5fae8668',
+            'nivel_desglose': '6a6a4b64c6fd2eaaf5f8c0b6',
+            'tipo_unidad_empaque_desglose': '6a6a4b64c6fd2eaaf5f8c0b7',
+            'cantidad_desglose': '6a6a4b64c6fd2eaaf5f8c0b8',
+            'cantidad_acumulada_desglose': '6a6a4b64c6fd2eaaf5f8c0b9',
         }
 
         self.inspeccion_entrada_tractor_fields = {
@@ -1528,6 +1543,9 @@ class AccesosModel(Base):
             'escape_mofles': '48de45705387f226f6551c1b',
             'escape_mofles_comentarios': '0307abb04ee4f8b3786cca23',
             'escape_mofles_evidencia': '32f0559232cbc31f5cc6a472',
+            'fotos_y_documentos': '6a5fcf869160bd10e1b0b323',
+            'tipo_de_documento': '6a5fe2b0a5af7dac33061ea9',
+            'documento': '6a5fe2b0a5af7dac33061eaa',
         }
 
         self.inspeccion_entrada_ctpat_contenedor_fields = {
@@ -1541,6 +1559,9 @@ class AccesosModel(Base):
             'pared_interior_frontal': '14aea746aadf15c99edb8592',
             'techo_cubierta_superior': 'bc75ab3fdb2258286b0b41c0',
             'piso_interior': '371a7d9c3ae8a40a32b3762a',
+            'fotos_y_documentos': '6a5fde6455cec5f5e85ea2a0',
+            'tipo_de_documento': '6a5fe2b0a5af7dac33061ea9',
+            'documento': '6a5fe2b0a5af7dac33061eaa',
         }
 
         self.inspeccion_entrada_ctpat_remolque_fields = {
@@ -1591,6 +1612,9 @@ class AccesosModel(Base):
             'escape_mofles': '545c0b134ab1d2f11cef90a9',
             'escape_mofles_comentarios': '736b1fe2e2609d47beef2a03',
             'escape_mofles_evidencia': 'b7618c209a113ef54ec2b58b',
+            'fotos_y_documentos': '6a5fde3b04fdbbdbcfdfc2a2',
+            'tipo_de_documento': '6a5fe2b0a5af7dac33061ea9',
+            'documento': '6a5fe2b0a5af7dac33061eaa',
         }
 
         self.inspeccion_de_sello_fields = {
@@ -1604,6 +1628,32 @@ class AccesosModel(Base):
             '4_placas_o_economico': 'd7479071e6aabdeaa10ce41b',
             '5_identificacion_del_operador': '718a0a37c5a6965b2127d2c0',
             'comentarios': '0e009f7829544463cbf89e1e',
+        }
+
+        self.conf_flujo_transportistas_fields = {
+            'etapas_activas': '6a75056924f23eef843cd01b',
+            'kanban_view': '6aa8333f6cbc9b9bbd08fa2d',
+            'configuracion_de_inspecciones': '6a7509cd6e87e5935b853b7b',
+            'tipo_de_inspeccion': '6a750a1afd4ed68d7c57c24d',
+            'norma': '6a7e2c5c23fb366f1918dea8',
+            'subtipo': '6a7e2c5c23fb366f1918dea9',
+        }
+
+        self.envio_correo_fields.update({
+            'phone_to': '699f302213e8f8740c465bfc',
+            'tipo_de_notificacion': '699dfe3b82be0dbe0319d38c',
+            # Radio general/transportista: la regla de correo del workflow exige 'general'.
+            'clase': '6a77cd140ad8005cec5d9700',
+        })
+        self.envio_notificacion_transportista_fields = {
+            'estatus':               '6a7775df8997b1604c8d34b1',
+            'folio':                 '6a7775df8997b1604c8d34b2',
+            'tipo_de_operacion':     '6a7775df8997b1604c8d34b3',
+            'empresa_transportista': '6a7775df8997b1604c8d34b4',
+            'proveedor_cliente':     '6a7775df8997b1604c8d34b5',
+            'fecha_hora_ingreso':    '6a7775df8997b1604c8d34b6',
+            'fecha_hora_descarga':   '6a7775df8997b1604c8d34b7',
+            'fecha_hora_terminado':  '6a7775df8997b1604c8d34b8',
         }
 
         ### Offline sync (migrado de offline_services.py / lkf_addons.addons.accesos.app) ###

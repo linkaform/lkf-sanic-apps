@@ -221,14 +221,6 @@ async def post_update_bitacora_entrada(request: Request):
     records = service.update_bitacora_entrada(payload, record_id=record_id, folio=folio)
     return json({"data": records}, status=200)
 
-@accesos_bp.post("/update_bitacora_entrada_many")
-async def post_update_bitacora_entrada_many(request: Request):
-    payload = _ocr_payload(request)
-    record_id = payload.get("record_id")
-    folio = payload.get("folio")
-    records = service.update_bitacora_entrada_many(payload, record_id=record_id, folio=folio)
-    return json({"data": records}, status=200)
-
 @accesos_bp.get("/vehiculo_tipo")
 async def get_vehiculo_tipo(request: Request):
     tipo = request.args.get("tipo")
@@ -2266,6 +2258,10 @@ async def get_filters_perdidos(request: Request):
 async def get_filters_notas(request: Request):
     return json({"data": service.get_filters_notas()}, status=200)
 
+@accesos_bp.get("/filters_transportistas")
+async def get_filters_transportistas(request: Request):
+    return json({"data": service.get_filters_transportistas()}, status=200)
+
 # ============================================
 # Config de accesos: permisos legacy (migrado de config_access.py, hook)
 # ============================================
@@ -2340,6 +2336,7 @@ async def get_get_pass_transportista(request: Request):
     response = service.get_pass_transportista(
         record_id=request.args.get("record_id"),
         token=request.args.get("token"),
+        folio=request.args.get("folio"),
     )
     return json({"data": response}, status=200)
 
@@ -2394,6 +2391,53 @@ async def post_save_inspecciones(request: Request):
 async def post_save_inspecciones_sello(request: Request):
     payload = _ocr_payload(request)
     response = service.save_inspecciones_sello(payload.get("record_id"), payload.get("inspecciones", []))
+    return json({"data": response}, status=200)
+
+@accesos_bp.get("/get_search_fields_transportistas")
+async def get_get_search_fields_transportistas(request: Request):
+    return json({"data": service.get_search_fields_transportistas()}, status=200)
+
+@accesos_bp.post("/get_search_counts_transportistas")
+async def post_get_search_counts_transportistas(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_search_counts_transportistas(
+        date_from=payload.get("date_from"),
+        date_to=payload.get("date_to"),
+        facets=payload.get("facets", []) or [],
+        candidates=payload.get("candidates", []) or [],
+    )
+    return json({"data": response}, status=200)
+
+@accesos_bp.get("/get_inspeccion_record")
+async def get_get_inspeccion_record(request: Request):
+    response = service.get_inspeccion_record(request.args.get("record_id"), request.args.get("tipo", ""))
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_fotografias_transportista")
+async def post_get_fotografias_transportista(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_fotografias(payload.get("registros", []) or [])
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/get_form_fields_transportista")
+async def post_get_form_fields_transportista(request: Request):
+    payload = _ocr_payload(request)
+    response = service.get_form_fields(payload.get("form_ids", []) or [])
+    return json({"data": response}, status=200)
+
+@accesos_bp.get("/get_config_flujo_transportistas")
+async def get_get_config_flujo_transportistas(request: Request):
+    return json({"data": service.get_config_flujo_transportistas()}, status=200)
+
+@accesos_bp.get("/get_formas_inspeccion_transportista")
+async def get_get_formas_inspeccion_transportista(request: Request):
+    response = service.get_formas_inspeccion(request.args.get("ubicacion"))
+    return json({"data": response}, status=200)
+
+@accesos_bp.post("/send_aviso_correo_transportista")
+async def post_send_aviso_correo_transportista(request: Request):
+    payload = _ocr_payload(request)
+    response = service.send_aviso_correo_transportista(payload.get("record_id"), payload.get("email_to"))
     return json({"data": response}, status=200)
 
 # ============================================
