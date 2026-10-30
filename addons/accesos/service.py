@@ -456,6 +456,14 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         form_id= self.PAQUETERIA
         return self.lkf_api.catalog_view(catalog_id, form_id)
 
+    @staticmethod
+    def roles_in_query(roles):
+        """
+        Filtro `$in` de roles sin distinguir mayusculas: el catalogo guarda 'Rondinero' y el recorrido
+        puede traer 'rondinero'; con un `$in` exacto nunca coincidirian.
+        """
+        return {"$in": [re.compile(f"^{re.escape(str(rol).strip())}$", re.IGNORECASE) for rol in roles or []]}
+
     def get_active_guards_in_location(self, location, rol=None):
         match = {
             "deleted_at": {"$exists": False},
@@ -465,7 +473,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             f"answers.{self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID}.{self.f['ubicacion']}": location,
         }
         if rol:
-            match[f"answers.{self.f['grupo_roles']}.{self.ROL_CATALOG_OBJ_ID}.{self.f['rol']}"] = {"$in": rol}
+            match[f"answers.{self.f['grupo_roles']}.{self.ROL_CATALOG_OBJ_ID}.{self.f['rol']}"] = self.roles_in_query(rol)
         query = [
             {"$match": match},
             {"$project": {
@@ -7057,7 +7065,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     #! Los de grupo quedan sin usuario hasta que alguien los inicia (claim_rondin).
                     f"answers.{self.rondin_keys['tipo_asignacion']}": {"$ne": 'grupo'},
                     f"answers.{self.CONFIGURACION_RECORRIDOS_OBJ_ID}.{self.Location.f['location']}": location,
-                    f"answers.{self.f['grupo_roles']}.{self.ROL_CATALOG_OBJ_ID}.{self.f['rol']}": {"$in": roles},
+                    f"answers.{self.f['grupo_roles']}.{self.ROL_CATALOG_OBJ_ID}.{self.f['rol']}": self.roles_in_query(roles),
                     #! Sin usuario: no existe, es null o viene vacio.
                     f"answers.{self.USUARIOS_OBJ_ID}.{self.mf['id_usuario']}": {"$in": [None, [], ['']]},
                 }},
