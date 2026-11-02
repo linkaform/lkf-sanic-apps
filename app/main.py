@@ -8,6 +8,20 @@ from sanic.response import text
 from sanic.response import json
 from sanic.response import file, empty
 
+# linkaform_api crea un MongoClient nuevo en cada get_collections y nunca lo cierra
+# (7 hilos por cliente con replica de 3 nodos). En addons no importa porque el
+# proceso muere; aqui el proceso vive y se acumulan (~450 hilos al arrancar).
+# Se reusa un cliente por URI. Va antes de importar las rutas/modulos.
+from linkaform_api import network as _lkf_network
+_mongo_client_orig = _lkf_network.MongoClient
+_mongo_clients = {}
+def _shared_mongo_client(*args, **kwargs):
+    key = (args, tuple(sorted(kwargs.items())))
+    if key not in _mongo_clients:
+        _mongo_clients[key] = _mongo_client_orig(*args, **kwargs)
+    return _mongo_clients[key]
+_lkf_network.MongoClient = _shared_mongo_client
+
 from config.settings import settings
 from database import init_db, get_db_pool
 from dependencies import init_dependencies
