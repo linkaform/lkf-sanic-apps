@@ -22,6 +22,30 @@ def _shared_mongo_client(*args, **kwargs):
     return _mongo_clients[key]
 _lkf_network.MongoClient = _shared_mongo_client
 
+# Las llamadas HTTP (linkaform_api y modulos) no traen timeout: si Linkaform no
+# contesta, el handler sincrono congela el worker para siempre. Se pone uno por
+# default a toda requests.Session (requests.get/post tambien pasan por ahi).
+# Read en segundos sin recibir bytes, no duracion total del script.
+import requests as _requests
+_HTTP_TIMEOUT = (int(os.getenv('LKF_HTTP_CONNECT_TIMEOUT', 10)),
+                 int(os.getenv('LKF_HTTP_READ_TIMEOUT', 120)))
+_session_request_orig = _requests.Session.request
+def _session_request_with_timeout(self, method, url, **kwargs):
+    if kwargs.get('timeout') is None:
+        kwargs['timeout'] = _HTTP_TIMEOUT
+    return _session_request_orig(self, method, url, **kwargs)
+_requests.Session.request = _session_request_with_timeout
+
+# ConnectionClient reintenta 9 veces incluyendo POST/PATCH. Con read timeout eso
+# reenviaria un POST que Linkaform si recibio (registros duplicados): se dejan
+# los reintentos de conexion y se apagan los de lectura.
+_connection_client_init_orig = _lkf_network.ConnectionClient.__init__
+def _connection_client_init(self, *args, **kwargs):
+    _connection_client_init_orig(self, *args, **kwargs)
+    for _adapter in self.session.adapters.values():
+        _adapter.max_retries = _adapter.max_retries.new(read=0)
+_lkf_network.ConnectionClient.__init__ = _connection_client_init
+
 from config.settings import settings
 from database import init_db, get_db_pool
 from dependencies import init_dependencies
