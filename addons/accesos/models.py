@@ -223,6 +223,19 @@ class AccesosModel(Base):
         self.FILTERS = self.lkm.script_id('filters','id')
         self.SCRIPT_INCIDENCIAS = self.lkm.script_id('incidencias','id')
 
+        # Gemelo *_sdk de cada script de arriba: script_id -> script_id_sdk. El front ya
+        # llama varios por su nombre _sdk, y set_item_permits descomparte todo script
+        # que no venga en module_permits, asi que deben ir juntos.
+        self.SCRIPTS_SDK = {
+            self.lkm.script_id(name, 'id'): self.lkm.script_id(f'{name}_sdk', 'id')
+            for name in (
+                'articulos_consecionados', 'articulos_perdidos', 'fallas', 'get_stats',
+                'gafetes_lockers', 'notes', 'paqueteria', 'script_turnos', 'pase_de_acceso',
+                'pase_de_acceso_use_api', 'rondines', 'transportistas', 'offline_services',
+                'ocr_docs', 'menus', 'filters', 'incidencias',
+            )
+        }
+
         self.module_permits = {
             'always':{
                 'forms':[],
@@ -280,6 +293,8 @@ class AccesosModel(Base):
                 'scripts':[self.SCRIPT_TURNOS]
             },
         }
+        for config in self.module_permits.values():
+            config['scripts'] += [self.SCRIPTS_SDK.get(s) for s in config['scripts']]
 
         ### Permisos legacy (migrado de config_access.py). Esquema de permisos
         ### distinto y mas antiguo que self.module_permits (usado por menus.py),
