@@ -17919,7 +17919,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         embarque = data.get('embarque') or {}
         if embarque:
             answers.update({
-                f['empresa_transportista']: embarque.get('procedencia', ''),
+                f['procedencia']:           embarque.get('procedencia', ''),
                 f['proveedor_cliente']:     embarque.get('proveedor_cliente', ''),
                 f['orden_de_compra']:       embarque.get('no_orden_compra', ''),
             })
