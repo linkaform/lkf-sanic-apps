@@ -3,6 +3,7 @@
 # middlewares/auth.py
 import logging
 import os
+import sys
 import warnings
 
 # Puerto de sanic: main.py escucha en él y dispatch() lo usa para que los scripts
@@ -166,6 +167,8 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Authorization': kwargs.get('jwt',kwargs.get('Bearer')),
         'Content-Type': 'application/json',
         'X-LKF-Trace': '1',
+        # Lo reenvia Sanic en sus peticiones a Linkaform (ver main.py).
+        'X-Clave10': f"{os.path.basename(sys.argv[0])}:{end_point}",
     }
     url = f"http://0.0.0.0:{SANIC_PORT}/{module}/{end_point}"
     print('url', url)

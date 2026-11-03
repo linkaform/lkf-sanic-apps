@@ -29,12 +29,49 @@ _lkf_network.MongoClient = _shared_mongo_client
 import requests as _requests
 _HTTP_TIMEOUT = (int(os.getenv('LKF_HTTP_CONNECT_TIMEOUT', 10)),
                  int(os.getenv('LKF_HTTP_READ_TIMEOUT', 120)))
+
+# Header X-Clave10 (nombre_script:opcion) en toda peticion saliente, para que infra
+# sepa en HAProxy que script la mando. El valor llega en el header que manda
+# dispatch() y se guarda por request (cada request es su propia task de asyncio).
+import contextvars as _contextvars
+_CLAVE10_HEADER = 'X-Clave10'
+_clave10_ctx = _contextvars.ContextVar('clave10_header', default='sanic')
+def _with_clave10_header(headers):
+    headers = dict(headers or {})
+    if not any(k.lower() == _CLAVE10_HEADER.lower() for k in headers):
+        headers[_CLAVE10_HEADER] = _clave10_ctx.get()
+    return headers
+
 _session_request_orig = _requests.Session.request
 def _session_request_with_timeout(self, method, url, **kwargs):
     if kwargs.get('timeout') is None:
         kwargs['timeout'] = _HTTP_TIMEOUT
+    kwargs['headers'] = _with_clave10_header(kwargs.get('headers'))
     return _session_request_orig(self, method, url, **kwargs)
 _requests.Session.request = _session_request_with_timeout
+
+# CouchDB va por su propio cliente HTTP, no por requests.
+import warnings as _warnings
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    import couchdb.http as _couch_http
+_couch_request_orig = _couch_http.Session.request
+def _couch_request_with_header(self, method, url, body=None, headers=None, *args, **kwargs):
+    return _couch_request_orig(self, method, url, body, _with_clave10_header(headers), *args, **kwargs)
+_couch_http.Session.request = _couch_request_with_header
+
+# Los hilos de ThreadPoolExecutor (accesos/service.py) no heredan contextvars: se les
+# pasa solo el header. No se copia todo el contexto para no cambiar el usuario/JWT
+# que hoy ven esos hilos (linkaform_api.request_context).
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+_executor_submit_orig = _ThreadPoolExecutor.submit
+def _executor_submit_with_header(self, fn, /, *args, **kwargs):
+    value = _clave10_ctx.get()
+    def _run(*a, **kw):
+        _clave10_ctx.set(value)
+        return fn(*a, **kw)
+    return _executor_submit_orig(self, _run, *args, **kwargs)
+_ThreadPoolExecutor.submit = _executor_submit_with_header
 
 # ConnectionClient reintenta 9 veces incluyendo POST/PATCH. Con read timeout eso
 # reenviaria un POST que Linkaform si recibio (registros duplicados): se dejan
@@ -143,6 +180,10 @@ for bp in blueprints:
 
 setup_error_handlers(app)
 setup_auth(app)
+
+@app.on_request
+async def set_clave10_header(request):
+    _clave10_ctx.set(request.headers.get(_CLAVE10_HEADER) or f"sanic:{request.path}")
 
 
 # ============================================
