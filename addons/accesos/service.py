@@ -4530,6 +4530,26 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             record_id=[record_id],
         )
 
+    def create_impresion_qr(self, paginas):
+        """
+        Crea un registro en la forma Impresión de QR con las páginas a imprimir
+        (botón "Imprimir plantilla QR" de Áreas).
+        """
+        metadata = self.lkf_api.get_metadata(form_id=self.IMPRESION_DE_QR)
+        metadata.update({
+            "properties": {
+                "device_properties":{
+                    "System": "Script",
+                    "Module": "Accesos",
+                    "Process": "Impresión de plantilla QR",
+                    "Action": "create_impresion_qr",
+                    "File": "accesos/service.py"
+                }
+            },
+            "answers": {self.impresion_qr_fields['paginas_a_imprimir']: paginas},
+        })
+        return self.lkf_api.post_forms_answers(metadata)
+
     def update_full_area(self, record_id, data):
         """
         Edita un área por su record_id (modal de edición del front). Solo se

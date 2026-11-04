@@ -79,6 +79,7 @@ class AccesosModel(Base):
         self.PROVEEDORES_FORM = self.lkm.form_id('proveedores','id')
         self.MENUS_FORM = self.lkm.form_id('configuracion_menus','id')
         self.HORARIOS = self.lkm.form_id('horarios','id')
+        self.IMPRESION_DE_QR = self.lkm.form_id('impresion_de_qr','id')
 
         self.last_check_in = []
         # self.FORM_ALTA_COLABORADORES = self.lkm.form_id('alta_de_colaboradores_visitantes','id')
@@ -1084,6 +1085,10 @@ class AccesosModel(Base):
             'prefijo_telefonico':'6a221532db633d0cf4faf12f',
             'tolerancia_de_entrada_previa':"6a2835444172819eb764943b",
             'tolerancia_de_entrada_posterior':"6a22155492b193f057990682",
+        }
+
+        self.impresion_qr_fields = {
+            'paginas_a_imprimir': '684883d52595dedd260c6a71',
         }
 
         self.paquetes_fields = {
