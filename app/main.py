@@ -30,16 +30,20 @@ import requests as _requests
 _HTTP_TIMEOUT = (int(os.getenv('LKF_HTTP_CONNECT_TIMEOUT', 10)),
                  int(os.getenv('LKF_HTTP_READ_TIMEOUT', 120)))
 
-# Header X-Clave10 (nombre_script:opcion) en toda peticion saliente, para que infra
-# sepa en HAProxy que script la mando. El valor llega en el header que manda
-# dispatch() y se guarda por request (cada request es su propia task de asyncio).
+# Headers X-Clave10-Script-Name / X-Clave10-Script-Option en toda peticion saliente,
+# para que infra sepa en HAProxy que script la mando. Los valores llegan en los headers
+# que manda dispatch() y se guardan por request (cada request es su propia task de asyncio).
 import contextvars as _contextvars
-_CLAVE10_HEADER = 'X-Clave10'
-_clave10_ctx = _contextvars.ContextVar('clave10_header', default='sanic')
+_CLAVE10_NAME = 'X-Clave10-Script-Name'
+_CLAVE10_OPTION = 'X-Clave10-Script-Option'
+_clave10_ctx = _contextvars.ContextVar('clave10_header', default=('sanic', ''))
 def _with_clave10_header(headers):
     headers = dict(headers or {})
-    if not any(k.lower() == _CLAVE10_HEADER.lower() for k in headers):
-        headers[_CLAVE10_HEADER] = _clave10_ctx.get()
+    if not any(k.lower() == _CLAVE10_NAME.lower() for k in headers):
+        name, option = _clave10_ctx.get()
+        headers[_CLAVE10_NAME] = name
+        if option:
+            headers[_CLAVE10_OPTION] = option
     return headers
 
 _session_request_orig = _requests.Session.request
@@ -183,7 +187,11 @@ setup_auth(app)
 
 @app.on_request
 async def set_clave10_header(request):
-    _clave10_ctx.set(request.headers.get(_CLAVE10_HEADER) or f"sanic:{request.path}")
+    name = request.headers.get(_CLAVE10_NAME)
+    if name:
+        _clave10_ctx.set((name, request.headers.get(_CLAVE10_OPTION, '')))
+    else:
+        _clave10_ctx.set(('sanic', request.path))
 
 
 # ============================================

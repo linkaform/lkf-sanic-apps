@@ -168,7 +168,8 @@ def dispatch(end_point, module='accesos', params={}, method='get', **kwargs):
         'Content-Type': 'application/json',
         'X-LKF-Trace': '1',
         # Lo reenvia Sanic en sus peticiones a Linkaform (ver main.py).
-        'X-Clave10': f"{os.path.basename(sys.argv[0])}:{end_point}",
+        'X-Clave10-Script-Name': os.path.basename(sys.argv[0]),
+        'X-Clave10-Script-Option': end_point,
     }
     url = f"http://0.0.0.0:{SANIC_PORT}/{module}/{end_point}"
     print('url', url)
