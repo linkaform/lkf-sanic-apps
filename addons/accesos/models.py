@@ -45,9 +45,7 @@ class AccesosModel(Base):
         self.BITACORA_OBJETOS_PERDIDOS = self.lkm.form_id('bitacora_objetos_perdidos','id')
         self.BITACORA_FALLAS = self.lkm.form_id('bitacora_de_fallas','id')
         self.BITACORA_INCIDENCIAS = self.lkm.form_id('bitacora_de_incidencias','id')
-        # Forma creada a mano en LinkaForm (no viene de un módulo instalado, así que
-        # lkm.form_id no la encuentra): el id es el de la cuenta de seguridad.
-        self.HISTORIAL_INCIDENCIAS = 184796
+        self.HISTORIAL_INCIDENCIAS = self.lkm.form_id('historial_de_incidencias','id')
         self.BITACORA_GAFETES_LOCKERS = self.lkm.form_id('bitacora_de_gafetes_y_lockers','id')
         self.CARGA_PERMISOS_VISITANTES = self.lkm.form_id('carga_de_permisos_de_visitantes','id')
         self.CHECKIN_CASETAS = self.lkm.form_id('checkin_checkout_casetas','id')
