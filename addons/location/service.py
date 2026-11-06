@@ -66,6 +66,27 @@ class Location(FacetSearchMixin, Base):
         self.EMPLEADOS_CAT_OBJ_ID = (self.lkm.catalog_id('empleados') or {}).get('obj_id') \
             or (self.lkm.catalog_id('employee') or {}).get('obj_id')
 
+        # Opciones avanzadas de la ubicación (tab del detalle): su fila del
+        # grupo "Requisitos de Accesos" de configuracion_modulo_seguridad. La
+        # forma tiene un registro por cuenta y una fila por ubicación.
+        self.CONF_MODULO_SEGURIDAD = self.lkm.form_id('configuracion_modulo_seguridad', 'id')
+        self.GRUPO_REQUISITOS = '676975321df93a68a609f9ce'
+        self.config_seguridad_fields = {
+            'datos_requeridos': '6769756fc728a0b63b8431ea',
+            'envio_por': '6810180169eeaca9517baa5b',
+            'configuracion_de_accesos': '696e6dda9517e760679e71eb',
+            'tolerancia_de_entrada_previa': '6a2835444172819eb764943b',
+            'tolerancia_de_entrada_posterior': '6a22155492b193f057990682',
+            'prefijo_telefonico': '6a221532db633d0cf4faf12f',
+            'opcion_condiciones_servicio': '6a4c65bd847c02cf0be63f05',
+            'desc_condiciones_servicio': '6a4c673722f825e7b3e46468',
+            'doc_condiciones_servicio': '6a4c673722f825e7b3e46469',
+            'url_condiciones_servicio': '6a4c673722f825e7b3e4646a',
+            'auto_activacion': '6abbfa2ea034ae2596e7444c',
+            'logo_por_ubicacion': '6abc34ba059be8a67a72dc0b',
+            'acompanantes_requeridos': '6acebdd120f8bb307d738267',
+        }
+
         self.f.update( {
             'location':'663e5c57f5b8a7ce8211ed0b',
             'location_id':'68101945f4996c72247baac4',
@@ -957,4 +978,180 @@ class Location(FacetSearchMixin, Base):
         response = self.lkf_api.patch_multi_record(answers=answers, form_id=self.UBICACIONES, record_id=[record_id])
         if isinstance(response, dict) and response.get('status_code') not in (None, 200, 201, 202, 204):
             self._lkf_error(response, 'No se pudo actualizar la ubicación')
+        return response
+
+    # Opciones de los checkbox/radio del grupo, tal cual están en la forma.
+    CONFIG_SEGURIDAD_OPCIONES = {
+        'datos_requeridos': ('identificacion', 'fotografia', 'correo', 'telefono'),
+        'envio_por': ('correo', 'sms'),
+        'configuracion_de_accesos': ('impresion_de_pase', 'auto_acceso'),
+        'opcion_condiciones_servicio': ('descripción', 'vídeo', 'documento'),
+        'auto_activacion': ('sí', 'no'),
+        'acompanantes_requeridos': ('sí', 'no'),
+    }
+    CONFIG_SEGURIDAD_ENTEROS = ('tolerancia_de_entrada_previa', 'tolerancia_de_entrada_posterior', 'prefijo_telefonico')
+    CONFIG_SEGURIDAD_TEXTOS = ('desc_condiciones_servicio', 'url_condiciones_servicio')
+    CONFIG_SEGURIDAD_ARCHIVOS = ('doc_condiciones_servicio', 'logo_por_ubicacion')
+    CONFIG_SEGURIDAD_RADIOS = ('auto_activacion', 'acompanantes_requeridos')
+
+    def _get_config_seguridad_record(self):
+        """ Registro de configuracion_modulo_seguridad que usan los pases: el
+        más reciente de la cuenta (mismo criterio que
+        get_grupos_requisitos_ubicaciones en accesos). Respuestas crudas, sin
+        formatear, para poder reescribir el grupo sin alterar las demás filas. """
+        query = [
+            {'$match': {
+                'deleted_at': {'$exists': False},
+                'form_id': self.CONF_MODULO_SEGURIDAD,
+            }},
+            {'$sort': {'updated_at': -1}},
+            {'$limit': 1},
+            {'$project': {'_id': 1, 'grupo': f"$answers.{self.GRUPO_REQUISITOS}"}},
+        ]
+        records = list(self.cr.aggregate(query))
+        return records[0] if records else None
+
+    def _indices_fila_ubicacion(self, grupo, ubicacion):
+        """ Índices de las filas del grupo que pertenecen a la ubicación. El
+        catalog-select puede venir como texto o como lista. """
+        indices = []
+        for i, fila in enumerate(grupo or []):
+            valor = (fila.get(self.UBICACIONES_CAT_OBJ_ID) or {}).get(self.f['location'])
+            nombres = valor if isinstance(valor, list) else [valor]
+            if ubicacion in nombres:
+                indices.append(i)
+        return indices
+
+    def get_config_seguridad_ubicacion(self, ubicacion=''):
+        """ Fila de configuración del módulo de seguridad de UNA ubicación, con
+        llaves legibles. Regresa None si la ubicación todavía no tiene fila
+        (el front muestra el formulario vacío y al guardar se crea). """
+        ubicacion = (ubicacion or '').strip()
+        if not ubicacion:
+            raise self.LKFException({'msg': 'La ubicación es requerida.', 'status_code': 400})
+        record = self._get_config_seguridad_record()
+        grupo = (record or {}).get('grupo') or []
+        indices = self._indices_fila_ubicacion(grupo, ubicacion)
+        if not indices:
+            return None
+        fila = grupo[indices[0]]
+        return {
+            nombre: fila[field_id]
+            for nombre, field_id in self.config_seguridad_fields.items()
+            if field_id in fila
+        }
+
+    def _vacio_config_seguridad(self, nombre):
+        """ Valor con el que se vacía un campo. Se manda explícito (y no se
+        quita la llave) porque el patch de LKF mezcla los campos de la fila. """
+        if nombre in self.CONFIG_SEGURIDAD_ENTEROS:
+            return None
+        if nombre in self.CONFIG_SEGURIDAD_TEXTOS or nombre in self.CONFIG_SEGURIDAD_RADIOS:
+            return ''
+        return []
+
+    def _valor_config_seguridad(self, nombre, valor):
+        """ Valida y convierte un campo de la config al formato de la forma. """
+        if valor in (None, '', []):
+            return self._vacio_config_seguridad(nombre)
+        if nombre in self.CONFIG_SEGURIDAD_ENTEROS:
+            try:
+                numero = int(valor)
+            except (TypeError, ValueError):
+                numero = -1
+            if numero < 0:
+                raise self.LKFException({'title': 'Valor inválido', 'msg': f'"{nombre}" debe ser un número entero positivo.', 'status_code': 400})
+            return numero
+        if nombre in self.CONFIG_SEGURIDAD_TEXTOS:
+            return str(valor).strip()
+        if nombre in self.CONFIG_SEGURIDAD_ARCHIVOS:
+            archivos = valor if isinstance(valor, list) else [valor]
+            archivos = [
+                {'file_url': a['file_url'], 'file_name': a.get('file_name') or a['file_url'].rsplit('/', 1)[-1]}
+                for a in archivos if isinstance(a, dict) and a.get('file_url')
+            ]
+            return archivos
+        opciones = self.CONFIG_SEGURIDAD_OPCIONES.get(nombre, ())
+        if nombre in self.CONFIG_SEGURIDAD_RADIOS:
+            valor = valor[0] if isinstance(valor, list) and valor else valor
+            if valor not in opciones:
+                raise self.LKFException({'title': 'Valor inválido', 'msg': f'"{valor}" no es una opción de "{nombre}".', 'status_code': 400})
+            return valor
+        valores = valor if isinstance(valor, list) else [valor]
+        invalidos = [v for v in valores if v not in opciones]
+        if invalidos:
+            raise self.LKFException({'title': 'Valor inválido', 'msg': f'{invalidos} no son opciones de "{nombre}".', 'status_code': 400})
+        return list(dict.fromkeys(valores))
+
+    def update_config_seguridad_ubicacion(self, ubicacion='', config=None):
+        """ Guarda la configuración del módulo de seguridad de UNA ubicación.
+
+        config trae solo los campos que cambiaron (llaves legibles). Se toma el
+        registro de la cuenta, se mezclan esos campos sobre la fila de la
+        ubicación (o se agrega la fila si no existe) y se reescribe el grupo.
+        Al patch solo viaja la fila de la ubicación, con su índice en el grupo
+        ({"<índice>": fila}, o {"-1": fila} para agregarla): las demás filas
+        no se tocan y los campos que no vienen en config se conservan.
+        """
+        ubicacion = (ubicacion or '').strip()
+        if not ubicacion:
+            raise self.LKFException({'msg': 'La ubicación es requerida.', 'status_code': 400})
+        if not isinstance(config, dict) or not config:
+            return {'status_code': 200, 'msg': 'Sin cambios'}
+        if not self.exists_ubicacion(ubicacion):
+            raise self.LKFException({'title': 'Ubicación no encontrada', 'msg': f'No existe la ubicación "{ubicacion}".', 'status_code': 404})
+
+        desconocidos = [k for k in config if k not in self.config_seguridad_fields]
+        if desconocidos:
+            raise self.LKFException({'title': 'Campos inválidos', 'msg': f'Campos no reconocidos: {desconocidos}', 'status_code': 400})
+        cambios = {
+            self.config_seguridad_fields[nombre]: self._valor_config_seguridad(nombre, valor)
+            for nombre, valor in config.items()
+        }
+
+        fila_nueva = {self.UBICACIONES_CAT_OBJ_ID: {self.f['location']: ubicacion}}
+
+        record = self._get_config_seguridad_record()
+        if not record:
+            # La cuenta no tiene registro de configuración: se crea con la fila.
+            fila = dict(fila_nueva)
+            fila.update({k: v for k, v in cambios.items() if v not in (None, '', [])})
+            metadata = self.lkf_api.get_metadata(form_id=self.CONF_MODULO_SEGURIDAD)
+            metadata.update({
+                'properties': {
+                    'device_properties': {
+                        'system': 'Addons',
+                        'process': 'Opciones avanzadas de ubicación',
+                        'accion': 'update_config_seguridad_ubicacion',
+                        'file': 'location/service.py',
+                    },
+                },
+                'answers': {self.GRUPO_REQUISITOS: [fila]},
+            })
+            response = self.lkf_api.post_forms_answers(metadata)
+            if not isinstance(response, dict) or response.get('status_code') not in (200, 201, 202):
+                self._lkf_error(response, 'No se pudo guardar la configuración')
+            return response
+
+        grupo = record.get('grupo') or []
+        indices = self._indices_fila_ubicacion(grupo, ubicacion)
+        if len(indices) > 1:
+            # Pases usa todas las filas de la ubicación; aquí se edita la primera.
+            print(f'>>> update_config_seguridad_ubicacion: {len(indices)} filas para "{ubicacion}", se edita la primera')
+        if indices:
+            fila = dict(grupo[indices[0]])
+            fila.update(cambios)
+            filas = {str(indices[0]): fila}
+        else:
+            fila = dict(fila_nueva)
+            fila.update({k: v for k, v in cambios.items() if v not in (None, '', [])})
+            filas = {'-1': fila}
+
+        response = self.lkf_api.patch_multi_record(
+            answers={self.GRUPO_REQUISITOS: filas},
+            form_id=self.CONF_MODULO_SEGURIDAD,
+            record_id=[str(record['_id'])],
+        )
+        if isinstance(response, dict) and response.get('status_code') not in (None, 200, 201, 202, 204):
+            self._lkf_error(response, 'No se pudo guardar la configuración')
         return response
