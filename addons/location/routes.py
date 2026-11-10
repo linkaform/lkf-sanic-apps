@@ -91,6 +91,22 @@ async def get_get_empleados_by_ubicacion(request: Request):
     return json({"data": response}, status=200)
 
 
+@location_bp.get("/get_config_seguridad_ubicacion")
+async def get_get_config_seguridad_ubicacion(request: Request):
+    response = service.get_config_seguridad_ubicacion(ubicacion=request.args.get("ubicacion", ""))
+    return json({"data": response}, status=200)
+
+
+@location_bp.post("/update_config_seguridad_ubicacion")
+async def post_update_config_seguridad_ubicacion(request: Request):
+    payload = _ocr_payload(request)
+    response = service.update_config_seguridad_ubicacion(
+        ubicacion=payload.get("ubicacion", ""),
+        config=payload.get("config", {}) or {},
+    )
+    return json({"data": response}, status=200)
+
+
 @location_bp.post("/create_ubicacion")
 async def post_create_ubicacion(request: Request):
     payload = _ocr_payload(request)

@@ -8,6 +8,85 @@ from sanic.response import text
 from sanic.response import json
 from sanic.response import file, empty
 
+# linkaform_api crea un MongoClient nuevo en cada get_collections y nunca lo cierra
+# (7 hilos por cliente con replica de 3 nodos). En addons no importa porque el
+# proceso muere; aqui el proceso vive y se acumulan (~450 hilos al arrancar).
+# Se reusa un cliente por URI. Va antes de importar las rutas/modulos.
+from linkaform_api import network as _lkf_network
+_mongo_client_orig = _lkf_network.MongoClient
+_mongo_clients = {}
+def _shared_mongo_client(*args, **kwargs):
+    key = (args, tuple(sorted(kwargs.items())))
+    if key not in _mongo_clients:
+        _mongo_clients[key] = _mongo_client_orig(*args, **kwargs)
+    return _mongo_clients[key]
+_lkf_network.MongoClient = _shared_mongo_client
+
+# Las llamadas HTTP (linkaform_api y modulos) no traen timeout: si Linkaform no
+# contesta, el handler sincrono congela el worker para siempre. Se pone uno por
+# default a toda requests.Session (requests.get/post tambien pasan por ahi).
+# Read en segundos sin recibir bytes, no duracion total del script.
+import requests as _requests
+_HTTP_TIMEOUT = (int(os.getenv('LKF_HTTP_CONNECT_TIMEOUT', 10)),
+                 int(os.getenv('LKF_HTTP_READ_TIMEOUT', 120)))
+
+# Headers X-Clave10-Script-Name / X-Clave10-Script-Option en toda peticion saliente,
+# para que infra sepa en HAProxy que script la mando. Los valores llegan en los headers
+# que manda dispatch() y se guardan por request (cada request es su propia task de asyncio).
+import contextvars as _contextvars
+_CLAVE10_NAME = 'X-Clave10-Script-Name'
+_CLAVE10_OPTION = 'X-Clave10-Script-Option'
+_clave10_ctx = _contextvars.ContextVar('clave10_header', default=('sanic', ''))
+def _with_clave10_header(headers):
+    headers = dict(headers or {})
+    if not any(k.lower() == _CLAVE10_NAME.lower() for k in headers):
+        name, option = _clave10_ctx.get()
+        headers[_CLAVE10_NAME] = name
+        if option:
+            headers[_CLAVE10_OPTION] = option
+    return headers
+
+_session_request_orig = _requests.Session.request
+def _session_request_with_timeout(self, method, url, **kwargs):
+    if kwargs.get('timeout') is None:
+        kwargs['timeout'] = _HTTP_TIMEOUT
+    kwargs['headers'] = _with_clave10_header(kwargs.get('headers'))
+    return _session_request_orig(self, method, url, **kwargs)
+_requests.Session.request = _session_request_with_timeout
+
+# CouchDB va por su propio cliente HTTP, no por requests.
+import warnings as _warnings
+with _warnings.catch_warnings():
+    _warnings.simplefilter('ignore')
+    import couchdb.http as _couch_http
+_couch_request_orig = _couch_http.Session.request
+def _couch_request_with_header(self, method, url, body=None, headers=None, *args, **kwargs):
+    return _couch_request_orig(self, method, url, body, _with_clave10_header(headers), *args, **kwargs)
+_couch_http.Session.request = _couch_request_with_header
+
+# Los hilos de ThreadPoolExecutor (accesos/service.py) no heredan contextvars: se les
+# pasa solo el header. No se copia todo el contexto para no cambiar el usuario/JWT
+# que hoy ven esos hilos (linkaform_api.request_context).
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+_executor_submit_orig = _ThreadPoolExecutor.submit
+def _executor_submit_with_header(self, fn, /, *args, **kwargs):
+    value = _clave10_ctx.get()
+    def _run(*a, **kw):
+        _clave10_ctx.set(value)
+        return fn(*a, **kw)
+    return _executor_submit_orig(self, _run, *args, **kwargs)
+_ThreadPoolExecutor.submit = _executor_submit_with_header
+
+# ConnectionClient reintenta 9 veces incluyendo POST/PATCH. Con read timeout eso
+# reenviaria un POST que Linkaform si recibio (registros duplicados): se dejan
+# los reintentos de conexion y se apagan los de lectura.
+_connection_client_init_orig = _lkf_network.ConnectionClient.__init__
+def _connection_client_init(self, *args, **kwargs):
+    _connection_client_init_orig(self, *args, **kwargs)
+    for _adapter in self.session.adapters.values():
+        _adapter.max_retries = _adapter.max_retries.new(read=0)
+_lkf_network.ConnectionClient.__init__ = _connection_client_init
+
 from config.settings import settings
 from database import init_db, get_db_pool
 from dependencies import init_dependencies
@@ -105,6 +184,14 @@ for bp in blueprints:
 
 setup_error_handlers(app)
 setup_auth(app)
+
+@app.on_request
+async def set_clave10_header(request):
+    name = request.headers.get(_CLAVE10_NAME)
+    if name:
+        _clave10_ctx.set((name, request.headers.get(_CLAVE10_OPTION, '')))
+    else:
+        _clave10_ctx.set(('sanic', request.path))
 
 
 # ============================================

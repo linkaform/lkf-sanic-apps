@@ -448,10 +448,8 @@ async def get_get_menus(request: Request):
 
 @accesos_bp.post("/set_permissions")
 async def post_set_permissions(request: Request):
-    # POST porque answers es el objeto completo del registro de Configuracion de Menus.
-    payload = _ocr_payload(request)
-    records = service.set_user_permissions(answers=payload.get("answers", {}), user_id=payload.get("user_id"))
-    return json({"data": records}, status=200)
+    # Deshabilitado (1509): set_item_permits descomparte sin guardas.
+    return json({"error": "set_permissions deshabilitado (1509)"}, status=503)
 
 # ============================================
 # OCR (self.ai / OpenRouter)
@@ -2242,6 +2240,28 @@ async def post_update_area_disponibilidad(request: Request):
     )
     return json({"data": response}, status=200)
 
+@accesos_bp.post("/create_impresion_qr")
+async def post_create_impresion_qr(request: Request):
+    payload = _ocr_payload(request)
+    try:
+        paginas = int(payload.get('paginas', 0))
+    except (TypeError, ValueError):
+        paginas = 0
+    if paginas < 1:
+        return json({"exception": {"title": "Datos incompletos", "msg": "Indica cuántas páginas quieres imprimir (mínimo 1)."}}, status=400)
+
+    response = service.create_impresion_qr(paginas)
+    if not isinstance(response, dict) or response.get('status_code') not in (200, 201, 202):
+        errores = response.get('json') if isinstance(response, dict) else response
+        return json({"exception": {"title": "Error al crear la plantilla", "msg": str(errores)}}, status=400)
+    creado = response.get('json') or {}
+    return json({"data": {
+        "status": "ok",
+        "msg": "Plantilla creada correctamente",
+        "record_id": creado.get('id', ''),
+        "folio": creado.get('folio', ''),
+    }}, status=200)
+
 @accesos_bp.get("/filters_paqueteria")
 async def get_filters_paqueteria(request: Request):
     return json({"data": service.get_filters_paqueteria()}, status=200)
@@ -2268,10 +2288,8 @@ async def get_filters_transportistas(request: Request):
 
 @accesos_bp.post("/set_config")
 async def post_set_config(request: Request):
-    payload = _ocr_payload(request)
-    answers = payload.get("answers", {})
-    response = service.set_config(answers)
-    return json({"data": response}, status=200)
+    # Deshabilitado (1509): set_config comparte/descomparte con set_item_permits sin guardas.
+    return json({"error": "set_config deshabilitado (1509)"}, status=503)
 
 # ============================================
 # Transportistas: pases, bitacora de recepcion e inspecciones CTPAT

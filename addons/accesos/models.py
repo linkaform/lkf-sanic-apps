@@ -45,9 +45,7 @@ class AccesosModel(Base):
         self.BITACORA_OBJETOS_PERDIDOS = self.lkm.form_id('bitacora_objetos_perdidos','id')
         self.BITACORA_FALLAS = self.lkm.form_id('bitacora_de_fallas','id')
         self.BITACORA_INCIDENCIAS = self.lkm.form_id('bitacora_de_incidencias','id')
-        # Forma creada a mano en LinkaForm (no viene de un módulo instalado, así que
-        # lkm.form_id no la encuentra): el id es el de la cuenta de seguridad.
-        self.HISTORIAL_INCIDENCIAS = 184796
+        self.HISTORIAL_INCIDENCIAS = self.lkm.form_id('historial_de_incidencias','id')
         self.BITACORA_GAFETES_LOCKERS = self.lkm.form_id('bitacora_de_gafetes_y_lockers','id')
         self.CARGA_PERMISOS_VISITANTES = self.lkm.form_id('carga_de_permisos_de_visitantes','id')
         self.CHECKIN_CASETAS = self.lkm.form_id('checkin_checkout_casetas','id')
@@ -79,6 +77,7 @@ class AccesosModel(Base):
         self.PROVEEDORES_FORM = self.lkm.form_id('proveedores','id')
         self.MENUS_FORM = self.lkm.form_id('configuracion_menus','id')
         self.HORARIOS = self.lkm.form_id('horarios','id')
+        self.IMPRESION_DE_QR = self.lkm.form_id('impresion_de_qr','id')
 
         self.last_check_in = []
         # self.FORM_ALTA_COLABORADORES = self.lkm.form_id('alta_de_colaboradores_visitantes','id')
@@ -223,6 +222,19 @@ class AccesosModel(Base):
         self.FILTERS = self.lkm.script_id('filters','id')
         self.SCRIPT_INCIDENCIAS = self.lkm.script_id('incidencias','id')
 
+        # Gemelo *_sdk de cada script de arriba: script_id -> script_id_sdk. El front ya
+        # llama varios por su nombre _sdk, y set_item_permits descomparte todo script
+        # que no venga en module_permits, asi que deben ir juntos.
+        self.SCRIPTS_SDK = {
+            self.lkm.script_id(name, 'id'): self.lkm.script_id(f'{name}_sdk', 'id')
+            for name in (
+                'articulos_consecionados', 'articulos_perdidos', 'fallas', 'get_stats',
+                'gafetes_lockers', 'notes', 'paqueteria', 'script_turnos', 'pase_de_acceso',
+                'pase_de_acceso_use_api', 'rondines', 'transportistas', 'offline_services',
+                'ocr_docs', 'menus', 'filters', 'incidencias',
+            )
+        }
+
         self.module_permits = {
             'always':{
                 'forms':[],
@@ -280,6 +292,8 @@ class AccesosModel(Base):
                 'scripts':[self.SCRIPT_TURNOS]
             },
         }
+        for config in self.module_permits.values():
+            config['scripts'] += [self.SCRIPTS_SDK.get(s) for s in config['scripts']]
 
         ### Permisos legacy (migrado de config_access.py). Esquema de permisos
         ### distinto y mas antiguo que self.module_permits (usado por menus.py),
@@ -1071,6 +1085,10 @@ class AccesosModel(Base):
             'tolerancia_de_entrada_posterior':"6a22155492b193f057990682",
         }
 
+        self.impresion_qr_fields = {
+            'paginas_a_imprimir': '684883d52595dedd260c6a71',
+        }
+
         self.paquetes_fields = {
             'area_paqueteria':f"{self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID}.{self.mf['nombre_area']}",
             'descripcion_paqueteria':"67e4652619b4be1c5a76a485",
@@ -1128,6 +1146,7 @@ class AccesosModel(Base):
             'tiempo_para_ejecutar_tarea_expresado_en': 'abcde0001000000000010005',
             'tipo_asignacion':'6a344c7a6e574352dcccc7ba',
             'tipo_rondin':'69b9b98d2a02f4a0dd35f5c1',
+            'tipo':'69b9b98d2a02f4a0dd35f5c1',
             'ubicacion': '663e5c57f5b8a7ce8211ed0b',
             'grupo_asignado_a':'6a31d37adeceb005758cd4e2',
             'area':f"{self.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
@@ -1312,6 +1331,7 @@ class AccesosModel(Base):
             'tiempo_para_ejecutar_tarea_expresado_en': 'abcde0001000000000010005',
             'tipo_asignacion':'6a344c7a6e574352dcccc7ba',
             'tipo_rondin':'69b9b98d2a02f4a0dd35f5c1',
+            'tipo':'69b9b98d2a02f4a0dd35f5c1',
             'ubicacion': '663e5c57f5b8a7ce8211ed0b',
             'grupo_asignado_a':'6a31d37adeceb005758cd4e2',
             'area':f"{self.Location.AREAS_DE_LAS_UBICACIONES_SALIDA_OBJ_ID}.{self.mf['nombre_area_salida']}",
