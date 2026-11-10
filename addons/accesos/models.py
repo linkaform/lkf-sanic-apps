@@ -868,6 +868,9 @@ class AccesosModel(Base):
             'tags':'6834e4e8b0ed467efade7972',
             'telefono': '684c3e026d974f9625e1130c',
             'tiempo_transcurrido': '688d1b7ad3268f1968d5ddf0',
+            # Tiempo de la creación del registro al cierre (estatus "cerrado"). Lo
+            # calcula el back al cerrar; el de arriba es el de cada seguimiento.
+            'tiempo_transcurrido_cierre': '6af388f675107b73a9f74d06',
             'tipo': '684c3eaa04aaab135d7dfbb2',
             #Campos en grupo repetitivo afectacion patrimonial:
             'tipo_afectacion': '688a9d52c1ce871f545b3b98',
