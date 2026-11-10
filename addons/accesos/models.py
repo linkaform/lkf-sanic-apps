@@ -1648,6 +1648,10 @@ class AccesosModel(Base):
             '4_placas_o_economico': 'd7479071e6aabdeaa10ce41b',
             '5_identificacion_del_operador': '718a0a37c5a6965b2127d2c0',
             'comentarios': '0e009f7829544463cbf89e1e',
+            # Radio aplica / no_aplica (N/A de sello, HLmando 1464/1511). Queda en
+            # None hasta crear el campo en la forma 158808; mientras tanto el N/A se
+            # deja en Comentarios (ver save_inspecciones_sello).
+            'aplica_sello': None,
         }
 
         self.conf_flujo_transportistas_fields = {

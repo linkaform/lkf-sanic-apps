@@ -18344,6 +18344,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         }
 
         inspecciones_creadas = []
+        cajas_nuevas = []
 
         for inspeccion in data:
             tipo_bitacora = inspeccion.get('tipo')
@@ -18351,6 +18352,17 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 continue
 
             answers = {}
+            # N/A de sello (HLmando). Ambas llaves son opcionales: un payload sin
+            # 'no_aplica' ni 'caja' se guarda exactamente igual que antes.
+            no_aplica = bool(inspeccion.get('no_aplica'))
+            if 'no_aplica' in inspeccion and f.get('aplica_sello'):
+                answers[f['aplica_sello']] = 'no_aplica' if no_aplica else 'aplica'
+
+            # Caja capturada en el modal cuando la bitácora no tenía remolques
+            # (recolección solo con tractor): se registra como remolque abajo.
+            caja = inspeccion.get('caja') or {}
+            if any(caja.get(k) for k in ('tipo', 'no_caja', 'placas')):
+                cajas_nuevas.append(caja)
 
             if inspeccion.get('no_sello_revisado'):
                 answers[f['numero_de_sello_fisico']] = inspeccion['no_sello_revisado']
@@ -18359,8 +18371,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             if inspeccion.get('clasificacion_iso'):
                 iso_raw = inspeccion['clasificacion_iso']
                 answers[f['tipo_de_sello_clasificacion_iso_17712']] = ISO_MAP.get(iso_raw, iso_raw.lower())
-            if inspeccion.get('comentario'):
-                answers[f['comentarios']] = inspeccion['comentario']
+            comentario = inspeccion.get('comentario') or ''
+            if no_aplica:
+                # Se deja tambien en Comentarios para que el N/A se vea en el registro
+                # aunque el campo aplica_sello aun no exista en la forma.
+                comentario = f'No aplica (N/A). {comentario}'.strip()
+            if comentario:
+                answers[f['comentarios']] = comentario
 
             vvtt = inspeccion.get('vvtt', []) or []
             acciones_verificadas = [v['punto'].lower() for v in vvtt if v.get('verificado')]
@@ -18404,6 +18421,16 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     for i, (tipo_label, inspeccion_id) in enumerate(inspecciones_creadas)
                 }
             }
+            if cajas_nuevas:
+                # Indices negativos = filas nuevas (mismo patron que grupo_inspecciones).
+                answers_bitacora[f_bit['grupo_remolques']] = {
+                    -(i + 1): {
+                        f_bit['tipo_remolque']:       c.get('tipo', ''),
+                        f_bit['num_caja_contenedor']: c.get('no_caja', ''),
+                        f_bit['placas_de_caja']:      c.get('placas', ''),
+                    }
+                    for i, c in enumerate(cajas_nuevas)
+                }
             res_bit = self.lkf_api.patch_multi_record(
                 answers=answers_bitacora,
                 form_id=self.BITACORA_TRANSPORTISTAS,
