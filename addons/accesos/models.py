@@ -868,6 +868,9 @@ class AccesosModel(Base):
             'tags':'6834e4e8b0ed467efade7972',
             'telefono': '684c3e026d974f9625e1130c',
             'tiempo_transcurrido': '688d1b7ad3268f1968d5ddf0',
+            # Tiempo de la creación del registro al cierre (estatus "cerrado"). Lo
+            # calcula el back al cerrar; el de arriba es el de cada seguimiento.
+            'tiempo_transcurrido_cierre': '6af388f675107b73a9f74d06',
             'tipo': '684c3eaa04aaab135d7dfbb2',
             #Campos en grupo repetitivo afectacion patrimonial:
             'tipo_afectacion': '688a9d52c1ce871f545b3b98',
@@ -1648,6 +1651,10 @@ class AccesosModel(Base):
             '4_placas_o_economico': 'd7479071e6aabdeaa10ce41b',
             '5_identificacion_del_operador': '718a0a37c5a6965b2127d2c0',
             'comentarios': '0e009f7829544463cbf89e1e',
+            # Radio aplica / no_aplica (N/A de sello, HLmando 1464/1511). Queda en
+            # None hasta crear el campo en la forma 158808; mientras tanto el N/A se
+            # deja en Comentarios (ver save_inspecciones_sello).
+            'aplica_sello': None,
         }
 
         self.conf_flujo_transportistas_fields = {

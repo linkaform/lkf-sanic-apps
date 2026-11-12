@@ -12575,6 +12575,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'tags':f"$answers.{self.incidence_fields['tags']}",
 
                 'estatus':f"$answers.{self.incidence_fields['estatus']}",
+                'tiempo_transcurrido_cierre':f"$answers.{self.incidence_fields['tiempo_transcurrido_cierre']}",
 
                 'nombre_completo_persona_extraviada':f"$answers.{self.incidence_fields['nombre_completo_persona_extraviada']}",
                 'edad':f"$answers.{self.incidence_fields['edad']}",
@@ -14414,6 +14415,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 answers.update({f"{self.incidence_fields[key]}":value})
             # Llaves que el form no conoce se ignoran: antes tronaban con KeyError
             # y la incidencia completa no se creaba/actualizaba.
+        # Al final, para que el cálculo gane sobre cualquier valor del loop.
+        answers.update(self._tiempo_cierre_answers(incidence_selected, incidencia_seg['estatus']))
         print("ANSWERS", simplejson.dumps(answers, indent=4))
         # print(err)
         if answers or folio:
@@ -14462,6 +14465,60 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         res = self.lkf_api.patch_multi_record( answers = answers, form_id=self.BITACORA_INCIDENCIAS, record_id=['68ad4fe042ca0aff7cadfd0e'])
         print("response",res)
         return res
+
+    @staticmethod
+    def _texto_duracion(segundos):
+        """ '2 días, 3 horas, 15 minutos'; menos de un minuto -> '0 minutos'. """
+        segundos = max(int(segundos), 0)
+        dias, resto = divmod(segundos, 86400)
+        horas, resto = divmod(resto, 3600)
+        minutos = resto // 60
+        partes = []
+        for valor, singular, plural in ((dias, 'día', 'días'), (horas, 'hora', 'horas'), (minutos, 'minuto', 'minutos')):
+            if valor:
+                partes.append(f"{valor} {singular if valor == 1 else plural}")
+        return ', '.join(partes) or '0 minutos'
+
+    def _incidencia_creada_en(self, record_id):
+        """ Fecha de creación (UTC, aware) del registro de la incidencia. Usa
+        created_at y, si no viene como fecha, la fecha embebida en el _id. """
+        oid = ObjectId(str(record_id))
+        doc = self.cr.find_one({'_id': oid}, {'created_at': 1}) or {}
+        creada = doc.get('created_at')
+        if isinstance(creada, datetime):
+            return creada if creada.tzinfo else creada.replace(tzinfo=timezone.utc)
+        return oid.generation_time
+
+    def _tiempo_cierre_answers(self, antes, estatus_nuevo):
+        """
+        Answers del campo "Tiempo transcurrido al cierre" según el cambio de estatus:
+        - pasa a cerrado (desde otro estatus): tiempo desde la creación del registro.
+        - estaba cerrada y se reabre: se limpia, se recalcula al volver a cerrar.
+        - sigue cerrada (editar una cerrada): se vuelve a mandar el valor que ya
+          tenía, sin recalcular. Así no se pierde aunque el PATCH reemplace las
+          answers completas.
+        - sigue abierta: no se toca.
+        antes es la incidencia como la regresa get_list_incidences.
+        """
+        if not antes:
+            return {}
+        campo = self.incidence_fields['tiempo_transcurrido_cierre']
+        norm = lambda e: f"{e or ''}".lower().replace(' ', '_')
+        estaba_cerrada = norm(antes.get('estatus')) == 'cerrado'
+        # Sin estatus en el payload, el estatus no cambia.
+        queda_cerrada = norm(estatus_nuevo) == 'cerrado' if estatus_nuevo else estaba_cerrada
+        if not queda_cerrada:
+            return {campo: ''} if estaba_cerrada else {}
+        if estaba_cerrada:
+            actual = antes.get('tiempo_transcurrido_cierre')
+            return {campo: actual} if actual else {}
+        try:
+            creada = self._incidencia_creada_en(antes.get('_id'))
+        except Exception as e:
+            print('tiempo_transcurrido_cierre: no se pudo leer la creación', antes.get('folio'), e)
+            return {}
+        transcurrido = datetime.now(timezone.utc) - creada
+        return {campo: self._texto_duracion(transcurrido.total_seconds())}
 
     def update_incidence(self, data_incidences, folio):
         '''
@@ -14607,6 +14664,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 answers.update({f"{self.incidence_fields[key]}":value})
             # Llaves que el form no conoce se ignoran: antes tronaban con KeyError
             # y la incidencia completa no se creaba/actualizaba.
+        # Al final, para que el cálculo gane sobre cualquier valor del loop.
+        answers.update(self._tiempo_cierre_answers(antes, data_incidences.get('estatus')))
         # print("incidencias answers", simplejson.dumps(answers, indent=4) )
         if answers or folio:
             metadata = self.lkf_api.get_metadata(form_id=self.BITACORA_INCIDENCIAS)
@@ -18352,6 +18411,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         }
 
         inspecciones_creadas = []
+        cajas_nuevas = []
 
         for inspeccion in data:
             tipo_bitacora = inspeccion.get('tipo')
@@ -18359,6 +18419,17 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 continue
 
             answers = {}
+            # N/A de sello (HLmando). Ambas llaves son opcionales: un payload sin
+            # 'no_aplica' ni 'caja' se guarda exactamente igual que antes.
+            no_aplica = bool(inspeccion.get('no_aplica'))
+            if 'no_aplica' in inspeccion and f.get('aplica_sello'):
+                answers[f['aplica_sello']] = 'no_aplica' if no_aplica else 'aplica'
+
+            # Caja capturada en el modal cuando la bitácora no tenía remolques
+            # (recolección solo con tractor): se registra como remolque abajo.
+            caja = inspeccion.get('caja') or {}
+            if any(caja.get(k) for k in ('tipo', 'no_caja', 'placas')):
+                cajas_nuevas.append(caja)
 
             if inspeccion.get('no_sello_revisado'):
                 answers[f['numero_de_sello_fisico']] = inspeccion['no_sello_revisado']
@@ -18367,8 +18438,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             if inspeccion.get('clasificacion_iso'):
                 iso_raw = inspeccion['clasificacion_iso']
                 answers[f['tipo_de_sello_clasificacion_iso_17712']] = ISO_MAP.get(iso_raw, iso_raw.lower())
-            if inspeccion.get('comentario'):
-                answers[f['comentarios']] = inspeccion['comentario']
+            comentario = inspeccion.get('comentario') or ''
+            if no_aplica:
+                # Se deja tambien en Comentarios para que el N/A se vea en el registro
+                # aunque el campo aplica_sello aun no exista en la forma.
+                comentario = f'No aplica (N/A). {comentario}'.strip()
+            if comentario:
+                answers[f['comentarios']] = comentario
 
             vvtt = inspeccion.get('vvtt', []) or []
             acciones_verificadas = [v['punto'].lower() for v in vvtt if v.get('verificado')]
@@ -18412,6 +18488,16 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                     for i, (tipo_label, inspeccion_id) in enumerate(inspecciones_creadas)
                 }
             }
+            if cajas_nuevas:
+                # Indices negativos = filas nuevas (mismo patron que grupo_inspecciones).
+                answers_bitacora[f_bit['grupo_remolques']] = {
+                    -(i + 1): {
+                        f_bit['tipo_remolque']:       c.get('tipo', ''),
+                        f_bit['num_caja_contenedor']: c.get('no_caja', ''),
+                        f_bit['placas_de_caja']:      c.get('placas', ''),
+                    }
+                    for i, c in enumerate(cajas_nuevas)
+                }
             res_bit = self.lkf_api.patch_multi_record(
                 answers=answers_bitacora,
                 form_id=self.BITACORA_TRANSPORTISTAS,
