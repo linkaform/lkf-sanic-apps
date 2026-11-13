@@ -11414,8 +11414,21 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'alertas': format_alerts,
                 'requisitos': format_grupo_requisitos,
             })
+        data = data or {}
+        data['new_user_username'] = self._get_my_username()
         # print(simplejson.dumps(data, indent=4))
         return data
+
+    def _get_my_username(self):
+        """Username de login del usuario (Empleados), para el header y Mi perfil.
+        No depende de Configuración Accesos: los usuarios del flujo de menús
+        no tienen registro ahí."""
+        try:
+            emp = self.Employee.get_employee_data(user_id=self.user['user_id'], get_one=True, active=False)
+        except Exception as e:
+            print('get_my_username error', e)
+            return ''
+        return self.unlist((emp or {}).get('new_user_username') or '') or ''
 
     def get_config_modulo_seguridad(self, ubicaciones=[]):
         #TODO Verificar por que se envia asi la lista
