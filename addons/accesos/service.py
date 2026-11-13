@@ -4558,6 +4558,19 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         })
         return self.lkf_api.post_forms_answers(metadata)
 
+    def get_plantillas_impresion_qr(self):
+        """
+        Plantillas PDF de la forma Impresión de QR en la cuenta activa (selector
+        del modal "Imprimir plantilla QR" de Áreas). Los ids de plantilla son por
+        cuenta, por eso no se fijan en el front. La plantilla por defecto de la
+        forma no viene aquí: se usa al pedir el PDF sin template_id.
+        """
+        templates = self.lkf_api.get_pdf_templates(self.IMPRESION_DE_QR) or []
+        return [
+            {'id': t.get('id'), 'nombre': t.get('name') or t.get('description') or str(t.get('id'))}
+            for t in templates if t.get('id')
+        ]
+
     def update_full_area(self, record_id, data):
         """
         Edita un área por su record_id (modal de edición del front). Solo se
