@@ -2725,6 +2725,9 @@ class UsersAdmin(Base):
         'role':     '67be0c43a31e5161c47f2bbb',
         'token':    '6a2f1c0e5b3d4a7c9e8f1a01',
         'link':     '6a2f1c0e5b3d4a7c9e8f1a02',
+        # Opcional: si el alta trae contraseña (p.ej. carga universal) se usa esa
+        # y no se manda liga de activacion.
+        'password': '67be0b7896e72a692b4fa660',
         'empleado': '6a30a1b2c3d4e5f607182901',
         'empleado_nombre': '6a30a1b2c3d4e5f607182902',
         'timezone': '6a31d4e6f8a0b2c4d6e8f101',
@@ -3077,8 +3080,14 @@ class UsersAdmin(Base):
         """ Fase 1 del alta (workflow "Creacion de usuario", runtime "before", por
         estatus 'crear'): da de alta el usuario en LinkaForm y deja el registro en
         'creado' con Id de Usuario, token de un solo uso y liga para fijar la
-        contraseña. El workflow de correo (runtime "after", estatus 'creado') manda
-        la liga.
+        contraseña. El workflow de correo (runtime "after", estatus 'creado' y con
+        liga) manda la liga.
+
+        Si el registro trae contraseña capturada (carga universal, cuentas
+        compartidas sin correo real) el usuario se crea con esa contraseña, sin
+        token ni liga, y la contraseña se quita del registro. Sin liga no sale el
+        correo; el workflow "Activacion con contrasena capturada" (after, 'creado'
+        sin liga) llama a activate_with_password, que pasa el registro a 'activado'.
 
         Regresa las respuestas completas ya mutadas: el script puente las devuelve
         al workflow como `replace_ans`, porque este paso corre ANTES de que
@@ -3111,10 +3120,12 @@ class UsersAdmin(Base):
         timezone = self._valid_timezone(self._one(answers.get(f['timezone'])))
         language = self._valid_language(self._one(answers.get(f['language'])))
 
-        # La contraseña la fija el propio usuario con la liga del correo
-        # (UserActivation.set_user_password). Aquí solo se crea una aleatoria que
-        # nadie ve, porque create_user la exige.
-        password = secrets.token_urlsafe(24)
+        # Sin contraseña capturada la fija el propio usuario con la liga del correo
+        # (UserActivation.set_user_password) y aquí solo se crea una aleatoria que
+        # nadie ve, porque create_user la exige. Se saca de answers en ambos casos:
+        # el registro sale como replace_ans y no debe guardarla.
+        captured_password = str(answers.pop(f['password'], None) or '').strip()
+        password = captured_password or secrets.token_urlsafe(24)
         created_epoch = int(time.time())
         res = self.lkf_api.create_user({
             "first_name": name,
@@ -3151,15 +3162,44 @@ class UsersAdmin(Base):
             self._fail(f'El usuario {username} se creó en LinkaForm pero no se pudo aplicar su zona horaria '
                        f'e idioma: {self._detail(res)}. Revísalo en LinkaForm antes de volver a intentar el alta.', 500)
 
-        token = secrets.token_urlsafe(32)
         answers[f['timezone']] = timezone
         answers[f['language']] = language
         answers[f['user_id']] = new_user_id
+        answers[f['status']] = 'creado'
+        if captured_password:
+            answers.pop(f['token'], None)
+            answers.pop(f['link'], None)
+            return {'answers': answers}
+        token = secrets.token_urlsafe(32)
         answers[f['token']] = token
         answers[f['link']] = (f"{self.WEB_URL}/auth/set-password?record_id={record_id}"
                               f"&user={account_id}&token={token}")
-        answers[f['status']] = 'creado'
         return {'answers': answers}
+
+    def activate_with_password(self, record_id='', answers=None):
+        """ Cierre del alta con contraseña capturada (workflow "Activacion con
+        contrasena capturada", runtime "after", estatus 'creado' sin liga): el
+        usuario ya tiene su contraseña, así que el registro pasa directo a
+        'activado'. Esa edición dispara "Creacion de empleado y accesos" igual que
+        cuando el usuario fija su contraseña con la liga.
+
+        Corre después de guardar el registro, cuando los catálogos ya se
+        sincronizaron con el estatus 'creado'. """
+        f = self.user_fields
+        answers = answers or {}
+        if self._one(answers.get(f['status'])) != 'creado' or answers.get(f['link']) \
+                or answers.get(f['token']):
+            return {'skipped': True}
+        if not self._one(answers.get(f['user_id'])):
+            self._fail('El registro no tiene Id de Usuario; no se puede activar.')
+        record = self._get_user_record(record_id, ('creado',))
+        res = self.lkf_api.patch_multi_record(
+            answers={f['status']: 'activado'},
+            form_id=record['form_id'], record_id=[str(record_id)])
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('El usuario se creó pero no se pudo marcar como activado: '
+                       + self._detail(res), 500)
+        return {'status': 'activado'}
 
     @property
     def conf_accesos_form(self):
