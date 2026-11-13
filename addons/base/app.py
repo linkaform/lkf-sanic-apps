@@ -3099,6 +3099,18 @@ class UsersAdmin(Base):
         if self._one(answers.get(f['status'])) in ('creado', 'activado'):
             self._fail('Este usuario ya está creado.')
 
+        # En el workflow "after" de la creación LinkaForm manda las respuestas
+        # ORIGINALES (estatus 'crear', con contraseña), no las guardadas. Si el
+        # registro ya existe es esa fase: con alta por contraseña se activa; si no,
+        # no se vuelve a crear. En la fase "before" el registro aún no existe.
+        saved = self._saved_user_answers(record_id)
+        if saved is not None:
+            if self._one(saved.get(f['status'])) == 'creado' and not saved.get(f['link']) \
+                    and not saved.get(f['token']):
+                self.activate_with_password(record_id, saved)
+                return {'activated': True}
+            self._fail('Este usuario ya está creado.')
+
         name = self._one(answers.get(f['name']))
         email = self._one(answers.get(f['email']))
         username = self._one(answers.get(f['username']))
@@ -3175,6 +3187,19 @@ class UsersAdmin(Base):
         answers[f['link']] = (f"{self.WEB_URL}/auth/set-password?record_id={record_id}"
                               f"&user={account_id}&token={token}")
         return {'answers': answers}
+
+    def _saved_user_answers(self, record_id):
+        """ Respuestas del registro de Usuarios ya guardado, o None si aún no existe
+        (fase "before" del alta) o el record_id no es válido. """
+        from bson.errors import InvalidId
+        try:
+            oid = ObjectId(record_id)
+        except (InvalidId, TypeError):
+            return None
+        record = self.cr.find_one(
+            {'_id': oid, 'form_id': self.usuarios_form, 'deleted_at': {'$exists': False}},
+            {'answers': 1})
+        return (record.get('answers') or {}) if record else None
 
     def activate_with_password(self, record_id='', answers=None):
         """ Cierre del alta con contraseña capturada (workflow "Activacion con
