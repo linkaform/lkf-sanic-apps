@@ -18631,13 +18631,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             return self._labels(data, ids_label_dct=fields)
         # Forma custom resuelta por ubicación — no hay diccionario de slugs
         # conocido de antemano, se regresan las respuestas crudas por field_id.
-        # Limitación aceptada: el visor de registros ya guardados no las agrupa
-        # en secciones para este caso (igual que useGetInspeccionRecord.ts, que
-        # ya quedó fuera de la dinamización previa).
+        # Se incluye form_id para que el visor (useGetInspeccionRecord.ts) pida
+        # los campos de esa forma (get_form_fields) y arme etiquetas y secciones.
         return {
             '_id':        data.get('_id'),
             'folio':      data.get('folio'),
             'created_at': data.get('created_at'),
+            'form_id':    data.get('form_id'),
             'answers':    data.get('answers'),
         }
 
