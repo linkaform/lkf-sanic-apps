@@ -1,0 +1,16 @@
+name: lkf-test
+
+# Check lkf-test: corre el workflow de addons (unitarios + ruff de addons y
+# Sanic contra preprod), con la rama del PR en este repo y la rama del mismo
+# nombre (o master) en los demas. Ver linkaform/addons/.github/workflows/lkf-test.yml.
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  lkf-test:
+    uses: linkaform/addons/.github/workflows/lkf-test.yml@master
+    secrets: inherit
