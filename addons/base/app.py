@@ -2972,12 +2972,16 @@ class UsersAdmin(Base):
         return record
 
     def create_user(self, name='', username='', email='', phone='', role='',
-                    empleado='', empleado_nombre='', timezone='', language=''):
+                    empleado='', empleado_nombre='', timezone='', language='',
+                    password=''):
         """ Alta: guarda el registro de Usuarios con estatus 'crear'. El workflow
         "Creacion de usuario" (runtime "before", script de addons) crea el usuario
         en LinkaForm, deja el estatus en 'creado' y el workflow de correo manda la
         liga de activacion. Si ese script rechaza el alta (usuario duplicado,
-        empleado a ligar inexistente) LinkaForm regresa el error y no se guarda. """
+        empleado a ligar inexistente) LinkaForm regresa el error y no se guarda.
+
+        Con `password` el registro lleva la contraseña capturada: el usuario se
+        crea con ella, queda activado y no se manda correo (create_user_account). """
         f = self.user_fields
         name, username, email, phone, role = [
             (v or '').strip() for v in (name, username, email, phone, role)]
@@ -2994,6 +2998,9 @@ class UsersAdmin(Base):
         if empleado == self.EMPLEADO_LIGAR and not empleado_nombre:
             self._fail('Escribe el nombre completo del empleado a ligar.')
         timezone, language = self._valid_timezone(timezone), self._valid_language(language)
+        password = (password or '').strip()
+        if password and len(password) < UserActivation.MIN_PASSWORD:
+            self._fail(f'La contraseña debe tener al menos {UserActivation.MIN_PASSWORD} caracteres.')
 
         answers = {
             f['status']: 'crear',
@@ -3005,6 +3012,8 @@ class UsersAdmin(Base):
             answers[f['empleado']] = empleado
         if empleado == self.EMPLEADO_LIGAR:
             answers[f['empleado_nombre']] = empleado_nombre
+        if password:
+            answers[f['password']] = password
         metadata = self.lkf_api.get_metadata(form_id=self.usuarios_form)
         metadata.update({'answers': answers})
         res = self.lkf_api.post_forms_answers(metadata)
@@ -3360,7 +3369,8 @@ class UsersAdmin(Base):
     def create_users(self, rows=None, create_employee=False):
         """ Alta de varios usuarios nuevos: a cada fila le corre el mismo alta que
         create_user (registro en 'crear' -> workflow -> usuario en LinkaForm y
-        correo de activacion). Una fila rechazada (campos invalidos, username que
+        correo de activacion; si la fila trae `password`, queda activado con esa
+        contraseña y sin correo). Una fila rechazada (campos invalidos, username que
         ya existe, error de LinkaForm) no detiene a las demas.
 
         `create_employee` aplica a todas las filas (crea su empleado al activarse). """
@@ -3386,7 +3396,8 @@ class UsersAdmin(Base):
                     name=text('name'), username=username, email=text('email'),
                     phone=text('phone'), role=text('role'),
                     empleado=self.EMPLEADO_CREAR if create_employee else '',
-                    timezone=text('timezone'), language=text('language'))
+                    timezone=text('timezone'), language=text('language'),
+                    password=text('password'))
                 created += 1
             except Exception as e:
                 rejected.append({'row': i, 'username': username, 'msg': self._error_text(e)})
