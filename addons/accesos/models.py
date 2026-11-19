@@ -9,6 +9,7 @@ lógica de negocio (mismo patrón que lkf_addons/addons/accesos/model.py).
 '''
 
 from ..base.app import Base
+from .contratistas_fields import CONTRATISTAS_FIELDS
 
 
 ### Modelo de Módulo ###
@@ -78,6 +79,19 @@ class AccesosModel(Base):
         self.MENUS_FORM = self.lkm.form_id('configuracion_menus','id')
         self.HORARIOS = self.lkm.form_id('horarios','id')
         self.IMPRESION_DE_QR = self.lkm.form_id('impresion_de_qr','id')
+
+        # Contratistas (F0-02): formas sin catálogos; los ids de campo viven en
+        # contratistas_fields.py (generado). Referencias entre formas por _id.
+        self.EMPRESAS_FORM = self.lkm.form_id('empresas', 'id')
+        self.RELACIONES_FORM = self.lkm.form_id('relaciones_entre_empresas', 'id')
+        self.RECURSOS_CONTRATO_FORM = self.lkm.form_id('recursos_de_contrato', 'id')
+        self.REQUERIMIENTOS_FORM = self.lkm.form_id('requerimientos_de_cumplimiento', 'id')
+        self.CONTRATOS_FORM = self.lkm.form_id('contratos_de_servicio', 'id')
+        self.HISTORIAL_CONTRATOS_FORM = self.lkm.form_id('historial_de_contratos', 'id')
+        self.DOCUMENTOS_FORM = self.lkm.form_id('documentos_de_cumplimiento', 'id')
+        self.CUMPLIMIENTO_FORM = self.lkm.form_id('cumplimiento_de_requerimientos', 'id')
+        self.SESIONES_FORM = self.lkm.form_id('sesiones_de_capacitacion', 'id')
+        self.ctr_f = CONTRATISTAS_FIELDS
 
         self.last_check_in = []
         # self.FORM_ALTA_COLABORADORES = self.lkm.form_id('alta_de_colaboradores_visitantes','id')
