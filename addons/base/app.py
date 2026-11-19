@@ -2234,6 +2234,27 @@ class ScriptLogs(Base):
             return []
         return [i for i, n in names_map.items() if text in (n or '').lower()]
 
+    @staticmethod
+    def _iso(value):
+        """datetime | str | None -> ISO 8601 con sufijo de zona, o None.
+
+        Algunos documentos de `script_log` guardan start_date/end_date como str;
+        asumir datetime tronaba con AttributeError ('str' no tiene isoformat).
+        - datetime/date: isoformat() + 'Z' (las fechas de Mongo son UTC naive).
+        - str: se respeta; si no trae zona (Z / +hh:mm) se le agrega 'Z'.
+        - vacio o de otro tipo: None.
+        """
+        if not value:
+            return None
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat() + 'Z'
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+            return value if re.search(r'(Z|[+-]\d{2}:?\d{2})$', value) else value + 'Z'
+        return None
+
     def list_script_logs(self, limit=25, skip=0, status=None, script_ids=None, script_name='',
                          user_ids=None, user_name='', date1=None, date2=None,
                          min_duration=None, max_duration=None, run_success=None):
@@ -2297,8 +2318,8 @@ class ScriptLogs(Base):
                 'script_name': maps['scripts'].get(r.get('script_id')) or str(r.get('script_id', '')),
                 'user_id': r.get('user_id'),
                 'user_name': maps['users'].get(r.get('user_id')) or str(r.get('user_id', '')),
-                'start_date': r['start_date'].isoformat() + 'Z' if r.get('start_date') else None,
-                'end_date': r['end_date'].isoformat() + 'Z' if r.get('end_date') else None,
+                'start_date': self._iso(r.get('start_date')),
+                'end_date': self._iso(r.get('end_date')),
                 'duration': r.get('duration'),
                 'has_log': tb.startswith(self.LOG_PREFIXES),
                 'log_url': tb if tb.startswith(self.LOG_PREFIXES) else '',
