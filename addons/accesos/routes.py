@@ -2262,6 +2262,11 @@ async def post_create_impresion_qr(request: Request):
         "folio": creado.get('folio', ''),
     }}, status=200)
 
+@accesos_bp.get("/get_plantillas_impresion_qr")
+async def get_plantillas_impresion_qr(request: Request):
+    response = service.get_plantillas_impresion_qr()
+    return json({"data": response}, status=200)
+
 @accesos_bp.get("/filters_paqueteria")
 async def get_filters_paqueteria(request: Request):
     return json({"data": service.get_filters_paqueteria()}, status=200)

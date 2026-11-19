@@ -1,0 +1,9 @@
+# Imagen de pruebas de Sanic: la de develop + pytest.
+# La usa ./lkf test (bin/lkf_test.py de addons) para correr sdk_testing con
+# --back=sanic. El codigo no va en la imagen: se monta igual que en el
+# docker-compose de clave10-sdk.
+#   ./lkf build test        (en lkf-sanic-apps; -p ademas la sube)
+# Mismas versiones que addons/test/docker/requires.txt.
+FROM linkaform/sanic-app:develop
+
+RUN pip install pytest==7.2.2 pytest-mock==3.14.0 pytest-dependency==0.5.1

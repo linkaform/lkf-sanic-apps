@@ -26,9 +26,10 @@ _usage(){
       echo "      $APP <start|stop> sanic     Starts the sanic development environment"
       echo "      $APP <start|stop> test       Starts the testing environment"
       echo "      $APP build <base|dev|local|prod|preprod>   Build container for preprod enviorment"
+      echo "      $APP build test              Imagen de ./lkf test (develop + pytest)"
       echo "      $APP restart <preprod|prod> <account_id>  [depricated] use update"
       echo "      $APP update <preprod|prod> <account_id>  Update a given account sanic-app containers image on given environment"
-      echo "      $APP test                    Runs all tests"
+      echo "      $APP test                    Prueba el cambio actual (addons, modules y Sanic); ver addons/bin/lkf_test.py"
       echo "      $APP workwith <domain_name>  Elige la cuenta activa y deja app/modules en su rama"
       echo "      $APP workwith                Muestra la cuenta actual y los dominios disponibles"
       echo "      $APP workon <local|preprod|prod|sbx-dev0|sbx-preprod|sbx-josepato0>   Elige el environment activo"
@@ -271,15 +272,15 @@ _build(){
       fi  
     ;;
     test)
-      cd test/docker
+      # Imagen de ./lkf test: develop + pytest (docker/Dockerfile.test)
       if [ "$NOCACHE" = "1" ]; then
-        docker compose build --no-cache lkf-sanic-test
+        docker build --no-cache -f docker/Dockerfile.test -t linkaform/sanic-app:test docker
       else
-        docker compose build lkf-sanic-test
+        docker build -f docker/Dockerfile.test -t linkaform/sanic-app:test docker
       fi
-     if [ "$UPLOAD" = "1" ]; then
-        docker push linkaform/lkf_sanic_test:develop
-      fi  
+      if [ "$UPLOAD" = "1" ]; then
+        docker push linkaform/sanic-app:test
+      fi
     ;;
   esac
   Enviorment=$1
@@ -317,13 +318,6 @@ _udpate_container(){
   #docker cp stock_utils.py account_9908_linkaform.sanic-app..latest:/usr/local/lib/python3.7/site-packages/sanic-app/sanic-app/stock/stock_utils.py
   
   echo "TODO"
-}
-
-_run_tests(){
-  echo "the command for was " $1
-  cd "$(dirname "$(readlink -f "$0")")/test/docker"
-  docker rm -f lkf-do-test >/dev/null 2>&1 || true
-  docker compose up lkf-do-test
 }
 
 
@@ -431,8 +425,16 @@ case "$Acction" in
     _restart $Service
   ;;
   test)
-    echo "Loding testing environment . . . . + - / * "
-    _run_tests $Service
+    # Mismo ./lkf test que addons (addons + modules + lkf-sanic-apps +
+    # sdk-modules-sanic): lo orquesta bin/lkf_test.py del repo addons hermano.
+    LKF_TEST="$(dirname "$(pwd)")/addons/bin/lkf_test.py"
+    if [[ ! -f "$LKF_TEST" ]]; then
+      echo "x No encuentro $LKF_TEST: ./lkf test vive en addons (clave10-sdk/addons)."
+      exit 1
+    fi
+    shift
+    python3 "$LKF_TEST" ${@+"$@"}
+    exit $?
   ;;
   ?)
    _usage

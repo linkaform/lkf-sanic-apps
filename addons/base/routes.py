@@ -158,6 +158,13 @@ async def post_create_user_account(request: Request):
     return json({"data": response}, status=200)
 
 
+@base_bp.post("/activate_with_password")
+async def post_activate_with_password(request: Request):
+    p = _payload(request)
+    response = users_admin_service.activate_with_password(p.get("record_id", ""), p.get("answers", {}))
+    return json({"data": response}, status=200)
+
+
 @base_bp.post("/create_users")
 async def post_create_users(request: Request):
     p = _payload(request)

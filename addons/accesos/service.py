@@ -4558,6 +4558,19 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         })
         return self.lkf_api.post_forms_answers(metadata)
 
+    def get_plantillas_impresion_qr(self):
+        """
+        Plantillas PDF de la forma Impresión de QR en la cuenta activa (selector
+        del modal "Imprimir plantilla QR" de Áreas). Los ids de plantilla son por
+        cuenta, por eso no se fijan en el front. La plantilla por defecto de la
+        forma no viene aquí: se usa al pedir el PDF sin template_id.
+        """
+        templates = self.lkf_api.get_pdf_templates(self.IMPRESION_DE_QR) or []
+        return [
+            {'id': t.get('id'), 'nombre': t.get('name') or t.get('description') or str(t.get('id'))}
+            for t in templates if t.get('id')
+        ]
+
     def update_full_area(self, record_id, data):
         """
         Edita un área por su record_id (modal de edición del front). Solo se
@@ -11401,8 +11414,21 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 'alertas': format_alerts,
                 'requisitos': format_grupo_requisitos,
             })
+        data = data or {}
+        data['new_user_username'] = self._get_my_username()
         # print(simplejson.dumps(data, indent=4))
         return data
+
+    def _get_my_username(self):
+        """Username de login del usuario (Empleados), para el header y Mi perfil.
+        No depende de Configuración Accesos: los usuarios del flujo de menús
+        no tienen registro ahí."""
+        try:
+            emp = self.Employee.get_employee_data(user_id=self.user['user_id'], get_one=True, active=False)
+        except Exception as e:
+            print('get_my_username error', e)
+            return ''
+        return self.unlist((emp or {}).get('new_user_username') or '') or ''
 
     def get_config_modulo_seguridad(self, ubicaciones=[]):
         #TODO Verificar por que se envia asi la lista
@@ -18631,13 +18657,13 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
             return self._labels(data, ids_label_dct=fields)
         # Forma custom resuelta por ubicación — no hay diccionario de slugs
         # conocido de antemano, se regresan las respuestas crudas por field_id.
-        # Limitación aceptada: el visor de registros ya guardados no las agrupa
-        # en secciones para este caso (igual que useGetInspeccionRecord.ts, que
-        # ya quedó fuera de la dinamización previa).
+        # Se incluye form_id para que el visor (useGetInspeccionRecord.ts) pida
+        # los campos de esa forma (get_form_fields) y arme etiquetas y secciones.
         return {
             '_id':        data.get('_id'),
             'folio':      data.get('folio'),
             'created_at': data.get('created_at'),
+            'form_id':    data.get('form_id'),
             'answers':    data.get('answers'),
         }
 
