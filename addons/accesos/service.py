@@ -19617,7 +19617,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         print('>>> ocr_acceso_transportista sources=', [s[:80] for s in sources])
 
         try:
-            raw_text = self.ai.ocr_general(sources, system, prompt, model=model, max_tokens=6000)
+            raw_text = self.ai.ocr_general(sources, system, prompt, model=model, max_tokens=8000)
         except ValueError as e:
             return {'status_code': 500, 'msg': f'Error al parsear respuesta del modelo: {e}'}
         except RuntimeError as e:
