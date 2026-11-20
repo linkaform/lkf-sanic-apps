@@ -196,6 +196,11 @@ async def post_set_my_translations(request: Request):
     return json({"data": response}, status=200)
 
 
+@base_bp.get("/get_my_locale")
+async def get_get_my_locale(request: Request):
+    return json({"data": users_admin_service.get_my_locale()}, status=200)
+
+
 @base_bp.post("/set_my_locale")
 async def post_set_my_locale(request: Request):
     p = _payload(request)

@@ -3435,7 +3435,12 @@ class UsersAdmin(Base):
         'user_id':  'ddce68ee80bb8b23d4fc495c',
         'language': '72519ceeeac15e2b3baa43b8',
         'messages': '211bf3cd1678c97b73556588',
+        # 'si' en un solo registro por usuario: su idioma elegido (cualquiera de
+        # LANGUAGES). LinkaForm solo guarda es_MX/en_US en el usuario.
+        'preferred': '9508d21579ccf85b2ac5630e',
     }
+    PREFERRED_YES = 'si'
+    PREFERRED_NO = 'no'
     JWT_CUENTA = 'APIKEY_JWT_KEY'
     # Limites del JSON del usuario: solo trae diferencias contra la base.
     MESSAGES_MAX_BYTES = 100 * 1024
@@ -3567,6 +3572,58 @@ class UsersAdmin(Base):
         self._translations_cache.pop(self._cache_key(user_id, lang), None)
         return {'lang': lang, 'saved': count}
 
+    def _lkf_language(self, lang):
+        """ Idioma que si guarda LinkaForm en el usuario: el mas cercano. """
+        return 'es_MX' if lang.startswith('es') else 'en_US'
+
+    def _set_preferred(self, form_id, user_id, lang):
+        """ Marca (usuario, lang) como preferido (crea el registro con messages {}
+        si no existe) y desmarca los demas registros preferidos del usuario. """
+        d = self.dictionary_fields
+        record = self._dictionary_record(form_id, user_id, lang)
+        if record:
+            res = self.lkf_api.patch_multi_record(
+                answers={d['preferred']: self.PREFERRED_YES}, form_id=form_id,
+                record_id=[str(record['_id'])], jwt_settings_key=self.JWT_CUENTA)
+        else:
+            metadata = self.lkf_api.get_metadata(form_id=form_id)
+            metadata.update({
+                'properties': {'device_properties': {
+                    'System': 'Sanic', 'Process': 'i18n', 'Action': 'set_my_locale'}},
+                'answers': {d['user_id']: user_id, d['language']: lang,
+                            d['messages']: '{}', d['preferred']: self.PREFERRED_YES},
+            })
+            res = self.lkf_api.post_forms_answers(metadata, jwt_settings_key=self.JWT_CUENTA)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudo guardar tu idioma: ' + self._detail(res), 500)
+        others = [str(r['_id']) for r in self.cr.find(
+            {'form_id': form_id, 'deleted_at': {'$exists': False},
+             f"answers.{d['user_id']}": user_id,
+             f"answers.{d['preferred']}": self.PREFERRED_YES,
+             f"answers.{d['language']}": {'$ne': lang}}, {'_id': 1})]
+        if others:
+            res = self.lkf_api.patch_multi_record(
+                answers={d['preferred']: self.PREFERRED_NO}, form_id=form_id,
+                record_id=others, jwt_settings_key=self.JWT_CUENTA)
+            if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+                print('set_my_locale: no se desmarcaron', others, self._detail(res)[:300])
+
+    def get_my_locale(self):
+        """ Idioma preferido del usuario del JWT (cualquiera de LANGUAGES), o None
+        si nunca eligio uno: el front cae al lang del usuario de LinkaForm. """
+        user_id = self._me()
+        form_id = self._dictionary_form()
+        if not form_id:
+            return {'language': None}
+        d = self.dictionary_fields
+        record = self.cr.find_one(
+            {'form_id': form_id, 'deleted_at': {'$exists': False},
+             f"answers.{d['user_id']}": user_id,
+             f"answers.{d['preferred']}": self.PREFERRED_YES},
+            {'answers': 1}, sort=[('updated_at', -1), ('_id', -1)])
+        lang = self._one((record or {}).get('answers', {}).get(d['language'])) or None
+        return {'language': lang if lang in self.LANGUAGES else None}
+
     def set_my_locale(self, language=None, timezone=None):
         """ Idioma y/o zona horaria del propio usuario (Mi perfil): misma
         validacion que update_user, pero sobre el usuario del JWT. Se cambia el
@@ -3578,11 +3635,17 @@ class UsersAdmin(Base):
             values['timezone'] = self._valid_timezone(timezone)
         if isinstance(language, str) and language.strip():
             values['language'] = self._lang_code(language)
-            if values['language'] not in self.LKF_LANGUAGES:
-                self._fail(f'LinkaForm todavía no guarda el idioma "{values["language"]}" en el usuario. '
-                           f'Opciones por ahora: {", ".join(self.LKF_LANGUAGES)}.')
         if not values:
             self._fail('No hay cambios que guardar.')
+        # El idioma exacto vive en el Diccionario (preferido); en el usuario de
+        # LinkaForm y en el form Usuarios va el mas cercano que si soportan.
+        preferred = values.get('language')
+        if preferred:
+            form_id = self._dictionary_form()
+            if not form_id:
+                self._fail('La cuenta no tiene instalado el form "Diccionario de usuario".', 500)
+            self._set_preferred(form_id, user_id, preferred)
+            values['language'] = self._lkf_language(preferred)
         body = {}
         if 'timezone' in values:
             body['timezone'] = values['timezone']
@@ -3612,4 +3675,8 @@ class UsersAdmin(Base):
             if not record_synced:
                 print('set_my_locale: no se actualizo el registro de Usuarios',
                       str(record['_id']), self._detail(res)[:300])
-        return {'updated': list(values.keys()), **values, 'record_synced': record_synced}
+        if preferred:
+            values['lkf_language'] = values['language']
+            values['language'] = preferred
+        return {'updated': [k for k in values if k != 'lkf_language'], **values,
+                'record_synced': record_synced}
