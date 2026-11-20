@@ -3402,3 +3402,185 @@ class UsersAdmin(Base):
             except Exception as e:
                 rejected.append({'row': i, 'username': username, 'msg': self._error_text(e)})
         return {'created': created, 'rejected': rejected}
+
+    # ---- Traducciones (i18n) y preferencias propias del usuario ----
+    #
+    # El diccionario efectivo se arma en el front: base del bundle (por idioma)
+    # + default de la cuenta (F2) + override del usuario. Aqui solo vive el
+    # override: un registro del form "Diccionario de usuario" por usuario e
+    # idioma, con el JSON de diferencias en un texto largo. Se escribe con el API
+    # key de la cuenta porque el usuario normal no tiene compartido el form; el
+    # dueño real queda en el campo Id de Usuario. Se lee directo de Mongo.
+
+    DICTIONARY_FORM = 'diccionario_de_usuario'
+    dictionary_fields = {
+        'user_id':  'ddce68ee80bb8b23d4fc495c',
+        'language': '72519ceeeac15e2b3baa43b8',
+        'messages': '211bf3cd1678c97b73556588',
+    }
+    JWT_CUENTA = 'APIKEY_JWT_KEY'
+    # Limites del JSON del usuario: solo trae diferencias contra la base.
+    MESSAGES_MAX_BYTES = 100 * 1024
+    MESSAGES_MAX_DEPTH = 8
+    MESSAGES_MAX_LEAVES = 5000
+    MESSAGE_MAX_LEN = 2000
+    MESSAGE_KEY_RE = re.compile(r'^[A-Za-z0-9_\-]{1,64}$')
+    # Cache de get_translations por proceso: (cuenta, usuario, idioma) ->
+    # (expira, messages). TTL corto porque otro proceso/worker puede escribir.
+    TRANSLATIONS_TTL = 60
+    _translations_cache = {}
+
+    def _me(self):
+        """ Id de LinkaForm del usuario del JWT; sin JWT no hay a quien aplicar. """
+        try:
+            return int(self.user_id)
+        except (TypeError, ValueError):
+            self._fail('Sesión no válida: inicia sesión de nuevo.', 401)
+
+    def _lang_code(self, lang, default=None):
+        """ Codigo de idioma estricto (es_MX / en_US; acepta es-MX). """
+        value = (lang or '').strip().replace('-', '_') or default
+        if value not in self.LANGUAGES:
+            self._fail(f'El idioma "{lang}" no es válido. Opciones: {", ".join(self.LANGUAGES)}.')
+        return value
+
+    def _dictionary_form(self):
+        """ Id del form, o None si no esta instalado en la cuenta. lkm cachea los
+        items al arrancar: si se instalo despues, se busca directo en LKFModules. """
+        form_id = self.lkm.form_id(self.DICTIONARY_FORM, 'id')
+        if form_id:
+            return form_id
+        cr, _ = self.lkm.get_cr_data(collection='LKFModules')
+        item = cr.find_one({'item_type': 'form', 'item_name': self.DICTIONARY_FORM},
+                           {'item_id': 1})
+        return (item or {}).get('item_id')
+
+    def _dictionary_record(self, form_id, user_id, lang):
+        d = self.dictionary_fields
+        return self.cr.find_one(
+            {'form_id': form_id, 'deleted_at': {'$exists': False},
+             f"answers.{d['user_id']}": user_id, f"answers.{d['language']}": lang},
+            {'answers': 1, 'updated_at': 1}, sort=[('_id', -1)])
+
+    def _cache_key(self, user_id, lang):
+        return (self.parent_id, user_id, lang)
+
+    def get_translations(self, lang=''):
+        """ Override del usuario del JWT para un idioma ({} si no tiene). """
+        import time
+        user_id = self._me()
+        lang = self._lang_code(lang, (self.user.get('lang') or {}).get('code') or self.LANGUAGE_DEFAULT)
+        key = self._cache_key(user_id, lang)
+        hit = self._translations_cache.get(key)
+        if hit and hit[0] > time.time():
+            return {'lang': lang, 'messages': hit[1]}
+        messages = {}
+        form_id = self._dictionary_form()
+        record = self._dictionary_record(form_id, user_id, lang) if form_id else None
+        if record:
+            raw = (record.get('answers') or {}).get(self.dictionary_fields['messages']) or ''
+            try:
+                messages = simplejson.loads(raw) if raw else {}
+            except ValueError:
+                messages = {}
+            if not isinstance(messages, dict):
+                messages = {}
+        self._translations_cache[key] = (time.time() + self.TRANSLATIONS_TTL, messages)
+        return {'lang': lang, 'messages': messages}
+
+    def _validate_messages(self, messages):
+        """ Objeto anidado de claves simples con hojas string, con tope de tamaño. """
+        if not isinstance(messages, dict):
+            self._fail('messages debe ser un objeto JSON.')
+        leaves = [0]
+
+        def walk(node, path, depth):
+            if depth > self.MESSAGES_MAX_DEPTH:
+                self._fail(f'messages tiene demasiados niveles (máximo {self.MESSAGES_MAX_DEPTH}).')
+            for k, v in node.items():
+                where = f'{path}.{k}' if path else str(k)
+                if not isinstance(k, str) or not self.MESSAGE_KEY_RE.match(k):
+                    self._fail(f'La clave "{where}" no es válida (letras, números, _ y -).')
+                if isinstance(v, dict):
+                    walk(v, where, depth + 1)
+                elif isinstance(v, str):
+                    if len(v) > self.MESSAGE_MAX_LEN:
+                        self._fail(f'El texto de "{where}" es muy largo (máximo {self.MESSAGE_MAX_LEN}).')
+                    leaves[0] += 1
+                else:
+                    self._fail(f'El valor de "{where}" debe ser texto.')
+            if leaves[0] > self.MESSAGES_MAX_LEAVES:
+                self._fail(f'messages tiene demasiadas claves (máximo {self.MESSAGES_MAX_LEAVES}).')
+
+        walk(messages, '', 1)
+        raw = simplejson.dumps(messages, ensure_ascii=False, sort_keys=True)
+        if len(raw.encode('utf-8')) > self.MESSAGES_MAX_BYTES:
+            self._fail(f'messages pesa más de {self.MESSAGES_MAX_BYTES // 1024} KB.')
+        return raw, leaves[0]
+
+    def set_my_translations(self, lang='', messages=None):
+        """ Upsert del override del usuario del JWT para un idioma. Guarda tal
+        cual lo que manda el front (ya solo diferencias); {} lo vacia. """
+        user_id = self._me()
+        lang = self._lang_code(lang)
+        raw, count = self._validate_messages(messages if messages is not None else {})
+        form_id = self._dictionary_form()
+        if not form_id:
+            self._fail('La cuenta no tiene instalado el form "Diccionario de usuario".', 500)
+        d = self.dictionary_fields
+        record = self._dictionary_record(form_id, user_id, lang)
+        if record:
+            res = self.lkf_api.patch_multi_record(
+                answers={d['messages']: raw}, form_id=form_id,
+                record_id=[str(record['_id'])], jwt_settings_key=self.JWT_CUENTA)
+        else:
+            metadata = self.lkf_api.get_metadata(form_id=form_id)
+            metadata.update({
+                'properties': {'device_properties': {
+                    'System': 'Sanic', 'Process': 'i18n', 'Action': 'set_my_translations'}},
+                'answers': {d['user_id']: user_id, d['language']: lang, d['messages']: raw},
+            })
+            res = self.lkf_api.post_forms_answers(metadata, jwt_settings_key=self.JWT_CUENTA)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudo guardar el diccionario: ' + self._detail(res), 500)
+        self._translations_cache.pop(self._cache_key(user_id, lang), None)
+        return {'lang': lang, 'saved': count}
+
+    def set_my_locale(self, language=None, timezone=None):
+        """ Idioma y/o zona horaria del propio usuario (Mi perfil): misma
+        validacion que update_user, pero sobre el usuario del JWT. Se cambia el
+        usuario de LinkaForm (lo que lee el login) y, si tiene registro en el form
+        Usuarios, tambien ese registro para que la administracion lo vea igual. """
+        user_id = self._me()
+        values = {}
+        if isinstance(timezone, str) and timezone.strip():
+            values['timezone'] = self._valid_timezone(timezone)
+        if isinstance(language, str) and language.strip():
+            values['language'] = self._lang_code(language)
+        if not values:
+            self._fail('No hay cambios que guardar.')
+        body = {}
+        if 'timezone' in values:
+            body['timezone'] = values['timezone']
+        if 'language' in values:
+            body['lang'] = {'code': values['language']}
+        endpoint = self.lkf_api.api_url.users['update_password']
+        res = self.lkf_api.network.dispatch(
+            url=endpoint['url'].format(user_id), method='PATCH', data=body,
+            jwt_settings_key=self.JWT_CUENTA)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudo actualizar tu usuario: ' + self._detail(res))
+
+        f = self.user_fields
+        record = self.cr.find_one(
+            {'form_id': self.usuarios_form, 'deleted_at': {'$exists': False},
+             f"answers.{f['user_id']}": user_id}, {'form_id': 1}, sort=[('_id', -1)])
+        if record:
+            res = self.lkf_api.patch_multi_record(
+                answers={f[k]: v for k, v in values.items()},
+                form_id=record['form_id'], record_id=[str(record['_id'])],
+                jwt_settings_key=self.JWT_CUENTA)
+            if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+                self._fail('Tu usuario se actualizó pero no el registro de Usuarios: '
+                           + self._detail(res), 500)
+        return {'updated': list(values.keys()), **values}

@@ -179,6 +179,32 @@ async def post_setup_user_employee(request: Request):
     return json({"data": response}, status=200)
 
 
+# ---- i18n: diccionario y preferencias del propio usuario (JWT) ----
+
+@base_bp.get("/get_translations")
+async def get_get_translations(request: Request):
+    response = users_admin_service.get_translations(lang=request.args.get("lang", ""))
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/set_my_translations")
+async def post_set_my_translations(request: Request):
+    p = _payload(request)
+    response = await asyncio.to_thread(
+        users_admin_service.set_my_translations,
+        lang=p.get("lang", ""), messages=p.get("messages"))
+    return json({"data": response}, status=200)
+
+
+@base_bp.post("/set_my_locale")
+async def post_set_my_locale(request: Request):
+    p = _payload(request)
+    response = await asyncio.to_thread(
+        users_admin_service.set_my_locale,
+        language=p.get("language"), timezone=p.get("timezone"))
+    return json({"data": response}, status=200)
+
+
 # ---- Ruta publica (sin JWT): el usuario fija su contraseña con el enlace del correo ----
 
 @base_bp.post("/set_user_password")
