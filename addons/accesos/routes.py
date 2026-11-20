@@ -744,6 +744,17 @@ async def get_get_articles(request: Request):
     records = service.get_list_articulos_concesionados(**filters)
     return json({"data": records}, status=200)
 
+@accesos_bp.post("/get_reporte_concesionados")
+async def post_get_reporte_concesionados(request: Request):
+    # Reporte de artículos concesionados de clave10: una fila por unidad prestada
+    payload = _ocr_payload(request)
+    records = service.get_reporte_concesionados(
+        locations=payload.get("locations") or [],
+        date_from=payload.get("date_from"),
+        date_to=payload.get("date_to"),
+    )
+    return json({"data": records}, status=200)
+
 @accesos_bp.post("/update_article")
 async def post_update_article(request: Request):
     payload = _ocr_payload(request)
