@@ -3525,10 +3525,13 @@ class UsersAdmin(Base):
         lang = self._lang_code(lang)
         raw, count = self._validate_messages(messages if messages is not None else {})
         form_id = self._dictionary_form()
-        if not form_id:
+        if not form_id and count:
             self._fail('La cuenta no tiene instalado el form "Diccionario de usuario".', 500)
         d = self.dictionary_fields
-        record = self._dictionary_record(form_id, user_id, lang)
+        record = self._dictionary_record(form_id, user_id, lang) if form_id else None
+        if not record and not count:
+            # Restablecer sin override previo: no hay nada que vaciar.
+            return {'lang': lang, 'saved': 0}
         if record:
             res = self.lkf_api.patch_multi_record(
                 answers={d['messages']: raw}, form_id=form_id,
