@@ -3578,12 +3578,17 @@ class UsersAdmin(Base):
         record = self.cr.find_one(
             {'form_id': self.usuarios_form, 'deleted_at': {'$exists': False},
              f"answers.{f['user_id']}": user_id}, {'form_id': 1}, sort=[('_id', -1)])
+        # El usuario de LinkaForm ya quedo (es lo que lee el login). El registro
+        # de Usuarios es solo reflejo para la administracion: si no se puede
+        # (registros viejos sin Telefono/Rol obligatorios) no se falla el cambio.
+        record_synced = None
         if record:
             res = self.lkf_api.patch_multi_record(
                 answers={f[k]: v for k, v in values.items()},
                 form_id=record['form_id'], record_id=[str(record['_id'])],
                 jwt_settings_key=self.JWT_CUENTA)
-            if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
-                self._fail('Tu usuario se actualizó pero no el registro de Usuarios: '
-                           + self._detail(res), 500)
-        return {'updated': list(values.keys()), **values}
+            record_synced = isinstance(res, dict) and res.get('status_code') in self.OK_CODES
+            if not record_synced:
+                print('set_my_locale: no se actualizo el registro de Usuarios',
+                      str(record['_id']), self._detail(res)[:300])
+        return {'updated': list(values.keys()), **values, 'record_synced': record_synced}
