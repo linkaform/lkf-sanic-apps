@@ -2760,8 +2760,24 @@ class UsersAdmin(Base):
     # de usuarios.xml: si se cambia el prefijo hay que regenerar ese select.
     TIMEZONE_PREFIX = 'America/'
     LANGUAGE_DEFAULT = 'es_MX'
-    LANGUAGES = {'es_MX': 'Español', 'en_US': 'English'}
-    LANGUAGE_ALIASES = {'spanish': 'es_MX', 'ingles': 'en_US'}
+    # Etiqueta de cada idioma en su propio idioma (asi la reconoce quien no lee
+    # el idioma actual de la pantalla).
+    LANGUAGES = {
+        'es_MX': 'Español', 'en_US': 'English', 'pt_BR': 'Português',
+        'fr_FR': 'Français', 'de_DE': 'Deutsch', 'it_IT': 'Italiano',
+        'zh_CN': '中文', 'ja_JP': '日本語', 'ko_KR': '한국어',
+    }
+    # Los unicos que guarda el usuario de LinkaForm (lang {code}): con otro
+    # codigo el PATCH responde 202 pero deja lang en None (probado 2026-11-20).
+    # Alta/edicion de usuarios y set_my_locale se limitan a estos; los demas
+    # solo aplican al diccionario (get/set_my_translations).
+    LKF_LANGUAGES = ('es_MX', 'en_US')
+    LANGUAGE_ALIASES = {
+        'spanish': 'es_MX', 'ingles': 'en_US', 'portuguese': 'pt_BR',
+        'french': 'fr_FR', 'frances': 'fr_FR', 'german': 'de_DE', 'aleman': 'de_DE',
+        'italian': 'it_IT', 'chinese': 'zh_CN', 'chino': 'zh_CN',
+        'japanese': 'ja_JP', 'japones': 'ja_JP', 'korean': 'ko_KR', 'coreano': 'ko_KR',
+    }
 
     # Fase 2 del alta (setup_user_employee). Misma lógica que tenía addons.
     # Menús que se asignan en Configuración Accesos: las llaves de
@@ -2815,7 +2831,7 @@ class UsersAdmin(Base):
         valores por defecto), para que el front y el backend usen una sola lista. """
         return {
             'timezones': self._timezones(),
-            'languages': [{'value': code, 'label': name} for code, name in self.LANGUAGES.items()],
+            'languages': [{'value': code, 'label': self.LANGUAGES[code]} for code in self.LKF_LANGUAGES],
             'defaults': {'timezone': self.TIMEZONE_DEFAULT, 'language': self.LANGUAGE_DEFAULT},
         }
 
@@ -2824,14 +2840,16 @@ class UsersAdmin(Base):
         'English') o de un alias; vacío = el idioma por defecto. """
         import unicodedata
         norm = lambda t: unicodedata.normalize('NFD', str(t)).encode('ascii', 'ignore').decode().strip().lower()
-        value = norm(language or '')
-        if not value:
+        if not str(language or '').strip():
             return self.LANGUAGE_DEFAULT
+        # '中文' normaliza a '' (NFD + ascii): sin entrada en options -> invalido.
+        value = norm(language)
         options = {norm(code): code for code in self.LANGUAGES}
-        options.update({norm(name): code for code, name in self.LANGUAGES.items()})
+        options.update({norm(name): code for code, name in self.LANGUAGES.items() if norm(name)})
         options.update(self.LANGUAGE_ALIASES)
-        if value not in options:
-            self._fail(f'El idioma "{language}" no es válido. Opciones: {", ".join(self.LANGUAGES.values())}.')
+        supported = ", ".join(self.LANGUAGES[c] for c in self.LKF_LANGUAGES)
+        if options.get(value) not in self.LKF_LANGUAGES:
+            self._fail(f'El idioma "{language}" no es válido. Opciones: {supported}.')
         return options[value]
 
     def _patch_lkf_user(self, user_id, body):
@@ -3560,6 +3578,9 @@ class UsersAdmin(Base):
             values['timezone'] = self._valid_timezone(timezone)
         if isinstance(language, str) and language.strip():
             values['language'] = self._lang_code(language)
+            if values['language'] not in self.LKF_LANGUAGES:
+                self._fail(f'LinkaForm todavía no guarda el idioma "{values["language"]}" en el usuario. '
+                           f'Opciones por ahora: {", ".join(self.LKF_LANGUAGES)}.')
         if not values:
             self._fail('No hay cambios que guardar.')
         body = {}
