@@ -2603,4 +2603,43 @@ async def post_get_historial_contrato(request: Request):
     response = service.get_historial_contrato(_ocr_payload(request).get("contrato_id"))
     return json({"data": response}, status=200)
 
+
+# ---------------------------------------------------------------------------
+# Contratistas · Relaciones (R-01). Script puente: relaciones_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/relaciones/list_relaciones")
+async def post_list_relaciones(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_relaciones(
+        p.get("direccion"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/get_relacion")
+async def post_get_relacion(request: Request):
+    response = service.get_relacion(_ocr_payload(request).get("relacion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/create_relacion")
+async def post_create_relacion(request: Request):
+    response = await asyncio.to_thread(service.create_relacion, _ocr_payload(request).get("relacion"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/update_relacion")
+async def post_update_relacion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_relacion, p.get("relacion_id"), p.get("cambios"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/change_status_relacion")
+async def post_change_status_relacion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.change_status_relacion, p.get("relacion_id"), p.get("estatus"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
