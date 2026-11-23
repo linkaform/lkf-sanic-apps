@@ -2642,4 +2642,33 @@ async def post_change_status_relacion(request: Request):
     response = await asyncio.to_thread(service.change_status_relacion, p.get("relacion_id"), p.get("estatus"))
     return json({"data": response}, status=200)
 
+
+# ---------------------------------------------------------------------------
+# Contratistas · Cumplimiento (ME-15). Script puente: cumplimiento_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/cumplimiento/list_cumplimiento")
+async def post_list_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_cumplimiento(
+        relacion_id=p.get("relacion_id"), contrato_id=p.get("contrato_id"), sujeto_tipo=p.get("sujeto_tipo"),
+        empleado_id=p.get("empleado_id"), anio=p.get("anio"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/set_estado_cumplimiento")
+async def post_set_estado_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.set_estado_cumplimiento, p.get("cumplimiento_id"), p.get("estado"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/recalcular_cumplimiento")
+async def post_recalcular_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.recalcular_cumplimiento, p.get("contrato_id"), p.get("relacion_id"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
