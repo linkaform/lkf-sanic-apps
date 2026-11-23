@@ -2671,4 +2671,17 @@ async def post_recalcular_cumplimiento(request: Request):
         service.recalcular_cumplimiento, p.get("contrato_id"), p.get("relacion_id"))
     return json({"data": response}, status=200)
 
+
+# ---------------------------------------------------------------------------
+# Contratistas · Documentos (F0-11 lectura con IA). Script puente: documentos_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/documentos/analizar_documento")
+async def post_analizar_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.analizar_documento, p.get("archivo"), p.get("requerimiento_id"), p.get("propietario_id"),
+        p.get("model"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
