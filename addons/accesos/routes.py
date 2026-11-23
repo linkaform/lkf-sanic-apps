@@ -2676,6 +2676,34 @@ async def post_recalcular_cumplimiento(request: Request):
 # Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
 # ---------------------------------------------------------------------------
 
+@accesos_bp.post("/configuracion/list_recursos")
+async def post_list_recursos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_recursos(
+        p.get("tipo"), categoria=p.get("categoria"), clase=p.get("clase"), estatus=p.get("estatus"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_recurso")
+async def post_get_recurso(request: Request):
+    response = service.get_recurso(_ocr_payload(request).get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_recurso")
+async def post_save_recurso(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_recurso, p.get("recurso"), p.get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_aplicacion_recurso")
+async def post_get_aplicacion_recurso(request: Request):
+    response = service.get_aplicacion_recurso(_ocr_payload(request).get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/configuracion/list_requerimientos")
 async def post_list_requerimientos(request: Request):
     p = _ocr_payload(request)
