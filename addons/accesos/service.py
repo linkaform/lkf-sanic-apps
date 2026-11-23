@@ -50,10 +50,11 @@ from lkf_addons.tools.FacetSearchMixin import FacetSearchMixin
 from .contratistas_contratos import ContratosMixin
 from .contratistas_relaciones import RelacionesMixin
 from .contratistas_cumplimiento import CumplimientoMixin
+from .contratistas_documentos_ia import DocumentosIAMixin
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
-class Accesos(CumplimientoMixin, RelacionesMixin, ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
+class Accesos(DocumentosIAMixin, CumplimientoMixin, RelacionesMixin, ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         #--Variables
