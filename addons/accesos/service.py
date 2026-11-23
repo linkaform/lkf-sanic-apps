@@ -12052,6 +12052,220 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 item['firma']['file_name'] = item.pop('file_name')
         return result
 
+    # ───── Reporte de artículos concesionados (clave10: /reportes/reporte_concesionados) ─────
+    # Regresa una fila por UNIDAD prestada (una línea con cantidad 3 son 3 filas) ya "resuelta":
+    # fechas, tipo de cierre y estado salen de cruzar cada línea de "Equipos en Préstamo" con sus
+    # devoluciones por Id Movimiento. Los agrupados y gráficas los calcula el front.
+    # Formato de cada fila: PrestamoRaw en clave10 reporte_concesionados/lib/core.ts.
+
+    # Ids que no están (o están con otra ruta) en cons_f
+    _RC_SE_FORZO = '6aa7b40e6a6d4e42a9d7725e'      # radio Sí/No, en Devoluciones de Equipo
+    _RC_FORZADA_POR = '6ae439ff64fea7194190dc33'   # texto, en Devoluciones de Equipo
+    _RC_EVIDENCIA_PRESTAMO = '6ab5a7ffcd0d2b2a515bca05'  # imágenes, en Equipos en Préstamo
+    # Campos agregados para el reporte (2026-11). Los registros anteriores los traen vacíos.
+    _RC_PLAZO = '6afeb86f7ac0963b3cc0a414'         # horas; detalle del catálogo Equipo (y campo del catálogo)
+    _RC_FECHA_LIMITE = '6afec078bd8d0a8795b09bec'  # fecha y hora, en Equipos en Préstamo
+    _RC_EMPRESA = '6afebfb2212240c549ff9872'       # texto, primer nivel
+    _RC_GUARDIA_ENTREGA = '6afebfb2212240c549ff9873'  # texto, primer nivel
+    _RC_RECIBIO = '6afec2f16b7ce990218fe1e3'       # texto, en Devoluciones de Equipo
+    # Estado de devolución de la forma → condición que usa el diseño del reporte
+    _RC_ESTADO = {'completo': 'Bien', 'danado': 'Dañado', 'perdido': 'No regresó'}
+
+    @staticmethod
+    def _rc_uno(value):
+        """Los campos de catálogo llegan como lista; aquí se quiere el primer valor."""
+        if isinstance(value, list):
+            return value[0] if value else None
+        return value
+
+    @staticmethod
+    def _rc_clave(value):
+        """Valor de select/radio comparable: minúsculas, sin acentos ni guiones bajos."""
+        text = unicodedata.normalize('NFD', str(value or '')).encode('ascii', 'ignore').decode()
+        return text.replace('_', ' ').strip().lower()
+
+    @staticmethod
+    def _rc_fecha(value):
+        """'YYYY-MM-DD HH:MM[:SS]' → 'YYYY-MM-DD HH:MM' (lo que espera el front)."""
+        return str(value)[:16] if value else None
+
+    def _rc_url(self, value):
+        value = self._rc_uno(value)
+        if isinstance(value, dict):
+            return value.get('file_url') or ''
+        return value or ''
+
+    def get_reporte_concesionados(self, locations=None, date_from=None, date_to=None):
+        """Préstamos para el reporte. Incluye los que salieron antes de `date_from` si seguían
+        prestados en algún momento del rango (abiertos o cerrados después de `date_from`)."""
+        cf = self.cons_f
+        f_fecha = f"answers.{cf['fecha_concesion']}"
+        f_status = f"answers.{cf['status_concesion']}"
+        match = {
+            "deleted_at": {"$exists": False},
+            "form_id": self.CONCESSIONED_ARTICULOS,
+            f_status: {"$ne": "cancelado"},
+        }
+        if date_to:
+            match[f_fecha] = {"$lte": f"{date_to} 23:59:59"}
+        if date_from:
+            match["$or"] = [
+                {f_fecha: {"$gte": date_from}},
+                {f_status: {"$in": ["abierto", "parcial"]}},
+                {f"answers.{cf['fecha_cierre_concesion']}": {"$gte": date_from}},
+                {f"answers.{cf['grupo_equipos_devolucion']}.{cf['fecha_devolucion_concesion']}": {"$gte": date_from}},
+            ]
+        if locations:
+            match[f"answers.{cf['ubicacion_concesion']}"] = {"$in": locations if isinstance(locations, list) else [locations]}
+
+        query = [
+            {"$match": match},
+            {"$project": {"_id": 1, "folio": 1, "created_by_name": 1, "answers": 1}},
+            {"$sort": {f_fecha: 1}},
+        ]
+        filas = []
+        plazos = self._rc_plazos_catalogo()
+        for rec in self.cr.aggregate(query):
+            filas.extend(self._rc_filas(rec, plazos))
+        return filas
+
+    def _rc_plazos_catalogo(self):
+        """Plazo actual de cada equipo en el catálogo, por nombre. Es el respaldo de los
+        préstamos que se crearon antes de que la concesión guardara su plazo."""
+        try:
+            rows = self.lkf_api.search_catalog(self.ACTIVOS_FIJOS_CAT_ID, {'selector': {}, 'limit': 5000}) or []
+        except Exception:
+            return {}
+        if not isinstance(rows, list):  # si falla, LinkaForm regresa {'error': ..., 'status_code': ...}
+            print('reporte concesionados: no se pudo leer el catálogo de equipos', rows)
+            return {}
+        plazos = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            nombre = self._rc_uno(r.get(self.cons_f['_nombre_equipo']))
+            plazo = self._rc_horas(r.get(self._RC_PLAZO))
+            if nombre and plazo and nombre not in plazos:
+                plazos[nombre] = plazo
+        return plazos
+
+    def _rc_horas(self, value):
+        """Plazo en horas (> 0) o None."""
+        try:
+            h = float(self._rc_uno(value))
+        except (TypeError, ValueError):
+            return None
+        return h if h > 0 else None
+
+    def _rc_filas(self, rec, plazos=None):
+        cf = self.cons_f
+        a = rec.get('answers', {})
+        cat_act = self.ACTIVOS_FIJOS_CAT_OBJ_ID
+        cat_emp = self.Employee.CONF_AREA_EMPLEADOS_CAT_OBJ_ID
+        cat_ubi = self.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID
+
+        nombre_empleado = self._rc_uno((a.get(cat_emp) or {}).get(cf['_persona_nombre_concesion']))
+        nombre_otro = a.get(cf['persona_nombre_otro'])
+        tipo = self._rc_clave(a.get(cf['tipo_persona_solicita']))
+        es_empleado = tipo == 'empleado' or (not tipo and bool(nombre_empleado))
+        # Si el campo que toca viene vacío, se usa el otro (hay registros capturados así)
+        solicitante = (nombre_empleado or nombre_otro) if es_empleado else (nombre_otro or nombre_empleado)
+        comun = {
+            'folio': rec.get('folio') or '',
+            'solicitante': solicitante or '',
+            'tipo_solicitante': 'Empleado' if es_empleado else 'Visitante',
+            'empresa': a.get(self._RC_EMPRESA) or '',
+            # Registros viejos sin "Guardia que entrega": quien capturó la concesión
+            'guardia_presto': a.get(self._RC_GUARDIA_ENTREGA) or rec.get('created_by_name') or '',
+            'fecha_prestamo': self._rc_fecha(a.get(cf['fecha_concesion'])),
+            'identificacion': self._rc_url(a.get(cf['persona_identificacion_otro'])),
+            'ubicacion': self._rc_uno((a.get(cat_ubi) or {}).get(cf['_ubicacion_concesion'])) or '',
+        }
+        cierre_registro = self._rc_fecha(a.get(cf['fecha_cierre_concesion']))
+        devoluciones = a.get(cf['grupo_equipos_devolucion']) or []
+
+        filas = []
+        for linea in a.get(cf['grupo_equipos']) or []:
+            equipo = linea.get(cat_act) or {}
+            id_mov = linea.get(cf['id_movimiento'])
+            try:
+                cantidad = max(1, int(float(linea.get(cf['cantidad_equipo_concesion']) or 1)))
+            except (TypeError, ValueError):
+                cantidad = 1
+            try:
+                precio = float(self._rc_uno(equipo.get(cf['_costo_equipo_concesion'])) or 0)
+            except (TypeError, ValueError):
+                precio = 0
+            articulo = self._rc_uno(equipo.get(cf['_nombre_equipo'])) or ''
+            base = dict(
+                comun,
+                articulo=articulo,
+                categoria=self._rc_uno(equipo.get(cf['_categoria_equipo_concesion'])) or '',
+                precio=precio,
+                foto=self._rc_url(linea.get(self._RC_EVIDENCIA_PRESTAMO)),
+                # El que se guardó al prestar; si no hay, el actual del catálogo. Sin ninguno,
+                # el front usa 24 h. La fecha límite, si viene, manda sobre el plazo.
+                plazo=self._rc_horas(equipo.get(self._RC_PLAZO)) or (plazos or {}).get(articulo),
+                fecha_limite=self._rc_fecha(linea.get(self._RC_FECHA_LIMITE)),
+            )
+
+            # Cuántas unidades de la línea están cerradas: mandan los totales de la línea
+            # (estatus y cantidad pendiente), no la suma de devoluciones, que puede venir en 0.
+            def _num(v):
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+            pendiente = _num(linea.get(cf['cantidad_equipo_pendiente']))
+            if self._rc_clave(linea.get(cf['status_concesion_equipo'])) == 'devuelto':
+                cerradas = cantidad
+            elif pendiente is not None:
+                cerradas = max(0, min(cantidad, cantidad - int(pendiente)))
+            else:
+                cerradas = None  # sin totales: se cuentan las devoluciones
+
+            # Cada devolución cierra unidades en orden: la primera unidad cerrada es la que se
+            # devolvió primero. Una devolución con cantidad 0 o vacía (p. ej. la forzada al
+            # reasignar el equipo) cierra todo lo que quedaba.
+            cierres = []
+            devs = [d for d in devoluciones if id_mov and d.get(cf['id_movimiento_devolucion']) == id_mov]
+            for d in sorted(devs, key=lambda d: str(d.get(cf['fecha_devolucion_concesion']) or '')):
+                forzada = self._rc_clave(d.get(self._RC_SE_FORZO)) in ('si', 'yes')
+                cierre = {
+                    'tipo_cierre': 'Forzada' if forzada else 'Normal',
+                    'fecha_cierre': self._rc_fecha(d.get(cf['fecha_devolucion_concesion'])) or cierre_registro,
+                    'estado': self._RC_ESTADO.get(self._rc_clave(d.get(cf['estatus_equipo'])), 'Bien'),
+                    # "Recibió"; en registros viejos solo el cierre forzado guarda quién lo hizo
+                    'guardia_cierre': d.get(self._RC_RECIBIO) or ((d.get(self._RC_FORZADA_POR) or '') if forzada else ''),
+                    # Evidencia de la devolución ('' = la devolución no la trae)
+                    'foto_cierre': self._rc_url(d.get(cf['evidencia_entrega'])),
+                    'identificacion_cierre': self._rc_url(d.get(cf['identificacion_entrega'])),
+                }
+                n = int(_num(d.get(cf['cantidad_devolucion'])) or 0)
+                if n <= 0:
+                    n = (cerradas if cerradas is not None else cantidad) - len(cierres)
+                cierres.extend([cierre] * max(0, n))
+            if cerradas is not None:
+                if len(cierres) < cerradas:
+                    # Cerradas sin devolución capturada (registros viejos): con la última
+                    # devolución que haya, o con la fecha de cierre del registro
+                    resto = dict(cierres[-1]) if cierres else {
+                        'tipo_cierre': 'Normal', 'fecha_cierre': cierre_registro, 'estado': 'Bien', 'guardia_cierre': '',
+                        'foto_cierre': None, 'identificacion_cierre': None}  # sin devolución: no se sabe
+                    cierres.extend([resto] * (cerradas - len(cierres)))
+                cierres = cierres[:cerradas]
+
+            for i in range(cantidad):
+                cierre = cierres[i] if i < len(cierres) else {
+                    'tipo_cierre': 'Abierto', 'fecha_cierre': None, 'estado': '', 'guardia_cierre': '',
+                    'foto_cierre': None, 'identificacion_cierre': None}
+                filas.append(dict(
+                    base,
+                    unidad=f"{i + 1} de {cantidad}" if cantidad > 1 else '',
+                    **cierre,
+                ))
+        return filas
+
     def get_list_article_lost(self, location, area, status=None, dateFrom="", dateTo="", filterDate=""):
         match_query = {
             "deleted_at":{"$exists":False},
@@ -19617,7 +19831,7 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         print('>>> ocr_acceso_transportista sources=', [s[:80] for s in sources])
 
         try:
-            raw_text = self.ai.ocr_general(sources, system, prompt, model=model, max_tokens=6000)
+            raw_text = self.ai.ocr_general(sources, system, prompt, model=model, max_tokens=8000)
         except ValueError as e:
             return {'status_code': 500, 'msg': f'Error al parsear respuesta del modelo: {e}'}
         except RuntimeError as e:
