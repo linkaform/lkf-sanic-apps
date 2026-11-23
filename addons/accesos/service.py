@@ -47,10 +47,11 @@ print('--------------- ACCESOS APP --------------------')
 from .models import AccesosModel
 from lkf_addons.tools.OcrMixin import OcrMixin
 from lkf_addons.tools.FacetSearchMixin import FacetSearchMixin
+from .contratistas_contratos import ContratosMixin
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
-class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
+class Accesos(ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         #--Variables

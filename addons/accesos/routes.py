@@ -2556,4 +2556,51 @@ async def post_fix_rondines(request: Request):
     service.fix_rondines()
     return json({"data": {"status_code": 200, "msg": "OK"}}, status=200)
 
+# ============================================
+# Contratistas · Contratos (ME-14). Script puente: contratos_sdk.py
+# Las escrituras van en un hilo: hacen requests síncronos a LinkaForm.
+# ============================================
+
+@accesos_bp.post("/contratos/list_contratos")
+async def post_list_contratos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos(
+        relacion_id=p.get("relacion_id"), estatus=p.get("estatus"),
+        fin_desde=p.get("fin_desde"), fin_hasta=p.get("fin_hasta"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/get_contrato")
+async def post_get_contrato(request: Request):
+    response = service.get_contrato(_ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/create_contrato")
+async def post_create_contrato(request: Request):
+    response = await asyncio.to_thread(service.create_contrato, _ocr_payload(request).get("contrato"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/update_contrato")
+async def post_update_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_contrato, p.get("contrato_id"), p.get("contrato"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/change_status_contrato")
+async def post_change_status_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.change_status_contrato, p.get("contrato_id"), p.get("estatus_manual"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/get_historial_contrato")
+async def post_get_historial_contrato(request: Request):
+    response = service.get_historial_contrato(_ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
