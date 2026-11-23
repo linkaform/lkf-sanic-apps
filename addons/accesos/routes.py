@@ -2676,6 +2676,43 @@ async def post_recalcular_cumplimiento(request: Request):
 # Contratistas · Documentos (F0-11 lectura con IA). Script puente: documentos_sdk.py
 # ---------------------------------------------------------------------------
 
+@accesos_bp.post("/documentos/list_documentos")
+async def post_list_documentos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_documentos(
+        dueno_tipo=p.get("dueno_tipo"), empresa_id=p.get("empresa_id"), empleado_id=p.get("empleado_id"),
+        contrato_id=p.get("contrato_id"), requerimiento_id=p.get("requerimiento_id"), estatus=p.get("estatus"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/get_documento")
+async def post_get_documento(request: Request):
+    response = service.get_documento(_ocr_payload(request).get("documento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/upload_documento")
+async def post_upload_documento(request: Request):
+    response = await asyncio.to_thread(service.upload_documento, _ocr_payload(request).get("documento"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/review_documento")
+async def post_review_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.review_documento, p.get("documento_id"), p.get("decision"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/comment_documento")
+async def post_comment_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.comment_documento, p.get("documento_id"), p.get("texto", ""))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/documentos/analizar_documento")
 async def post_analizar_documento(request: Request):
     p = _ocr_payload(request)
