@@ -2732,4 +2732,12 @@ async def post_registrar_empresa(request: Request):
     response = await asyncio.to_thread(service.registrar_empresa, _ocr_payload(request).get("registro"))
     return json({"data": response}, status=200)
 
+
+@accesos_bp.post("/registro/leer_documento_registro")
+async def post_leer_documento_registro(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.leer_documento_registro, p.get("archivo"), p.get("tipo"), p.get("rfc"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')

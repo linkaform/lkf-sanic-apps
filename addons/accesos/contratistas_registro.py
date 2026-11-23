@@ -36,6 +36,10 @@ TIPOS_PERSONA = ["Moral", "Física"]
 FOLIO_POR_PERFIL = {"Contratista": "CT", "Cliente": "CL"}
 DIAS_REPSE_POR_VENCER = 60
 TERMINOS_VERSION = "2026-11"
+# Campos del domicilio fiscal de la CSF (sufijo de domicilio_* en Empresas).
+DOMICILIO = ["cp", "tipo_vialidad", "vialidad", "num_exterior", "num_interior", "colonia", "localidad",
+             "municipio", "estado", "entre_calle", "y_calle"]
+ESTATUS_PADRON = ["Activo", "Inactivo"]
 DOMINIOS_RESERVADOS = {"www", "app", "api", "admin", "web", "mail", "soporte", "clave10", "portal", "staging",
                        "dev", "test", "demo"}
 
@@ -173,19 +177,31 @@ class RegistroMixin:
         out = {f["repse_folio"]: folio, f["repse_fin"]: fin.isoformat(), f["repse_estatus"]: opt(estatus)}
         if ini:
             out[f["repse_inicio"]] = ini.isoformat()
+        actividades = [a for a in repse.get("actividades") or [] if isinstance(a, dict)]
+        if actividades:
+            out[f["actividades_stps"]] = [{f["actividad_clave"]: str(a.get("clave") or "").strip(),
+                                           f["actividad_descripcion"]: str(a.get("descripcion") or "").strip()}
+                                          for a in actividades]
         return out, folio
 
     def _reg_csf(self, csf, direccion):
-        """Datos de la CSF (RG-03) y la dirección capturada."""
+        """Datos de la CSF (los que regresa leer_documento_registro) y la dirección
+        capturada. Con domicilio de la CSF se guarda desglosado; sin él, la
+        dirección capturada va en vialidad."""
         f = self.ctr_f["empresas"]
         csf = csf if isinstance(csf, dict) else {}
-        out = {f["domicilio_vialidad"]: direccion}
-        for k, campo in (("regimen_fiscal", "regimen_fiscal"), ("actividad_preponderante", "actividad_preponderante"),
-                         ("codigo_postal", "domicilio_cp"), ("municipio", "domicilio_municipio"),
-                         ("estado", "domicilio_estado"), ("colonia", "domicilio_colonia"),
-                         ("nombre_comercial", "nombre_comercial")):
+        dom = csf.get("domicilio") if isinstance(csf.get("domicilio"), dict) else {}
+        out = {}
+        for k in DOMICILIO:
+            if dom.get(k):
+                out[f[f"domicilio_{k}"]] = str(dom[k]).strip()
+        if not out.get(f["domicilio_vialidad"]):
+            out[f["domicilio_vialidad"]] = direccion
+        for k in ("regimen_fiscal", "actividad_preponderante", "nombre_comercial"):
             if csf.get(k):
-                out[f[campo]] = str(csf[k]).strip()
+                out[f[k]] = str(csf[k]).strip()
+        if csf.get("estatus_padron") in ESTATUS_PADRON:
+            out[f["estatus_sat"]] = opt(csf["estatus_padron"])
         return out
 
     def _reg_crear_empresa(self, v, d):
@@ -288,3 +304,106 @@ class RegistroMixin:
             "repse": repse_folio,
             "completitud": 25,
         }
+
+    # ------------------------------------------------- RG-03-B: prellenado
+
+    def leer_documento_registro(self, archivo, tipo, rfc=None):
+        """Lee el REPSE o la CSF del wizard y regresa los datos con la forma que
+        acepta registrar_empresa (`repse` / `csf`) más lo que el paso 5 prellena.
+
+        Público (registro sin sesión): el prompt NO lleva datos de la cuenta.
+        No guarda nada; el archivo lo sube el front."""
+        tipo = str(tipo or "").upper()
+        if tipo not in LECTURA_PROMPTS:
+            self._reg_error("tipo debe ser REPSE o CSF.")
+        if not isinstance(archivo, dict) or not str(archivo.get("file_url") or "").startswith("http"):
+            self._reg_error("Falta el archivo (file_url) a leer.")
+        if not self.ai:
+            self._reg_error("La lectura de documentos no está disponible en esta cuenta.", 409)
+        try:
+            ia = self._dia_llamar(archivo, LECTURA_PROMPTS[tipo], None)
+        except Exception as e:  # noqa: BLE001
+            self._reg_error(f"No se pudo leer el documento: {str(e)[:300]}", 502)
+        ia = ia if isinstance(ia, dict) else {}
+        legible = bool(ia.get("legible"))
+        detectado = str(ia.get("tipo_documento") or "").upper()
+        alertas = []
+        if not legible:
+            alertas.append({"nivel": "error", "titulo": "No pudimos leer el documento",
+                            "detalle": "Sube un PDF más nítido o captura los datos a mano."})
+            return {"legible": False, "tipo": tipo, "alertas": alertas}
+        if detectado and detectado != tipo:
+            alertas.append({"nivel": "error", "titulo": f"Esto no parece {('un ' if tipo == 'REPSE' else 'una ')}{tipo}",
+                            "detalle": f"El documento parece ser {ia.get('tipo_documento')}."})
+        rfc_doc = re.sub(r"[^A-Z0-9&Ñ]", "", str(ia.get("rfc") or "").upper()) or None
+        if rfc and rfc_doc and rfc_doc != re.sub(r"\s", "", str(rfc)).upper():
+            alertas.append({"nivel": "error", "titulo": "El RFC no coincide",
+                            "detalle": f"El documento es del RFC {rfc_doc} y capturaste {str(rfc).upper()}."})
+        nombre = {k: (str(ia.get(k)).strip() if ia.get(k) else None)
+                  for k in ("razon_social", "nombre", "primer_apellido", "segundo_apellido")}
+        out = {"legible": True, "tipo": tipo, "rfc": rfc_doc,
+               "tipo_persona": "Física" if rfc_doc and len(rfc_doc) == 13 else ("Moral" if rfc_doc else None),
+               **nombre, "alertas": alertas}
+        if not out["razon_social"] and nombre["nombre"]:
+            out["razon_social"] = " ".join(x for x in (nombre["nombre"], nombre["primer_apellido"],
+                                                       nombre["segundo_apellido"]) if x)
+
+        if tipo == "REPSE":
+            ini, fin = _fecha(ia.get("inicio")), _fecha(ia.get("fin"))
+            hoy = self._ctr_hoy()
+            meses = ((fin.year - hoy.year) * 12 + fin.month - hoy.month) if fin else None
+            if fin and fin < hoy:
+                alertas.append({"nivel": "error", "titulo": "El REPSE está vencido",
+                                "detalle": f"Su vigencia terminó el {fin.isoformat()}."})
+            out["repse"] = {
+                "folio": str(ia.get("folio") or "").strip() or None,
+                "inicio": ini.isoformat() if ini else None, "fin": fin.isoformat() if fin else None,
+                "meses_restantes": max(0, meses) if meses is not None else None,
+                "actividades": [{"clave": str(a.get("clave") or "").strip(), "descripcion": str(a.get("descripcion") or "").strip()}
+                                for a in ia.get("actividades") or [] if isinstance(a, dict)],
+            }
+            if ia.get("representante_legal"):
+                out["representante_legal"] = str(ia["representante_legal"]).strip()
+            return out
+
+        dom_ia = ia.get("domicilio") if isinstance(ia.get("domicilio"), dict) else {}
+        dom = {k: str(dom_ia[k]).strip() for k in DOMICILIO if dom_ia.get(k)}
+        padron = next((e for e in ESTATUS_PADRON if str(ia.get("estatus_padron") or "").strip().lower().startswith(e.lower())), None)
+        if padron == "Inactivo":
+            alertas.append({"nivel": "aviso", "titulo": "Estatus en el padrón: Inactivo",
+                            "detalle": "El SAT reporta al contribuyente como inactivo."})
+        correo = str(ia.get("correo") or "").strip().lower() or None
+        out["csf"] = {"domicilio": dom, "estatus_padron": padron,
+                      "regimen_fiscal": str(ia.get("regimen_fiscal") or "").strip() or None,
+                      "actividad_preponderante": str(ia.get("actividad_preponderante") or "").strip() or None}
+        out["curp"] = re.sub(r"\s", "", str(ia.get("curp") or "")).upper() or None
+        out["correo"] = correo
+        # Prellenado del paso 5 (mismas reglas que el diseño).
+        out["direccion"] = ", ".join(x for x in (
+            " ".join(x for x in (dom.get("vialidad"), dom.get("num_exterior")) if x),
+            f"Int. {dom['num_interior']}" if dom.get("num_interior") else None,
+            dom.get("colonia"), f"C.P. {dom['cp']}" if dom.get("cp") else None,
+            dom.get("municipio"), dom.get("estado")) if x) or None
+        out["dominio_sugerido"] = normalizar_dominio(correo.split("@", 1)[1].split(".", 1)[0]) \
+            if correo and "@" in correo else None
+        return out
+
+
+LECTURA_COMUN = (
+    "Lee el documento adjunto. Responde SOLO un objeto JSON. Si un dato no aparece o no se lee con claridad usa "
+    "null; nunca lo inventes. Si el texto no se lee con claridad, legible=false.\n"
+    '"legible": true|false, "tipo_documento": "REPSE" | "CSF" | "Otro", "rfc": "...", "razon_social": "... (persona '
+    'moral) o null", "nombre": "... (persona física) o null", "primer_apellido": "...", "segundo_apellido": "...",\n'
+)
+LECTURA_PROMPTS = {
+    "REPSE": LECTURA_COMUN + (
+        '"folio": "número de registro REPSE", "inicio": "YYYY-MM-DD (fecha de registro o inicio de vigencia)", '
+        '"fin": "YYYY-MM-DD (vencimiento del registro)", "representante_legal": "... o null", '
+        '"actividades": [{"clave": "...", "descripcion": "..."}] (actividades autorizadas ante la STPS)'),
+    "CSF": LECTURA_COMUN + (
+        '"curp": "... (persona física) o null", "correo": "correo electrónico registrado o null", '
+        '"estatus_padron": "Activo | Inactivo", "regimen_fiscal": "...", "actividad_preponderante": "... o null", '
+        '"domicilio": {"cp": "...", "tipo_vialidad": "...", "vialidad": "...", "num_exterior": "...", '
+        '"num_interior": "...", "colonia": "...", "localidad": "...", "municipio": "...", "estado": "...", '
+        '"entre_calle": "...", "y_calle": "..."}'),
+}
