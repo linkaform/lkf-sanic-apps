@@ -53,10 +53,11 @@ from .contratistas_cumplimiento import CumplimientoMixin
 from .contratistas_documentos_ia import DocumentosIAMixin
 from .contratistas_registro import RegistroMixin
 from .contratistas_documentos import DocumentosMixin
+from .contratistas_requerimientos import RequerimientosMixin
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
-class Accesos(DocumentosMixin, RegistroMixin, DocumentosIAMixin, CumplimientoMixin, RelacionesMixin, ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
+class Accesos(RequerimientosMixin, DocumentosMixin, RegistroMixin, DocumentosIAMixin, CumplimientoMixin, RelacionesMixin, ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         #--Variables

@@ -2673,6 +2673,38 @@ async def post_recalcular_cumplimiento(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/configuracion/list_requerimientos")
+async def post_list_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_requerimientos(
+        tipo=p.get("tipo"), ambito=p.get("ambito"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_requerimiento")
+async def post_get_requerimiento(request: Request):
+    response = service.get_requerimiento(_ocr_payload(request).get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_requerimiento")
+async def post_save_requerimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_requerimiento, p.get("requerimiento"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_aplicacion_requerimiento")
+async def post_get_aplicacion_requerimiento(request: Request):
+    response = service.get_aplicacion_requerimiento(_ocr_payload(request).get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
 # Contratistas · Documentos (F0-11 lectura con IA). Script puente: documentos_sdk.py
 # ---------------------------------------------------------------------------
 
