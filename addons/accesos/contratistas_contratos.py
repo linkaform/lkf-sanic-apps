@@ -213,8 +213,9 @@ class ContratosMixin:
             return None
         return {"name": v.get("file_name") or v.get("name", ""), "file_url": v.get("file_url", "")}
 
-    def _ctr_recurrencia_out(self, a):
-        f = self.ctr_f["contratos_de_servicio"]
+    def _ctr_recurrencia_out(self, a, forma="contratos_de_servicio"):
+        """Grupo recurrencia_* de `forma` (contratos o requerimientos) al formato del front."""
+        f = self.ctr_f[forma]
         tipo = label(RECURRENCIA_TIPOS, a.get(f["recurrencia_tipo"]))
         if not tipo:
             return None
@@ -307,8 +308,8 @@ class ContratosMixin:
 
     # ------------------------------------------------------------- escritura
 
-    def _ctr_recurrencia_in(self, r):
-        f = self.ctr_f["contratos_de_servicio"]
+    def _ctr_recurrencia_in(self, r, forma="contratos_de_servicio"):
+        f = self.ctr_f[forma]
         claves = [k for k in f if k.startswith("recurrencia_")]
         out = {f[k]: None for k in claves}
         if not r:
