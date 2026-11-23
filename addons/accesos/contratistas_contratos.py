@@ -7,9 +7,9 @@ Spec: clave10-sdk/specs/contratos/contratos-001-modelo-de-datos.md.
   (campo empresa_id); sin empleado o sin empresa = la empresa propia.
 - Cada usuario solo ve y edita contratos donde su empresa es cliente o
   contratista.
-- El estatus lo calcula el back con el orden de la spec. Mientras el motor de
-  ME-15 no genere filas de cumplimiento, un contrato sin filas cuenta como
-  "En documentación".
+- El estatus lo calcula el back con el orden de la spec. Las filas de
+  cumplimiento las genera el motor de ME-15 (contratistas_cumplimiento.py)
+  después de cada alta y cambio.
 - Cada alta y cambio deja un evento en Historial de contratos.
 """
 import re
@@ -420,19 +420,21 @@ class ContratosMixin:
                 n = max(n, int(m.group(1)))
         return f"C-{n + 1:04d}"
 
-    def _ctr_limitantes_pendientes(self, contrato_id):
-        """True si el contrato aún no cumple sus limitantes (o el motor no ha corrido)."""
+    def _ctr_limitantes_pendientes(self, contrato_id, relacion_id=None):
+        """True si algún requerimiento limitante del contrato (o asignado a su
+        relación) no está cumplido. Sin motor (forma no instalada) o sin id = True."""
         if not contrato_id or not self.CUMPLIMIENTO_FORM:
             return True
         f = self.ctr_f["cumplimiento_de_requerimientos"]
-        filas = self._ctr_find(self.CUMPLIMIENTO_FORM, {f"answers.{f['contrato_id']}": str(contrato_id)})
-        if not filas:
-            return True
-        for r in filas:
+        match = {f"answers.{f['contrato_id']}": str(contrato_id)}
+        if relacion_id:
+            match = {"$or": [match, {f"answers.{f['relacion_id']}": str(relacion_id),
+                                     f"answers.{f['contrato_id']}": {"$in": [None, ""]}}]}
+        match[f"answers.{f['limitante']}"] = opt("Sí")
+        ok = {opt(e) for e in ("Cumplido", "En ceros", "No aplica", "Por transcurrir")}
+        for r in self._ctr_find(self.CUMPLIMIENTO_FORM, match):
             a = r.get("answers") or {}
-            if a.get(f["limitante"]) != opt("Sí") or a.get(f["estado_manual"]) == opt("No aplica"):
-                continue
-            if a.get(f["estado"]) not in (opt("Cumplido"), opt("En ceros")):
+            if (a.get(f["estado_manual"]) or a.get(f["estado"])) not in ok:
                 return True
         return False
 
@@ -446,7 +448,7 @@ class ContratosMixin:
         fin = _fecha(a.get(f["fin"]))
         if fin and fin < hoy:
             return "Vencido"
-        if self._ctr_limitantes_pendientes(contrato_id):
+        if self._ctr_limitantes_pendientes(contrato_id, a.get(f["relacion_id"])):
             return "En documentación"
         if fin and fin - hoy <= timedelta(days=DIAS_POR_VENCER):
             return "Por vencer"
@@ -605,6 +607,7 @@ class ContratosMixin:
         if not contrato_id:
             self._ctr_error("LinkaForm no regresó el id del contrato creado.", 500)
         self._ctr_evento(contrato_id, folio, "Creación", f"Contrato {folio} creado: {a.get(f['objeto'])}")
+        self.cum_despues_de_contrato(contrato_id)
         return self.get_contrato(contrato_id)
 
     def _ctr_guardar_cambio(self, rec, nuevos, accion, eventos_extra=None):
@@ -623,7 +626,9 @@ class ContratosMixin:
             self._ctr_evento(contrato_id, folio, "Estatus",
                              f"Estatus: {antes_out.get('estatus')} → {despues_out.get('estatus')}",
                              {"estatus": antes_out.get("estatus")}, {"estatus": despues_out.get("estatus")})
-        return despues_out
+        # Motor de cumplimiento (ME-15): filas, % y estatus con los datos nuevos.
+        self.cum_despues_de_contrato(contrato_id)
+        return self.ctr_contrato_out(self._ctr_get(self.CONTRATOS_FORM, contrato_id))
 
     def update_contrato(self, contrato_id, contrato):
         rec = self._ctr_contrato_visible(contrato_id)

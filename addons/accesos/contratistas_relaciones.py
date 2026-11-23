@@ -11,7 +11,7 @@ Spec: clave10-sdk/specs/relaciones/relaciones-001-modelo-de-datos.md.
 - No se desactiva una relación con contratos vigentes (hay que pausarlos o
   cancelarlos antes).
 - num_contratos se calcula al leer (contratos no cancelados). cumplimiento_pct
-  lo escribirá el motor de ME-15; mientras tanto se regresa lo guardado.
+  lo guarda el motor de ME-15 (contratistas_cumplimiento.py).
 - Subcontratación: aquí solo se valida que el cliente de la hija sea el
   contratista del padre y el nivel máximo. Ciclos, permite_subcontratacion y
   el árbol son R-03.
@@ -266,6 +266,8 @@ class RelacionesMixin:
             a[f["requerimientos_asignados"]] = [
                 {f["requerimientos_asignados_id"]: i, f["requerimientos_asignados_nombre"]: nombres[i]} for i in ids]
         self._ctr_patch(self.RELACIONES_FORM, relacion_id, a, "update_relacion")
+        if cambios.get("requerimientos_asignados") is not None:
+            self.recalcular_relacion(str(relacion_id))  # motor ME-15
         return self.get_relacion(relacion_id)
 
     def change_status_relacion(self, relacion_id, estatus):
@@ -284,4 +286,5 @@ class RelacionesMixin:
                     self._rel_error("Pausa o cancela los contratos vigentes antes de desactivar la relación.", 409)
         a[f["estatus"]] = opt(estatus)
         self._ctr_patch(self.RELACIONES_FORM, relacion_id, a, "change_status_relacion")
+        self.recalcular_relacion(str(relacion_id))  # motor ME-15
         return self.get_relacion(relacion_id)
