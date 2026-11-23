@@ -2684,4 +2684,15 @@ async def post_analizar_documento(request: Request):
         p.get("model"))
     return json({"data": response}, status=200)
 
+
+# ---------------------------------------------------------------------------
+# Contratistas · Registro (RG-01). Script puente PÚBLICO: registro_sdk.py
+# (corre con el API key de la cuenta del account_id de la página, sin sesión).
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/registro/registrar_empresa")
+async def post_registrar_empresa(request: Request):
+    response = await asyncio.to_thread(service.registrar_empresa, _ocr_payload(request).get("registro"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
