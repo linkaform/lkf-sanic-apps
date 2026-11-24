@@ -19,6 +19,7 @@ RevisionDocumento en clave10/src/types/contratistas/contratos.ts.
   resumen "N de M" y, si es cliente, su propia decisión (mi_decision). El
   dueño cambia compartido_con con update_compartido_documento: cliente nuevo
   entra Pendiente, el que sale pierde su decisión.
+- ME-07-B: el dueño elimina un documento solo si ningún cliente lo aprobó.
 - Cada alta, reemplazo y revisión recalcula el cumplimiento (motor ME-15) de
   las relaciones afectadas.
 """
@@ -431,6 +432,24 @@ class DocumentosMixin:
         afectados = set(antes) ^ set(nuevos)
         self._doc_recalcular(mi_empresa, afectados)
         return self.get_documento(documento_id)
+
+    def delete_documento(self, documento_id):
+        """El dueño borra un documento que ningún cliente ha aprobado (ME-07-B)."""
+        self._doc_requiere_forma()
+        mi_empresa = self.ctr_empresa_activa_id()
+        rec = self._doc_visible(documento_id, mi_empresa)
+        f = self.ctr_f["documentos_de_cumplimiento"]
+        a = rec.get("answers") or {}
+        if str(a.get(f["dueno_empresa_id"]) or "") != mi_empresa:
+            self._doc_error("Solo el dueño del documento puede eliminarlo.", 403)
+        if any(label(DECISIONES, x.get(f["aprobacion_decision"])) == "Aprobado" for x in a.get(f["aprobaciones"]) or []):
+            self._doc_error("Un cliente ya aprobó este documento: solo se puede reemplazar.", 409)
+        res = self.lkf_api.patch_record_list({"deleted_objects": [f"/api/infosync/form_answer/{rec['_id']}/"]})
+        if isinstance(res, dict) and res.get("status_code") not in (None, 200, 201, 202, 204):
+            self._doc_error(f"No se pudo eliminar el documento: {str(res)[:200]}", 502)
+        clientes = {str(x.get(f["compartido_con_id"]) or "") for x in a.get(f["compartido_con"]) or []}
+        self._doc_recalcular(mi_empresa, clientes)
+        return {"eliminado": str(rec["_id"]), "folio": a.get(f["folio"]) or ""}
 
     def comment_documento(self, documento_id, texto):
         self._doc_requiere_forma()
