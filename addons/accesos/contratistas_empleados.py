@@ -14,7 +14,18 @@ clave10/src/types/contratistas/empresa.ts.
   de Usuarios (UsersAdmin.create_user, manda la liga de activación).
 - Cumplimiento = filas del motor (ME-15) del empleado; sin filas = null.
 - Puesto es un catálogo de la forma: se lee, no se escribe (ni en la carga masiva).
+
+Detalle del empleado (ME-04-B):
+- Generales: datos personales y de contratación de la forma; domicilio,
+  compañía y jefe directo son catálogos (solo lectura).
+- Documentos: requerimientos de sus perfiles + filas del motor (contratos y
+  asignados a la relación), cruzados con sus documentos (ME-06-B).
+- Configuraciones: QR (id del empleado; inactivo si está desactivado o vetado),
+  veto con motivo, preferencias (sin efecto todavía salvo Disponible para
+  contratos) y restaurar contraseña (UsersAdmin.reset_password).
+- Centros múltiples con áreas quedan para ME-02: aquí solo centro_trabajo.
 """
+import base64
 import csv
 import io
 import re
@@ -39,6 +50,29 @@ COLUMNAS = {  # encabezado normalizado -> clave
     "nombre completo": "nombre", "nombre": "nombre", "curp": "curp", "rfc": "rfc", "nss": "nss",
     "puesto": "puesto",
 }
+# Campos de la forma Empleados que no están en employee_fields (dict LOCAL).
+EMPLEADO_EXTRA = {
+    "estado_civil": "663bcd72cb24017b604d7f26",
+    "tipo_contrato": "663fa630583de096e9326cc0",
+    "fecha_ingreso": "663bcd72cb24017b604d7f28",
+    "vacaciones": "663fa630583de096e9326cc3",
+    "numero_empleado": "663bcd72cb24017b604d7f27",
+    "nombre_direccion": "663a7e0fe48382c5b1230901",
+    "direccion": "663a7e0fe48382c5b1230902",
+    "colonia": "663a7f79e48382c5b123090a",
+    "estado": "663a7dd6e48382c5b12308ff",
+    "pais": "663a7ca6e48382c5b12308fa",
+    "compania": "663a8153e48382c5b1230918",
+    "jefe_directo": "663bd36eb19b7fb7d9e97ccb",
+}
+GENERO = {"Femenino": "femenino", "Masculino": "masculino"}
+ESTADO_CIVIL = {"Soltero(a)": "soltero(a)", "Casado(a)": "casado(a)", "Viudo(a)": "viudo(a)",
+                "Unión libre": "unión_libre"}
+TIPO_CONTRATO = {"Permanente": "permanente", "Eventual": "eventual", "Planta": "planta", "Becario": "becario"}
+PREFERENCIAS = ("notificaciones_correo", "acceso_app", "checkin_foto")
+URGENCIA = ["Rechazado", "Vencido", "Por subir", "Por revisar", "Aceptado"]
+ESTADO_MOTOR_A_DOC = {"Cumplido": "Aceptado", "En ceros": "Aceptado", "Por revisar": "Por revisar",
+                      "Rechazado": "Rechazado", "Vencido": "Vencido", "Por subir": "Por subir"}
 TIPOS_DOC_EMPLEADO = ["INE", "CURP", "Comprobante de domicilio", "Constancia de situación fiscal", "CV", "Otro"]
 
 PROMPT_EMPLEADO = """Analiza el documento adjunto. Es un documento personal de un empleado en México.
@@ -158,14 +192,18 @@ class EmpleadosMixin:
         return {i: {"contratos": contratos[i],
                     "cumplimiento_pct": porcentaje(filas[i]) if filas[i] else None} for i in ids}
 
-    def _emp_puesto(self, a):
-        k = self.Employee.employee_fields["worker_position"]
-        if a.get(k):
-            return _uno(a[k])
-        for v in a.values():  # va dentro del catálogo de puestos
-            if isinstance(v, dict) and v.get(k):
-                return _uno(v[k])
+    @staticmethod
+    def _emp_cat(a, key):
+        """Valor de un campo que puede ir suelto o dentro de un catálogo."""
+        if a.get(key) not in (None, ""):
+            return _uno(a[key])
+        for v in a.values():
+            if isinstance(v, dict) and v.get(key) not in (None, ""):
+                return _uno(v[key])
         return None
+
+    def _emp_puesto(self, a):
+        return self._emp_cat(a, self.Employee.employee_fields["worker_position"])
 
     def emp_out(self, rec, ctx=None):
         emp = self.Employee
@@ -255,8 +293,53 @@ class EmpleadosMixin:
         return {"items": [self.emp_out(r, ctx) for r in rows[ini:fin]], "total": len(rows), "editable": editable}
 
     def get_empleado(self, empleado_id):
+        """Detalle (ME-04): lo de la lista + generales, preferencias y QR."""
         rec, editable = self._emp_get(empleado_id)
-        return {**self.emp_out(rec), "editable": editable}
+        out = self.emp_out(rec)
+        a = rec.get("answers") or {}
+        return {**out, **self._emp_generales(a, out), "preferencias": self._emp_preferencias(a, out),
+                "qr_activo": out["estatus"] == "Activo" and not out.get("vetado"), "editable": editable}
+
+    def _emp_generales(self, a, out):
+        ef, x = self.Employee.employee_fields, EMPLEADO_EXTRA
+        inv = {v: k for d in (GENERO, ESTADO_CIVIL, TIPO_CONTRATO) for k, v in d.items()}
+        usr = a.get(self.Employee.USUARIOS_OBJ_ID) if isinstance(a.get(self.Employee.USUARIOS_OBJ_ID), dict) else {}
+        ingreso = _fecha(str(a.get(x["fecha_ingreso"]) or "")[:10])
+        antig = None
+        if ingreso:
+            m = (self._ctr_hoy().year - ingreso.year) * 12 + self._ctr_hoy().month - ingreso.month \
+                - (1 if self._ctr_hoy().day < ingreso.day else 0)
+            anios, meses = divmod(max(m, 0), 12)
+            antig = " ".join(x for x in (f"{anios} año{'s' if anios != 1 else ''}" if anios else "",
+                                         f"{meses} mes{'es' if meses != 1 else ''}" if meses or not anios else "") if x)
+        dom = {k: self._emp_cat(a, x[k]) for k in ("nombre_direccion", "direccion", "colonia", "estado", "pais")}
+        gen = {
+            "fecha_nacimiento": str(a.get(ef["fecha_nacimiento"]) or "")[:10] or None,
+            "genero": inv.get(a.get(ef["genero"])),
+            "estado_civil": inv.get(a.get(x["estado_civil"])),
+            "cuenta": {"email": _uno(usr.get(self._emp_ua().user_fields["email"])) or "",
+                       "telefono": _uno(usr.get(self._emp_ua().user_fields["phone"])) or ""} if out.get("usuario") else None,
+            "domicilio": {k: v for k, v in dom.items() if v} or None,
+            "contratacion": {
+                "compania": self._emp_cat(a, x["compania"]), "jefe_directo": self._emp_cat(a, x["jefe_directo"]),
+                "tipo_contrato": inv.get(a.get(x["tipo_contrato"])),
+                "numero_empleado": a.get(x["numero_empleado"]),
+                "fecha_ingreso": ingreso.isoformat() if ingreso else None, "antiguedad": antig,
+                "dias_vacaciones": a.get(x["vacaciones"]),
+            },
+        }
+        gen["contratacion"] = {k: v for k, v in gen["contratacion"].items() if v not in (None, "")}
+        return {k: v for k, v in gen.items() if v is not None}
+
+    def _emp_preferencias(self, a, out):
+        fe = self.ctr_f["empleados"]
+
+        def yn(k, default):
+            return default if not a.get(fe[k]) else a.get(fe[k]) == opt("Sí")
+        return {"disponible_para_contratos": out["disponible_para_contratos"],
+                "notificaciones_correo": yn("notificaciones_correo", True),
+                "acceso_app": bool(out.get("usuario")) and yn("acceso_app", True),
+                "checkin_foto": yn("checkin_foto", False)}
 
     # ------------------------------------------------------------ escritura
 
@@ -335,6 +418,22 @@ class EmpleadosMixin:
             if estatus not in ESTATUS:
                 errores.append(f"Estatus no válido: {estatus}.")
             a[ef["estatus_dentro_empresa"]] = "inactivo" if estatus == "Inactivo" else "activo"
+        for k, campo, opciones in (("genero", ef["genero"], GENERO),
+                                   ("estado_civil", EMPLEADO_EXTRA["estado_civil"], ESTADO_CIVIL),
+                                   ("tipo_contrato", EMPLEADO_EXTRA["tipo_contrato"], TIPO_CONTRATO)):
+            if parcial and k not in e:
+                continue
+            if e.get(k) and e[k] not in opciones:
+                errores.append(f"{k} no válido: {e[k]} (opciones: {', '.join(opciones)}).")
+            a[campo] = opciones.get(e.get(k)) if e.get(k) else None
+        for k, campo, hora in (("fecha_nacimiento", ef["fecha_nacimiento"], False),
+                               ("fecha_ingreso", EMPLEADO_EXTRA["fecha_ingreso"], True)):
+            if parcial and k not in e:
+                continue
+            d = _fecha(e.get(k)) if e.get(k) else None
+            if e.get(k) and not d:
+                errores.append(f"{k} no es una fecha válida (YYYY-MM-DD).")
+            a[campo] = (f"{d.isoformat()} 00:00:00" if hora else d.isoformat()) if d else None
         if tiene("centro_trabajo"):
             c = e.get("centro_trabajo") if isinstance(e.get("centro_trabajo"), dict) else {}
             a[fe["centro_trabajo_id"]] = str(c.get("id") or "") or None
@@ -636,3 +735,195 @@ class EmpleadosMixin:
                 n -= 1
                 fallidos.append({"fila": x["fila"], "curp": x["curp"], "error": str(e)[:200]})
         return {"creados": creados, "omitidos": omitidas, "fallidos": fallidos}
+
+    # ------------------------------------------------- detalle: documentos
+
+    def list_documentos_empleado(self, empleado_id, estatus=None, origen=None, search=None, limit=25, offset=0):
+        """Pestaña Documentos: un renglón por requerimiento (de sus perfiles, de
+        sus contratos y asignados a la relación) con su documento más reciente;
+        los documentos sin requerimiento van aparte con origen Carga."""
+        rec, _ = self._emp_get(empleado_id)
+        empleado_id = str(rec["_id"])
+        fe = self.ctr_f["empleados"]
+        a = rec.get("answers") or {}
+        cache, renglones = {}, {}
+
+        def renglon(req_id):
+            if req_id not in renglones:
+                req = self._cum_requerimiento(req_id, cache)
+                if not req:
+                    return None
+                renglones[req_id] = {"requerimiento": {"id": req_id, "nombre": req["nombre"]},
+                                     "recurrencia": req["periodicidad"], "limitante": req["limitante"],
+                                     "origenes": [], "estado_motor": None}
+            return renglones[req_id]
+
+        for g in a.get(fe["perfiles"]) or []:
+            pid = str(g.get(fe["perfiles_id"]) or "")
+            for req_id in self._cum_reqs_recurso(pid, cache) if pid else []:
+                r = renglon(req_id)
+                if r and (self._cum_requerimiento(req_id, cache) or {}).get("ambito") == "Persona":
+                    r["origenes"].append({"tipo": "Perfil", "nombre": g.get(fe["perfiles_nombre"]) or ""})
+                elif r and not r["origenes"]:
+                    renglones.pop(req_id, None)
+        if self.CUMPLIMIENTO_FORM:
+            fc = self.ctr_f["cumplimiento_de_requerimientos"]
+            folios = {}
+            for row in self._ctr_find(self.CUMPLIMIENTO_FORM, {f"answers.{fc['sujeto_empleado_id']}": empleado_id},
+                                      sort=[(f"answers.{fc['periodo_inicio']}", -1)]):
+                f = self.cum_fila_out(row)
+                r = renglon(f["requerimiento"]["id"])
+                if not r:
+                    continue
+                if f["contrato"]:
+                    if f["contrato"] not in folios:
+                        c = self._ctr_get(self.CONTRATOS_FORM, f["contrato"]) or {}
+                        folios[f["contrato"]] = (c.get("answers") or {}).get(
+                            self.ctr_f["contratos_de_servicio"]["folio"]) or f["contrato"]
+                    o = {"tipo": "Contrato", "nombre": folios[f["contrato"]], "id": f["contrato"]}
+                else:
+                    o = {"tipo": "Expediente base", "nombre": "Asignado por el cliente"}
+                if o not in r["origenes"]:
+                    r["origenes"].append(o)
+                if r["estado_motor"] is None and f["estado"] in ESTADO_MOTOR_A_DOC:
+                    r["estado_motor"], r["periodo"] = f["estado"], f["periodo"]
+        docs = {}
+        sueltos = []
+        if self.DOCUMENTOS_FORM:
+            fd = self.ctr_f["documentos_de_cumplimiento"]
+            for d in self._ctr_find(self.DOCUMENTOS_FORM, {f"answers.{fd['dueno_empleado_id']}": empleado_id},
+                                    sort=[("updated_at", -1)]):
+                out = self.doc_out(d)
+                rid = (out.get("requerimiento") or {}).get("id")
+                if rid and rid not in docs:
+                    docs[rid] = out
+                    renglon(rid)
+                elif not rid:
+                    sueltos.append(out)
+
+        def doc_light(d):
+            ultimo = (d.get("comentarios") or [])[-1:] or [{}]
+            rechazo = next((x.get("motivo") for x in d.get("aprobaciones") or [] if x.get("motivo")), None)
+            return {"id": d["id"], "folio": d["folio"], "nombre": d["nombre"], "archivo": d["archivo"],
+                    "vigencia_inicio": d.get("vigencia_inicio"), "vigencia_fin": d.get("vigencia_fin"),
+                    "versiones": d["versiones"], "comentario": rechazo or ultimo[0].get("texto")}
+
+        items = []
+        for rid, r in renglones.items():
+            d = docs.get(rid)
+            est = d["estatus"] if d else ESTADO_MOTOR_A_DOC.get(r["estado_motor"] or "", "Por subir")
+            if not r["origenes"]:
+                r["origenes"] = [{"tipo": "Carga", "nombre": "Subido sin requerimiento ligado"}]
+            item = {"requerimiento": r["requerimiento"], "origen": r["origenes"][0],
+                    "tambien_lo_requiere": r["origenes"][1:], "recurrencia": r["recurrencia"],
+                    "limitante": r["limitante"], "estatus": est, "documento": doc_light(d) if d else None}
+            if r.get("periodo"):
+                item["periodo"] = r["periodo"]
+            items.append(item)
+        for d in sueltos:
+            items.append({"requerimiento": None, "origen": {"tipo": "Carga", "nombre": d["nombre"]},
+                          "tambien_lo_requiere": [], "recurrencia": None, "limitante": False,
+                          "estatus": d["estatus"], "documento": doc_light(d)})
+        conteo = {e: sum(1 for i in items if i["estatus"] == e) for e in URGENCIA}
+        if estatus:
+            items = [i for i in items if i["estatus"] in ([estatus] if isinstance(estatus, str) else estatus)]
+        if origen:
+            items = [i for i in items if any(o["tipo"] == origen for o in [i["origen"], *i["tambien_lo_requiere"]])]
+        if search and search.strip():
+            s = _norm(search)
+            items = [i for i in items if s in _norm((i["requerimiento"] or {}).get("nombre"))
+                     or s in _norm((i["documento"] or {}).get("nombre"))]
+        items.sort(key=lambda i: (URGENCIA.index(i["estatus"]) if i["estatus"] in URGENCIA else 9,
+                                  _norm((i["requerimiento"] or {}).get("nombre") or (i["documento"] or {}).get("nombre"))))
+        ini = max(0, _int(offset))
+        fin = ini + max(1, min(_int(limit, 25), 200))
+        return {"items": items[ini:fin], "total": len(items), "conteo": conteo,
+                "pendientes": conteo["Rechazado"] + conteo["Vencido"] + conteo["Por subir"]}
+
+    # --------------------------------------------- detalle: configuraciones
+
+    def _emp_editable(self, empleado_id):
+        rec, editable = self._emp_get(empleado_id)
+        if not editable:
+            self._emp_error("Solo puedes cambiar empleados de tu empresa.", 403)
+        return rec
+
+    def get_qr_empleado(self, empleado_id):
+        """QR para registrar entrada en caseta: lleva el id del empleado."""
+        import qrcode
+        d = self.get_empleado(empleado_id)
+        img = qrcode.make(d["id"])
+        b = io.BytesIO()
+        img.save(b, format="PNG")
+        motivo = "Empleado vetado" if d.get("vetado") else ("Empleado desactivado" if d["estatus"] != "Activo" else None)
+        out = {"contenido": d["id"], "activo": d["qr_activo"], "nombre": d["nombre"], "folio": d["folio"],
+               "imagen": "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()}
+        if motivo:
+            out["motivo_inactivo"] = motivo
+        return out
+
+    def vetar_empleado(self, empleado_id, motivo):
+        """No se asigna a contratos ni centros nuevos; lo activo no se cancela solo."""
+        rec = self._emp_editable(empleado_id)
+        fe = self.ctr_f["empleados"]
+        motivo = " ".join(str(motivo or "").split())
+        if not motivo:
+            self._emp_error("Escribe el motivo del veto.")
+        a = rec.get("answers") or {}
+        if a.get(fe["vetado_fecha"]):
+            self._emp_error("El empleado ya está vetado.", 409)
+        por = (self.user or {}).get("name") or (self.user or {}).get("email") or ""
+        a = {**a, fe["vetado_fecha"]: self._ctr_hoy().isoformat(), fe["vetado_motivo"]: motivo,
+             fe["vetado_por"]: por, fe["disponible_para_contratos"]: opt("No")}
+        self._emp_guardar(a, empleado_id, "vetar_empleado")
+        return self.get_empleado(empleado_id)
+
+    def levantar_veto_empleado(self, empleado_id):
+        rec = self._emp_editable(empleado_id)
+        fe = self.ctr_f["empleados"]
+        a = dict(rec.get("answers") or {})
+        if not a.get(fe["vetado_fecha"]):
+            self._emp_error("El empleado no está vetado.", 409)
+        for k in ("vetado_fecha", "vetado_motivo", "vetado_por"):
+            a.pop(fe[k], None)
+        a[fe["disponible_para_contratos"]] = opt("Sí")
+        self._emp_guardar(a, empleado_id, "levantar_veto_empleado")
+        return self.get_empleado(empleado_id)
+
+    def update_preferencias_empleado(self, empleado_id, preferencias):
+        """Interruptores de Configuraciones; solo cambia las llaves que trae."""
+        p = preferencias if isinstance(preferencias, dict) else {}
+        rec = self._emp_editable(empleado_id)
+        fe = self.ctr_f["empleados"]
+        a = dict(rec.get("answers") or {})
+        validas = ("disponible_para_contratos", *PREFERENCIAS)
+        malas = [k for k in p if k not in validas or not isinstance(p[k], bool)]
+        if malas:
+            self._emp_error(f"Preferencias no válidas: {', '.join(malas)} (true/false).")
+        if p.get("disponible_para_contratos") and a.get(fe["vetado_fecha"]):
+            self._emp_error("Un empleado vetado no puede estar disponible para contratos.", 409)
+        if p.get("acceso_app") and not a.get(self.Employee.USUARIOS_OBJ_ID):
+            self._emp_error("El acceso a la app móvil requiere que el empleado tenga cuenta.", 409)
+        for k, v in p.items():
+            a[fe[k]] = opt("Sí") if v else opt("No")
+        self._emp_guardar(a, empleado_id, "update_preferencias_empleado")
+        return self.get_empleado(empleado_id)
+
+    def restaurar_password_empleado(self, empleado_id):
+        """Manda al correo del usuario la liga para poner contraseña nueva."""
+        d = self.emp_out(self._emp_editable(empleado_id))
+        if not d.get("usuario"):
+            self._emp_error("El empleado no tiene cuenta.", 409)
+        ua = self._emp_ua()
+        uf = ua.user_fields
+        uid = d["usuario"]["id"]
+        rec = self.cr.find_one({"form_id": ua.usuarios_form, "deleted_at": {"$exists": False},
+                                f"answers.{uf['user_id']}": {"$in": [uid, str(uid)]}}, {"_id": 1},
+                               sort=[("created_at", -1)])
+        if not rec:
+            self._emp_error("No se encontró el registro del usuario en Usuarios.", 404)
+        try:
+            ua.reset_password(str(rec["_id"]))
+        except Exception as e:  # noqa: BLE001
+            self._emp_error(f"No se pudo restaurar la contraseña: {ua._error_text(e)[:300]}", 409)
+        return {"enviado": True, "email": d["usuario"]["email"]}

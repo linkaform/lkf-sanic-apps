@@ -2858,3 +2858,46 @@ async def post_validar_carga_empleados(request: Request):
 async def post_cargar_empleados(request: Request):
     response = await asyncio.to_thread(service.cargar_empleados, _ocr_payload(request).get("archivo"))
     return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_documentos_empleado")
+async def post_list_documentos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_documentos_empleado(
+        p.get("empleado_id"), estatus=p.get("estatus"), origen=p.get("origen"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/get_qr_empleado")
+async def post_get_qr_empleado(request: Request):
+    response = service.get_qr_empleado(_ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/vetar_empleado")
+async def post_vetar_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.vetar_empleado, p.get("empleado_id"), p.get("motivo"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/levantar_veto_empleado")
+async def post_levantar_veto_empleado(request: Request):
+    response = await asyncio.to_thread(service.levantar_veto_empleado, _ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/update_preferencias_empleado")
+async def post_update_preferencias_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_preferencias_empleado, p.get("empleado_id"),
+                                       p.get("preferencias"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/restaurar_password_empleado")
+async def post_restaurar_password_empleado(request: Request):
+    response = await asyncio.to_thread(service.restaurar_password_empleado,
+                                       _ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
