@@ -342,6 +342,7 @@ CONTRATISTAS_FIELDS = {
         'recurso_origen': '4a505a94001b8be5e65e0c80',
         'recurso_archivo': 'be724dfef5062bacfe0ec52e',
         'recurso_enlace': 'cf662695b8a5577a322d5a62',
+        'participante_calificaciones': 'aab983c34030775fa10b035d',
     },
     'empleados': {
         'empresa_id': '7fc28a60ba83bb4750c184ac',
