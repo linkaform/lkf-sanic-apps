@@ -2629,6 +2629,22 @@ async def post_create_relacion(request: Request):
     return json({"data": response}, status=200)
 
 
+@accesos_bp.post("/relaciones/get_asignacion_requerimientos")
+async def post_get_asignacion_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.get_asignacion_requerimientos, p.get("search"), p.get("estatus"), p.get("requerimiento_ids"),
+        p.get("limit", 25), p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/save_asignacion_requerimientos")
+async def post_save_asignacion_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_asignacion_requerimientos, p.get("asignaciones"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/relaciones/update_relacion")
 async def post_update_relacion(request: Request):
     p = _ocr_payload(request)

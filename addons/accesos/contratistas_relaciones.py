@@ -20,6 +20,12 @@ Spec: clave10-sdk/specs/relaciones/relaciones-001-modelo-de-datos.md.
   relación de arriba puede leer (get_relacion, get_arbol_relacion) a las de
   abajo; escribir solo las dos partes.
 - No se desactiva una relación con subcontrataciones activas.
+- Asignación de requerimientos (MX-05): requerimientos_asignados son
+  requerimientos activos de ámbito Empresa que el cliente le exige al
+  contratista fuera de un contrato. Al crear la relación se asignan los
+  limitantes. Solo el cliente los cambia y solo con la relación Activa; uno
+  ya asignado que después se desactivó puede quedarse. Guardar recalcula el
+  motor de ME-15 de esa relación.
 """
 import re
 
@@ -293,7 +299,8 @@ class RelacionesMixin:
             f["fecha_alta"]: self._ctr_hoy().isoformat(),
             f["num_contratos"]: 0,
             f["cumplimiento_pct"]: 0,
-            f["requerimientos_asignados"]: [],
+            f["requerimientos_asignados"]: self._rel_asignados_in(
+                [i for i, r in self._rel_reqs_empresa().items() if r["limitante"]]),
         }
         if padre_id:
             pa_folio = (self._ctr_get(self.RELACIONES_FORM, padre_id) or {}).get("answers", {}).get(f["folio"])
@@ -303,6 +310,8 @@ class RelacionesMixin:
         relacion_id = self._ctr_post(self.RELACIONES_FORM, a, "create_relacion")
         if not relacion_id:
             self._rel_error("LinkaForm no regresó el id de la relación creada.", 500)
+        if a[f["requerimientos_asignados"]]:
+            self.recalcular_relacion(str(relacion_id))  # motor ME-15
         return self.get_relacion(relacion_id)
 
     def update_relacion(self, relacion_id, cambios):
@@ -314,16 +323,9 @@ class RelacionesMixin:
         if "notas" in cambios:
             a[f["notas"]] = cambios.get("notas") or ""
         if cambios.get("requerimientos_asignados") is not None:
-            ids = [str(i) for i in cambios["requerimientos_asignados"]]
-            fr = self.ctr_f["requerimientos_de_cumplimiento"]
-            nombres = {}
-            for i in ids:
-                q = self._ctr_get(self.REQUERIMIENTOS_FORM, i) if self.REQUERIMIENTOS_FORM else None
-                if not q:
-                    self._rel_error(f"El requerimiento {i} no existe.", 404)
-                nombres[i] = (q.get("answers") or {}).get(fr["nombre"], "")
-            a[f["requerimientos_asignados"]] = [
-                {f["requerimientos_asignados_id"]: i, f["requerimientos_asignados_nombre"]: nombres[i]} for i in ids]
+            self._rel_puede_asignar(rec)
+            a[f["requerimientos_asignados"]] = self._rel_asignados_in(
+                [str(i) for i in cambios["requerimientos_asignados"]], a.get(f["requerimientos_asignados"]))
         self._ctr_patch(self.RELACIONES_FORM, relacion_id, a, "update_relacion")
         if cambios.get("requerimientos_asignados") is not None:
             self.recalcular_relacion(str(relacion_id))  # motor ME-15
@@ -370,3 +372,132 @@ class RelacionesMixin:
             frontera = [str(h["_id"]) for h in hijas]
         nums = self._rel_num_contratos([str(r["_id"]) for r in out]) if out else {}
         return [self.rel_out(r, cache, nums) for r in out]
+
+    # ------------------------------------------- asignación (MX-05)
+
+    def _rel_reqs_empresa(self):
+        """{id: req_out} de los requerimientos activos de ámbito Empresa, por nombre."""
+        if not self.REQUERIMIENTOS_FORM:
+            return {}
+        fq = self.ctr_f["requerimientos_de_cumplimiento"]
+        rows = self._ctr_find(self.REQUERIMIENTOS_FORM, {f"answers.{fq['ambito']}": opt("Empresa"),
+                                                         f"answers.{fq['estatus']}": {"$ne": opt("Inactivo")}})
+        reqs = sorted((self.req_out(r) for r in rows), key=lambda r: r["nombre"].lower())
+        return {r["id"]: r for r in reqs}
+
+    def _rel_asignados_in(self, ids, previos=None, reqs=None):
+        """Ids -> grupo requerimientos_asignados; activos de Empresa o ya asignados."""
+        f = self.ctr_f["relaciones_entre_empresas"]
+        reqs = self._rel_reqs_empresa() if reqs is None else reqs
+        previos = {str(x.get(f["requerimientos_asignados_id"]) or ""): x.get(f["requerimientos_asignados_nombre"]) or ""
+                   for x in previos or []}
+        out = []
+        for i in dict.fromkeys(str(i) for i in ids if str(i).strip()):
+            if i in reqs:
+                nombre = reqs[i]["nombre"]
+            elif i in previos:
+                nombre = previos[i]
+            else:
+                self._rel_error(f"El requerimiento {i} no existe, está inactivo o no es de ámbito Empresa.", 404)
+            out.append({f["requerimientos_asignados_id"]: i, f["requerimientos_asignados_nombre"]: nombre})
+        return out
+
+    def _rel_puede_asignar(self, rec, mi_empresa=None):
+        f = self.ctr_f["relaciones_entre_empresas"]
+        a = rec.get("answers") or {}
+        mi_empresa = mi_empresa or self.ctr_empresa_activa_id()
+        if str(a.get(f["cliente_id"]) or "") != mi_empresa:
+            self._rel_error("Solo el cliente asigna requerimientos al contratista.", 403)
+        if a.get(f["estatus"]) == opt("Inactivo"):
+            self._rel_error(f"La relación {a.get(f['folio']) or ''} está inactiva.", 409)
+
+    def _rel_asig_fila(self, rec, reqs, cache):
+        f = self.ctr_f["relaciones_entre_empresas"]
+        a = rec.get("answers") or {}
+        estatus = label(ESTATUS_RELACION, a.get(f["estatus"])) or "Activo"
+        asignados = [str(x.get(f["requerimientos_asignados_id"]) or "") for x in a.get(f["requerimientos_asignados"]) or []]
+        empresa = self._rel_empresa_fila(str(a.get(f["contratista_id"]) or ""), cache)
+        return {
+            "relacion_id": str(rec["_id"]),
+            "folio": a.get(f["folio"]) or "",
+            "contratista": empresa["contraparte"],
+            "estatus": estatus,
+            "editable": estatus == "Activo",
+            "asignados": asignados,
+            "solicitados": {"n": len([i for i in asignados if i in reqs]), "m": len(reqs)},
+        }
+
+    def get_asignacion_requerimientos(self, search=None, estatus=None, requerimiento_ids=None, limit=25, offset=0):
+        """Matriz contratista × requerimiento de empresa de MX-05."""
+        reqs = self._rel_reqs_empresa()
+        if not self.RELACIONES_FORM:
+            return {"requerimientos": [], "items": [], "total": 0}
+        mi_empresa = self.ctr_empresa_activa_id()
+        f = self.ctr_f["relaciones_entre_empresas"]
+        todas = self._ctr_find(self.RELACIONES_FORM, {f"answers.{f['cliente_id']}": mi_empresa})
+        # "A cuántos contratistas se solicita": relaciones activas, sin filtros.
+        solicitados = {}
+        for r in todas:
+            ra = r.get("answers") or {}
+            if ra.get(f["estatus"]) == opt("Inactivo"):
+                continue
+            for x in ra.get(f["requerimientos_asignados"]) or []:
+                i = str(x.get(f["requerimientos_asignados_id"]) or "")
+                solicitados[i] = solicitados.get(i, 0) + 1
+        columnas = [{**{k: r.get(k) for k in ("id", "nombre", "tipo", "plataforma", "plataforma_url", "vigencia_modo",
+                                                   "vigencia", "periodicidad", "aviso", "requiere_acuse", "limitante")},
+                     "solicitados": solicitados.get(r["id"], 0)} for r in reqs.values()]
+        if requerimiento_ids:
+            ids = {str(i) for i in ([requerimiento_ids] if isinstance(requerimiento_ids, str) else requerimiento_ids)}
+            columnas = [c for c in columnas if c["id"] in ids]
+        if estatus:
+            if estatus not in ESTATUS_RELACION:
+                self._rel_error(f"Estatus no válido: {estatus}.")
+            todas = [r for r in todas if (label(ESTATUS_RELACION, (r.get("answers") or {}).get(f["estatus"])) or "Activo") == estatus]
+        cache = {}
+        filas = [self._rel_asig_fila(r, reqs, cache) for r in todas]
+        if search and search.strip():
+            texto = search.strip().lower()
+            fe = self.ctr_f["empresas"]
+            con_correo = {str(e["_id"]) for e in self._ctr_find(self.EMPRESAS_FORM, {
+                f"answers.{fe['contactos']}.{fe['contacto_email']}": {"$regex": re.escape(search.strip()), "$options": "i"}})}
+            filas = [x for x in filas if texto in x["contratista"]["razon_social"].lower()
+                     or texto in (x["contratista"].get("rfc") or "").lower() or texto in x["folio"].lower()
+                     or x["contratista"]["id"] in con_correo]
+        filas.sort(key=lambda x: (not x["editable"], x["contratista"]["razon_social"].lower()))
+        off, lim = max(0, _int(offset)), max(1, min(_int(limit, 25), 200))
+        return {"requerimientos": columnas, "items": filas[off:off + lim], "total": len(filas)}
+
+    def save_asignacion_requerimientos(self, asignaciones):
+        """Guarda en lote [{relacion_id, requerimientos: [ids]}]; valida todo antes de escribir."""
+        self._rel_requiere_forma()
+        if not isinstance(asignaciones, list) or not asignaciones:
+            self._rel_error("asignaciones debe ser una lista con al menos un contratista.")
+        if len(asignaciones) > 200:
+            self._rel_error("Se pueden guardar hasta 200 contratistas a la vez.")
+        mi_empresa = self.ctr_empresa_activa_id()
+        f = self.ctr_f["relaciones_entre_empresas"]
+        reqs = self._rel_reqs_empresa()
+        pendientes = []
+        for x in asignaciones:
+            x = x if isinstance(x, dict) else {}
+            if not isinstance(x.get("requerimientos"), list):
+                self._rel_error("Cada asignación lleva relacion_id y la lista requerimientos.")
+            rec = self._ctr_get(self.RELACIONES_FORM, str(x.get("relacion_id") or ""))
+            if not rec:
+                self._rel_error(f"La relación {x.get('relacion_id')} no existe.", 404)
+            self._rel_puede_asignar(rec, mi_empresa)
+            a = dict(rec.get("answers") or {})
+            antes = a.get(f["requerimientos_asignados"]) or []
+            nuevos = self._rel_asignados_in(x["requerimientos"], antes, reqs)
+            ids = lambda g: [str(y.get(f["requerimientos_asignados_id"]) or "") for y in g]  # noqa: E731
+            if ids(nuevos) != ids(antes):
+                a[f["requerimientos_asignados"]] = nuevos
+                pendientes.append((str(rec["_id"]), a))
+        cache = {}
+        for rid, a in pendientes:
+            self._ctr_patch(self.RELACIONES_FORM, rid, a, "save_asignacion_requerimientos")
+            self.recalcular_relacion(rid, cache)  # motor ME-15
+        guardadas = {rid for rid, _ in pendientes}
+        items = [self._rel_asig_fila(self._ctr_get(self.RELACIONES_FORM, rid), reqs, {}) for rid in guardadas]
+        return {"guardadas": len(guardadas), "items": items}
