@@ -31,6 +31,13 @@ DIA_LIMITE = 17
 CALIFICACION_MINIMA = 80
 
 
+def codigo_sistema(texto, n=24):
+    """Código de sistema del catálogo maestro (ME-13): MAYÚSCULAS_SIN_ACENTOS, máx. 24."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode().upper()
+    return re.sub(r"_+", "_", re.sub(r"[^A-Z0-9]+", "_", t)).strip("_")[:n].strip("_")
+
+
 class RequerimientosMixin:
     """Se mezcla en Accesos junto con ContratosMixin y CumplimientoMixin."""
 
@@ -72,6 +79,7 @@ class RequerimientosMixin:
             "documento_ejemplo": self._ctr_archivo(a.get(f["documento_ejemplo"])),
             "inspeccion": a.get(f["inspeccion"]) or None,
             "estatus": label(ESTATUS, a.get(f["estatus"])) or "Activo",
+            "codigo": a.get(f["codigo"]) or None,  # ME-13
         }
         if tipo == "Examen":
             vr_n = _int(a.get(f["examen_vigencia_resultado_n"]), None)
@@ -172,6 +180,11 @@ class RequerimientosMixin:
         ejemplo = r.get("documento_ejemplo")
         if isinstance(ejemplo, dict) and str(ejemplo.get("file_url") or "").startswith("http"):
             a[f["documento_ejemplo"]] = [{"file_name": ejemplo.get("name") or "ejemplo", "file_url": ejemplo["file_url"]}]
+        if r.get("codigo"):
+            codigo = codigo_sistema(r["codigo"])
+            if not codigo:
+                errores.append("El código solo admite letras, números y guion bajo.")
+            a[f["codigo"]] = codigo or None
         if errores:
             self._req_error("\n".join(errores))
         return {k: v for k, v in a.items() if v is not None}
@@ -183,6 +196,13 @@ class RequerimientosMixin:
         for r in self._ctr_find(self.REQUERIMIENTOS_FORM, match):
             if str(r["_id"]) != str(excepto or ""):
                 self._req_error(f"Ya hay un requerimiento activo llamado {nombre}.", 409)
+
+    def _req_codigo_libre(self, codigo, excepto=None):
+        f = self.ctr_f["requerimientos_de_cumplimiento"]
+        for r in self._ctr_find(self.REQUERIMIENTOS_FORM, {f"answers.{f['codigo']}": codigo,
+                                                           f"answers.{f['estatus']}": {"$ne": opt("Inactivo")}}):
+            if str(r["_id"]) != str(excepto or ""):
+                self._req_error(f"Ya hay un requerimiento activo con el código {codigo}.", 409)
 
     # --------------------------------------------------------- dónde se usa
 
@@ -257,6 +277,8 @@ class RequerimientosMixin:
         f = self.ctr_f["requerimientos_de_cumplimiento"]
         if a.get(f["estatus"]) != opt("Inactivo"):
             self._req_nombre_libre(a[f["nombre"]], excepto=requerimiento_id)
+            if a.get(f["codigo"]):
+                self._req_codigo_libre(a[f["codigo"]], excepto=requerimiento_id)
         if requerimiento_id:
             if not self._ctr_get(self.REQUERIMIENTOS_FORM, requerimiento_id):
                 self._req_error("El requerimiento no existe.", 404)

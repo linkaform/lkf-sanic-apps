@@ -12,6 +12,7 @@ requerimientos").
   Persona a cada empleado ligado (según su perfil; los de servicio a todos),
   Equipo a cada renglón de equipo (los activos reales son de ME-08).
 - Los requerimientos asignados a la relación generan filas con contrato vacío.
+- Los homologados en el mapeo del contrato (ME-13) cuentan como de sus servicios.
 - Periodos: único / por vigencia = una fila "unico"; por periodo = los
   periodos del año en curso dentro de la vigencia del sujeto.
 - Sincroniza por diferencia: crea lo nuevo, actualiza lo que cambió y borra
@@ -222,6 +223,9 @@ class CumplimientoMixin:
 
         servicio_reqs = [i for g in a.get(fc["servicios"]) or [] for i in
                          self._cum_reqs_recurso(str(g.get(fc["servicio_id"]) or ""), cache)]
+        # ME-13: los homologados en el mapeo se exigen igual que los de los servicios.
+        servicio_reqs += [str(g[fc["mapeo_requerimiento_id"]]) for g in a.get(fc["mapeo"]) or []
+                          if g.get(fc["mapeo_requerimiento_id"])]
         # Empresa: de los servicios.
         for r in reqs(servicio_reqs, "Empresa"):
             agregar(r, {"tipo": "Empresa", "empresa": empresa}, ini)
