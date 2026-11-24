@@ -2561,6 +2561,33 @@ async def post_fix_rondines(request: Request):
 # Las escrituras van en un hilo: hacen requests síncronos a LinkaForm.
 # ============================================
 
+# ME-13: mapeo y homologación de requerimientos del contrato (contratos_sdk.py).
+@accesos_bp.post("/contratos/get_mapeo_contrato")
+async def post_get_mapeo_contrato(request: Request):
+    response = await asyncio.to_thread(service.get_mapeo_contrato, _ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/sugerir_mapeo")
+async def post_sugerir_mapeo(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.sugerir_mapeo, p.get("filas"), bool(p.get("solo_sin_match")))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/save_mapeo_contrato")
+async def post_save_mapeo_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_mapeo_contrato, p.get("contrato_id"), p.get("filas"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/crear_en_catalogo")
+async def post_crear_en_catalogo(request: Request):
+    response = await asyncio.to_thread(service.crear_en_catalogo, _ocr_payload(request).get("requerimiento"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/contratos/list_contratos")
 async def post_list_contratos(request: Request):
     p = _ocr_payload(request)
