@@ -24,6 +24,14 @@ Detalle del empleado (ME-04-B):
   veto con motivo, preferencias (sin efecto todavía salvo Disponible para
   contratos) y restaurar contraseña (UsersAdmin.reset_password).
 - Centros múltiples con áreas quedan para ME-02: aquí solo centro_trabajo.
+
+Contratos del empleado (ME-05-B):
+- El contrato guarda un renglón por (empleado, perfil). Ligar, editar perfiles
+  y remover rehacen esos renglones con _ctr_guardar_cambio (historial
+  "Empleados" y motor ME-15). Los perfiles nuevos se suman al empleado.
+- Solo se liga a contratos vigentes donde la empresa del empleado es la
+  contratista; no se liga a un empleado inactivo, vetado o no disponible.
+- Sanciones del empleado: con la forma de R-07.
 """
 import base64
 import csv
@@ -36,6 +44,7 @@ import requests
 from .contratistas_contratos import ESTATUS as ESTATUS_CONTRATO
 from .contratistas_contratos import _fecha, _int, _num, label, opt
 from .contratistas_cumplimiento import ESTADOS, ESTADOS_MANUALES, porcentaje
+from .contratistas_relaciones import CONTRATO_NO_VIGENTE
 
 ESTATUS = ["Activo", "Inactivo"]
 CURP_RE = re.compile(r"^[A-Z][AEIOUX][A-Z]{2}\d{6}[HMX][A-Z]{5}[A-Z\d]\d$")
@@ -927,3 +936,153 @@ class EmpleadosMixin:
         except Exception as e:  # noqa: BLE001
             self._emp_error(f"No se pudo restaurar la contraseña: {ua._error_text(e)[:300]}", 409)
         return {"enviado": True, "email": d["usuario"]["email"]}
+
+    # ------------------------------------------------ contratos (ME-05-B)
+
+    def _emp_renglones(self, a, empleado_id):
+        fc = self.ctr_f["contratos_de_servicio"]
+        return [g for g in a.get(fc["empleados"]) or [] if str(g.get(fc["empleado_id"]) or "") == str(empleado_id)]
+
+    def _emp_pendientes_contrato(self, contrato_id, empleado_id):
+        if not self.CUMPLIMIENTO_FORM:
+            return {"pendientes": 0, "total": 0}
+        f = self.ctr_f["cumplimiento_de_requerimientos"]
+        estados = []
+        for r in self._ctr_find(self.CUMPLIMIENTO_FORM, {f"answers.{f['contrato_id']}": str(contrato_id),
+                                                         f"answers.{f['sujeto_empleado_id']}": str(empleado_id)}):
+            a = r.get("answers") or {}
+            estados.append(label(ESTADOS_MANUALES, a.get(f["estado_manual"])) or label(ESTADOS, a.get(f["estado"]))
+                           or "En plazo")
+        aplicables = [e for e in estados if e not in ("No aplica", "Por transcurrir")]
+        return {"pendientes": sum(1 for e in aplicables if e not in ("Cumplido", "En ceros")), "total": len(aplicables)}
+
+    def list_contratos_empleado(self, empleado_id, estatus=None, search=None, limit=25, offset=0):
+        """Pestaña Contratos: estatus Activo = contrato vigente."""
+        rec, _ = self._emp_get(empleado_id)
+        eid = str(rec["_id"])
+        fc = self.ctr_f["contratos_de_servicio"]
+        items = []
+        for c in self._ctr_find(self.CONTRATOS_FORM, {f"answers.{fc['empleados']}.{fc['empleado_id']}": eid},
+                                sort=[(f"answers.{fc['folio']}", -1)]) if self.CONTRATOS_FORM else []:
+            d = self.ctr_contrato_out(c)
+            mios = [x for x in d["empleados"] if x["empleado"]["id"] == eid]
+            item = {"id": d["id"], "folio": d["folio"], "objeto": d["objeto"], "cliente": d["cliente"],
+                    "contratista": d["contratista"], "servicios": d["servicios"],
+                    "perfiles": [x["perfil"] for x in mios],
+                    "fecha_alta": min((x["fecha_alta"] for x in mios if x["fecha_alta"]), default=""),
+                    "vigencia": {"inicio": d["inicio"], "fin": d["fin"]}, "estatus_contrato": d["estatus"],
+                    "estatus": "Inactivo" if d["estatus"] in CONTRATO_NO_VIGENTE else "Activo",
+                    "requerimientos": self._emp_pendientes_contrato(d["id"], eid)}
+            items.append(item)
+        if estatus in ("Activo", "Inactivo"):
+            items = [i for i in items if i["estatus"] == estatus]
+        if search and search.strip():
+            s = _norm(search)
+            items = [i for i in items if s in _norm(f"{i['folio']} {i['objeto']} {i['cliente']['razon_social']}")]
+        ini = max(0, _int(offset))
+        return {"items": items[ini:ini + max(1, min(_int(limit, 25), 200))], "total": len(items)}
+
+    def _emp_ligable(self, rec):
+        out = self.emp_out(rec)
+        if out["estatus"] != "Activo":
+            self._emp_error("El empleado está desactivado.", 409)
+        if out.get("vetado"):
+            self._emp_error("El empleado está vetado: no se puede ligar a contratos.", 409)
+        if not out["disponible_para_contratos"]:
+            self._emp_error("El empleado no está disponible para contratos.", 409)
+        return out
+
+    def list_contratos_para_ligar(self, empleado_id, cliente_id=None, perfil_id=None, search=None):
+        """Paso 1 de Ligar Contrato: vigentes de mi empresa como contratista donde
+        el empleado no está; primero los que coinciden con sus perfiles."""
+        rec = self._emp_editable(empleado_id)
+        eid = str(rec["_id"])
+        mios = {p["id"] for p in self.emp_out(rec)["perfiles"]}
+        fc = self.ctr_f["contratos_de_servicio"]
+        items = []
+        for c in self._ctr_find(self.CONTRATOS_FORM, {f"answers.{fc['contratista_id']}": self.ctr_empresa_activa_id()},
+                                sort=[(f"answers.{fc['folio']}", -1)]) if self.CONTRATOS_FORM else []:
+            if self._emp_renglones(c.get("answers") or {}, eid):
+                continue
+            d = self.ctr_contrato_out(c)
+            if d["estatus"] in CONTRATO_NO_VIGENTE:
+                continue
+            asignados = {}
+            for x in d["empleados"]:
+                asignados[x["perfil"]["id"]] = asignados.get(x["perfil"]["id"], 0) + 1
+            perfiles = [{**p["perfil"], "cantidad": p["cantidad"], "asignados": asignados.get(p["perfil"]["id"], 0),
+                         "ya_lo_tiene": p["perfil"]["id"] in mios} for p in d["perfiles"]]
+            items.append({"id": d["id"], "folio": d["folio"], "objeto": d["objeto"], "cliente": d["cliente"],
+                          "vigencia": {"inicio": d["inicio"], "fin": d["fin"]}, "estatus_contrato": d["estatus"],
+                          "perfiles": perfiles, "coincide": [p for p in perfiles if p["ya_lo_tiene"]]})
+        if cliente_id:
+            items = [i for i in items if i["cliente"]["id"] == str(cliente_id)]
+        if perfil_id:
+            items = [i for i in items if any(p["id"] == str(perfil_id) for p in i["perfiles"])]
+        if search and search.strip():
+            s = _norm(search)
+            items = [i for i in items if s in _norm(f"{i['folio']} {i['objeto']} {i['cliente']['razon_social']}")]
+        items.sort(key=lambda i: not i["coincide"])
+        return {"items": items, "total": len(items)}
+
+    def _emp_contrato_mio(self, contrato_id):
+        rec = self._ctr_contrato_visible(contrato_id)
+        fc = self.ctr_f["contratos_de_servicio"]
+        if str((rec.get("answers") or {}).get(fc["contratista_id"]) or "") != self.ctr_empresa_activa_id():
+            self._emp_error("Solo la empresa contratista liga a sus empleados al contrato.", 403)
+        return rec
+
+    def _emp_guardar_renglones(self, contrato, empleado, perfiles, accion):
+        """Reemplaza los renglones del empleado por uno por perfil (conserva la
+        fecha de alta de los que ya tenía) y suma los perfiles nuevos al empleado."""
+        eid = str(empleado["_id"])
+        d = self.ctr_contrato_out(contrato)
+        del_contrato = {p["perfil"]["id"]: p["perfil"] for p in d["perfiles"]}
+        ids = list(dict.fromkeys(str(p.get("id") if isinstance(p, dict) else p) for p in perfiles or []))
+        malos = [i for i in ids if i not in del_contrato]
+        if malos:
+            self._emp_error(f"Perfiles que no pide el contrato {d['folio']}: {', '.join(malos)}.")
+        antes = {x["perfil"]["id"]: x for x in d["empleados"] if x["empleado"]["id"] == eid}
+        nombre = self.emp_out(empleado)["nombre"]
+        hoy = self._ctr_hoy().isoformat()
+        renglones = [x for x in d["empleados"] if x["empleado"]["id"] != eid] + [
+            {**(antes.get(i) or {}), "empleado": {"id": eid, "nombre": nombre}, "perfil": del_contrato[i],
+             "fecha_alta": (antes.get(i) or {}).get("fecha_alta") or hoy} for i in ids]
+        self._ctr_guardar_cambio(contrato, self._ctr_answers_in({"empleados": renglones}), accion)
+        agregados = []
+        if ids:
+            tiene = self.emp_out(empleado)["perfiles"]
+            agregados = [del_contrato[i] for i in ids if i not in {p["id"] for p in tiene}]
+            if agregados:
+                self.update_empleado(eid, {"perfiles": tiene + agregados})
+        return {"contrato": {"id": d["id"], "folio": d["folio"]}, "perfiles_agregados": agregados,
+                "empleado": self.get_empleado(eid)}
+
+    def ligar_contrato_empleado(self, empleado_id, contrato_id, perfiles):
+        rec = self._emp_editable(empleado_id)
+        self._emp_ligable(rec)
+        contrato = self._emp_contrato_mio(contrato_id)
+        if self._emp_renglones(contrato.get("answers") or {}, rec["_id"]):
+            self._emp_error("El empleado ya está ligado a ese contrato; edita sus perfiles.", 409)
+        if self.ctr_contrato_out(contrato)["estatus"] in CONTRATO_NO_VIGENTE:
+            self._emp_error("Solo se liga a contratos vigentes.", 409)
+        if not perfiles:
+            self._emp_error("Elige al menos un perfil del contrato.")
+        return self._emp_guardar_renglones(contrato, rec, perfiles, "ligar_contrato_empleado")
+
+    def editar_perfiles_contrato_empleado(self, empleado_id, contrato_id, perfiles):
+        rec = self._emp_editable(empleado_id)
+        contrato = self._emp_contrato_mio(contrato_id)
+        if not self._emp_renglones(contrato.get("answers") or {}, rec["_id"]):
+            self._emp_error("El empleado no está ligado a ese contrato.", 404)
+        if not perfiles:
+            self._emp_error("Elige al menos un perfil; para quitarlo del contrato usa Remover.")
+        return self._emp_guardar_renglones(contrato, rec, perfiles, "editar_perfiles_contrato_empleado")
+
+    def remover_contrato_empleado(self, empleado_id, contrato_id):
+        """Sus documentos se conservan; el motor quita sus filas del contrato."""
+        rec = self._emp_editable(empleado_id)
+        contrato = self._emp_contrato_mio(contrato_id)
+        if not self._emp_renglones(contrato.get("answers") or {}, rec["_id"]):
+            self._emp_error("El empleado no está ligado a ese contrato.", 404)
+        return self._emp_guardar_renglones(contrato, rec, [], "remover_contrato_empleado")
