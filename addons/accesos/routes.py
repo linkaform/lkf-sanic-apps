@@ -2645,6 +2645,21 @@ async def post_save_asignacion_requerimientos(request: Request):
     return json({"data": response}, status=200)
 
 
+@accesos_bp.post("/relaciones/get_incumplimientos")
+async def post_get_incumplimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_incumplimientos, p.get("relacion_ids"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/notificar_incumplimientos")
+async def post_notificar_incumplimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.notificar_incumplimientos, p.get("relacion_ids"), p.get("motivo"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/relaciones/update_relacion")
 async def post_update_relacion(request: Request):
     p = _ocr_payload(request)
