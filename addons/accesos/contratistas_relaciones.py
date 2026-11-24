@@ -12,9 +12,14 @@ Spec: clave10-sdk/specs/relaciones/relaciones-001-modelo-de-datos.md.
   cancelarlos antes).
 - num_contratos se calcula al leer (contratos no cancelados). cumplimiento_pct
   lo guarda el motor de ME-15 (contratistas_cumplimiento.py).
-- Subcontratación: aquí solo se valida que el cliente de la hija sea el
-  contratista del padre y el nivel máximo. Ciclos, permite_subcontratacion y
-  el árbol son R-03.
+- Subcontratación (R-03): la hija tiene relacion_padre. Al crearla o
+  reactivarla: el padre está Activo, el cliente de la hija es el contratista
+  del padre, sin ciclos (el contratista no aparece en la cadena), nivel <= 3 y
+  algún contrato vigente del padre permite subcontratación.
+- Visibilidad por cadena: además de las dos partes, cualquier empresa de una
+  relación de arriba puede leer (get_relacion, get_arbol_relacion) a las de
+  abajo; escribir solo las dos partes.
+- No se desactiva una relación con subcontrataciones activas.
 """
 import re
 
@@ -25,6 +30,7 @@ ESTATUS_RELACION = ["Activo", "Inactivo"]
 NIVEL_MAX = 3
 # Estatus de contrato que no impiden desactivar la relación.
 CONTRATO_NO_VIGENTE = ("Pausado", "Cancelado", "Vencido")
+MAX_CADENA = 10  # tope de seguridad al subir por relacion_padre
 
 
 class RelacionesMixin:
@@ -49,6 +55,69 @@ class RelacionesMixin:
         if mi_empresa not in (str(a.get(f["cliente_id"]) or ""), str(a.get(f["contratista_id"]) or "")):
             self._rel_error("No tienes acceso a esta relación.", 403)
         return rec
+
+    def _rel_cadena(self, rec):
+        """[rec, padre, abuelo, …] hasta la relación directa."""
+        f = self.ctr_f["relaciones_entre_empresas"]
+        cadena, vistos = [rec], {str(rec["_id"])}
+        while len(cadena) < MAX_CADENA:
+            pid = str((cadena[-1].get("answers") or {}).get(f["relacion_padre_id"]) or "")
+            if not pid or pid in vistos:
+                break
+            padre = self._ctr_get(self.RELACIONES_FORM, pid)
+            if not padre:
+                break
+            cadena.append(padre)
+            vistos.add(pid)
+        return cadena
+
+    def _rel_visible_cadena(self, relacion_id, mi_empresa=None):
+        """Como _rel_visible, pero también deja leer a las empresas de arriba."""
+        mi_empresa = mi_empresa or self.ctr_empresa_activa_id()
+        rec = self._ctr_get(self.RELACIONES_FORM, relacion_id) if relacion_id else None
+        if not rec:
+            self._rel_error("La relación no existe.", 404)
+        f = self.ctr_f["relaciones_entre_empresas"]
+        for r in self._rel_cadena(rec):
+            a = r.get("answers") or {}
+            if mi_empresa in (str(a.get(f["cliente_id"]) or ""), str(a.get(f["contratista_id"]) or "")):
+                return rec
+        self._rel_error("No tienes acceso a esta relación.", 403)
+
+    def _rel_validar_subcontratacion(self, padre, cliente_id, contratista_id):
+        """Reglas de la spec al crear o reactivar una hija. Regresa el nivel."""
+        f = self.ctr_f["relaciones_entre_empresas"]
+        pa = padre.get("answers") or {}
+        if pa.get(f["estatus"]) != opt("Activo"):
+            self._rel_error("La relación padre está inactiva.", 409)
+        if str(pa.get(f["contratista_id"]) or "") != cliente_id:
+            self._rel_error("El cliente de la subcontratación debe ser el contratista de la relación padre.")
+        nivel = _int(pa.get(f["nivel"]), 1) + 1
+        if nivel > NIVEL_MAX:
+            self._rel_error(f"Se excede el nivel máximo de subcontratación ({NIVEL_MAX}).")
+        for r in self._rel_cadena(padre):
+            a = r.get("answers") or {}
+            if contratista_id in (str(a.get(f["cliente_id"]) or ""), str(a.get(f["contratista_id"]) or "")):
+                self._rel_error("No se puede subcontratar a una empresa que ya está en la cadena "
+                                "(se formaría un ciclo).", 409)
+        fc = self.ctr_f["contratos_de_servicio"]
+        permite = False
+        if self.CONTRATOS_FORM:
+            for c in self._ctr_find(self.CONTRATOS_FORM, {f"answers.{fc['relacion_id']}": str(padre["_id"]),
+                                                         f"answers.{fc['permite_subcontratacion']}": opt("Sí")}):
+                if self.ctr_calcular_estatus(c.get("answers") or {}, str(c["_id"])) not in CONTRATO_NO_VIGENTE:
+                    permite = True
+                    break
+        if not permite:
+            self._rel_error("Ningún contrato vigente de la relación padre permite subcontratación.", 409)
+        return nivel
+
+    def _rel_hijas(self, relacion_ids, solo_activas=False):
+        f = self.ctr_f["relaciones_entre_empresas"]
+        match = {f"answers.{f['relacion_padre_id']}": {"$in": [str(i) for i in relacion_ids]}}
+        if solo_activas:
+            match[f"answers.{f['estatus']}"] = opt("Activo")
+        return self._ctr_find(self.RELACIONES_FORM, match, sort=[(f"answers.{f['folio']}", 1)])
 
     def _rel_num_contratos(self, relacion_ids):
         """{relacion_id: contratos no cancelados}."""
@@ -179,7 +248,7 @@ class RelacionesMixin:
 
     def get_relacion(self, relacion_id):
         self._rel_requiere_forma()
-        return self.rel_out(self._rel_visible(relacion_id))
+        return self.rel_out(self._rel_visible_cadena(relacion_id))
 
     def create_relacion(self, relacion):
         self._rel_requiere_forma()
@@ -205,12 +274,8 @@ class RelacionesMixin:
         padre_id = str(relacion.get("relacion_padre") or "") or None
         nivel = 1
         if padre_id:
-            pa = self._rel_visible(padre_id, mi_empresa).get("answers") or {}
-            if str(pa.get(f["contratista_id"]) or "") != cliente_id:
-                self._rel_error("El cliente de la subcontratación debe ser el contratista de la relación padre.")
-            nivel = _int(pa.get(f["nivel"]), 1) + 1
-            if nivel > NIVEL_MAX:
-                self._rel_error(f"Se excede el nivel máximo de subcontratación ({NIVEL_MAX}).")
+            nivel = self._rel_validar_subcontratacion(self._rel_visible(padre_id, mi_empresa), cliente_id,
+                                                      contratista_id)
 
         # Unicidad por (cliente, contratista, padre): reactivar la existente.
         existente = self._ctr_find(self.RELACIONES_FORM, {
@@ -279,6 +344,14 @@ class RelacionesMixin:
         a = dict(rec.get("answers") or {})
         if a.get(f["estatus"]) == opt(estatus):
             return self.rel_out(rec)
+        if estatus == "Inactivo" and self._rel_hijas([relacion_id], solo_activas=True):
+            self._rel_error("Desactiva primero las subcontrataciones de esta relación.", 409)
+        if estatus == "Activo" and a.get(f["relacion_padre_id"]):
+            padre = self._ctr_get(self.RELACIONES_FORM, str(a[f["relacion_padre_id"]]))
+            if not padre:
+                self._rel_error("La relación padre ya no existe.", 409)
+            self._rel_validar_subcontratacion(padre, str(a.get(f["cliente_id"]) or ""),
+                                              str(a.get(f["contratista_id"]) or ""))
         if estatus == "Inactivo" and self.CONTRATOS_FORM:
             fc = self.ctr_f["contratos_de_servicio"]
             for c in self._ctr_find(self.CONTRATOS_FORM, {f"answers.{fc['relacion_id']}": str(relacion_id)}):
@@ -288,3 +361,18 @@ class RelacionesMixin:
         self._ctr_patch(self.RELACIONES_FORM, relacion_id, a, "change_status_relacion")
         self.recalcular_relacion(str(relacion_id))  # motor ME-15
         return self.get_relacion(relacion_id)
+
+    def get_arbol_relacion(self, relacion_id):
+        """Subcontrataciones hacia abajo de una relación (sin incluirla), por
+        nivel. La raíz ve toda la cadena; un intermedio, de su relación hacia abajo."""
+        self._rel_requiere_forma()
+        self._rel_visible_cadena(relacion_id)
+        out, frontera, vistos = [], [str(relacion_id)], {str(relacion_id)}
+        cache = {}
+        while frontera and len(vistos) < 500:
+            hijas = [h for h in self._rel_hijas(frontera) if str(h["_id"]) not in vistos]
+            vistos.update(str(h["_id"]) for h in hijas)
+            out.extend(hijas)
+            frontera = [str(h["_id"]) for h in hijas]
+        nums = self._rel_num_contratos([str(r["_id"]) for r in out]) if out else {}
+        return [self.rel_out(r, cache, nums) for r in out]
