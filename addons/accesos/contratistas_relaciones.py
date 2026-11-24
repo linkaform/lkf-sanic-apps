@@ -198,6 +198,7 @@ class RelacionesMixin:
             "notas": a.get(f["notas"]) or "",
             "num_contratos": nums.get(rid, 0),
             "cumplimiento_pct": _num(a.get(f["cumplimiento_pct"])) or 0,
+            "ultima_notificacion": self.ntf_ultima(a),  # MX-03-B
         }
 
     def rel_fila(self, rec, direccion, cache, nums):
@@ -213,6 +214,7 @@ class RelacionesMixin:
             "num_contratos": nums.get(rid, 0),
             "cumplimiento_pct": _num(a.get(f["cumplimiento_pct"])) or 0,
             "estatus": label(ESTATUS_RELACION, a.get(f["estatus"])) or "Activo",
+            "ultima_notificacion": self.ntf_ultima(a),  # MX-03-B
         }
 
     # ------------------------------------------------------------------ API
