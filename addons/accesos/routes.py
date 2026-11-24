@@ -2788,6 +2788,31 @@ _act_ruta("delete_mantenimiento", "mantenimiento_id")
 
 
 # ---------------------------------------------------------------------------
+# Contratistas · Sanciones (R-07 y ME-05). Script puente: sanciones_sdk.py
+# ---------------------------------------------------------------------------
+
+def _san_ruta(nombre, *claves, defaults=None):
+    defaults = defaults or {}
+
+    async def handler(request: Request):
+        p = _ocr_payload(request)
+        response = await asyncio.to_thread(getattr(service, nombre), *[p.get(k, defaults.get(k)) for k in claves])
+        return json({"data": response}, status=200)
+    handler.__name__ = f"post_{nombre}"
+    accesos_bp.add_route(handler, f"/sanciones/{nombre}", methods=["POST"], name=f"sanciones_{nombre}")
+
+
+_san_ruta("get_opciones_sancion")
+_san_ruta("list_sanciones", "empleado_id", "relacion_id", "sujeto_tipo", "estatus", "search", "limit", "offset",
+          defaults={"limit": 25, "offset": 0})
+_san_ruta("get_sancion", "sancion_id")
+_san_ruta("save_sancion", "sancion", "sancion_id")
+_san_ruta("comment_sancion", "sancion_id", "texto", "evidencias", defaults={"texto": ""})
+_san_ruta("delete_sancion", "sancion_id")
+_san_ruta("imprimir_acta", "sancion_id")
+
+
+# ---------------------------------------------------------------------------
 # Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
 # ---------------------------------------------------------------------------
 

@@ -423,10 +423,12 @@ class SesionesMixin:
         import os
         import tempfile
 
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
+
+        from .contratistas_sanciones import fuente
         im = Image.new("RGB", (1240, 1754), "white")
         d = ImageDraw.Draw(im)
-        titulo, texto = ImageFont.load_default(size=44), ImageFont.load_default(size=30)
+        titulo, texto = fuente(44, negrita=True), fuente(30)
         y = 160
         d.text((120, y), "Constancia de capacitación", fill="black", font=titulo)
         for linea in ("", f"Se hace constar que {empleado}", f"acreditó la sesión «{sesion}»",

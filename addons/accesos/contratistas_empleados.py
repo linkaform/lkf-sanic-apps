@@ -307,7 +307,9 @@ class EmpleadosMixin:
         out = self.emp_out(rec)
         a = rec.get("answers") or {}
         return {**out, **self._emp_generales(a, out), "preferencias": self._emp_preferencias(a, out),
-                "qr_activo": out["estatus"] == "Activo" and not out.get("vetado"), "editable": editable}
+                "qr_activo": out["estatus"] == "Activo" and not out.get("vetado"), "editable": editable,
+                # R-07: solo informativo; bloquear pases o check-in queda para después.
+                "suspendido_hasta": self.suspension_empleado(str(rec["_id"]))}
 
     def _emp_generales(self, a, out):
         ef, x = self.Employee.employee_fields, EMPLEADO_EXTRA
