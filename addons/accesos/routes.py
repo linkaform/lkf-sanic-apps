@@ -2907,3 +2907,37 @@ async def post_restaurar_password_empleado(request: Request):
     response = await asyncio.to_thread(service.restaurar_password_empleado,
                                        _ocr_payload(request).get("empleado_id"))
     return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Mi Empresa (ME-01-B). Script puente: empresa_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/empresa/get_mi_empresa")
+async def post_get_mi_empresa(request: Request):
+    response = service.get_mi_empresa()
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/get_empresa")
+async def post_get_empresa(request: Request):
+    response = service.get_empresa(_ocr_payload(request).get("empresa_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/update_mi_empresa")
+async def post_update_mi_empresa(request: Request):
+    response = await asyncio.to_thread(service.update_mi_empresa, _ocr_payload(request).get("empresa"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/save_contacto")
+async def post_save_contacto(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_contacto, p.get("contacto"), p.get("indice"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/delete_contacto")
+async def post_delete_contacto(request: Request):
+    response = await asyncio.to_thread(service.delete_contacto, _ocr_payload(request).get("indice"))
+    return json({"data": response}, status=200)

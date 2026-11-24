@@ -23,7 +23,8 @@ Spec: clave10-sdk/specs/relaciones/relaciones-001-modelo-de-datos.md.
 """
 import re
 
-from .contratistas_contratos import DIAS_POR_VENCER, _fecha, _int, _num, label, opt
+from .contratistas_contratos import _int, _num, label, opt
+from .contratistas_empresa import repse_out
 
 DIRECCIONES = ("clientes", "contratistas")
 ESTATUS_RELACION = ["Activo", "Inactivo"]
@@ -162,16 +163,9 @@ class RelacionesMixin:
                 out["representante"] = {"nombre": c.get(f["contacto_nombre"], ""),
                                         "email": c.get(f["contacto_email"]) or None}
                 break
-        repse_folio = a.get(f["repse_folio"])
-        fin = _fecha(a.get(f["repse_fin"]))
-        if repse_folio and fin:
-            dias = (fin - self._ctr_hoy()).days
-            estatus = "Vencido" if dias < 0 else "Por vencer" if dias <= DIAS_POR_VENCER else "Vigente"
-            out["repse"] = {"folio": repse_folio, "fin": fin.isoformat(), "dias_restantes": dias,
-                            "estatus": estatus}
-        else:
-            out["repse"] = {"folio": repse_folio or "", "fin": fin.isoformat() if fin else "",
-                            "dias_restantes": 0, "estatus": "Sin REPSE"}
+        # Mismo cálculo que Mi Empresa (Por vencer = 60 días o menos, spec empresa-001).
+        r = repse_out(f, a, self._ctr_hoy())
+        out["repse"] = {k: r[k] for k in ("folio", "fin", "dias_restantes", "estatus")}
         cache[key] = out
         return out
 
