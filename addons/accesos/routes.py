@@ -2941,3 +2941,44 @@ async def post_save_contacto(request: Request):
 async def post_delete_contacto(request: Request):
     response = await asyncio.to_thread(service.delete_contacto, _ocr_payload(request).get("indice"))
     return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_contratos_empleado")
+async def post_list_contratos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos_empleado(
+        p.get("empleado_id"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_contratos_para_ligar")
+async def post_list_contratos_para_ligar(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos_para_ligar(
+        p.get("empleado_id"), cliente_id=p.get("cliente_id"), perfil_id=p.get("perfil_id"), search=p.get("search"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/ligar_contrato_empleado")
+async def post_ligar_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.ligar_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"), p.get("perfiles"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/editar_perfiles_contrato_empleado")
+async def post_editar_perfiles_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.editar_perfiles_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"), p.get("perfiles"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/remover_contrato_empleado")
+async def post_remover_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.remover_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"))
+    return json({"data": response}, status=200)
