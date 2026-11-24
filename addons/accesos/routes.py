@@ -2636,6 +2636,12 @@ async def post_update_relacion(request: Request):
     return json({"data": response}, status=200)
 
 
+@accesos_bp.post("/relaciones/get_arbol_relacion")
+async def post_get_arbol_relacion(request: Request):
+    response = service.get_arbol_relacion(_ocr_payload(request).get("relacion_id"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/relaciones/change_status_relacion")
 async def post_change_status_relacion(request: Request):
     p = _ocr_payload(request)
