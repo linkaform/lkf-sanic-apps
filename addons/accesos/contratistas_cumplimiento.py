@@ -165,6 +165,9 @@ class CumplimientoMixin:
                 continue
             if p["clave"] != "unico" and a.get(f["periodo_clave"]) != p["clave"]:
                 continue
+            # MX-02: solo cubre al cliente con quien se compartió.
+            if cliente_id not in {str(x.get(f["compartido_con_id"]) or "") for x in a.get(f["compartido_con"]) or []}:
+                continue
             doc = d
             break
         if not doc:

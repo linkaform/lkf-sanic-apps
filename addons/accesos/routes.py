@@ -2772,6 +2772,14 @@ async def post_review_documento(request: Request):
     return json({"data": response}, status=200)
 
 
+@accesos_bp.post("/documentos/update_compartido_documento")
+async def post_update_compartido_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.update_compartido_documento, p.get("documento_id"), p.get("compartido_con"))
+    return json({"data": response}, status=200)
+
+
 @accesos_bp.post("/documentos/comment_documento")
 async def post_comment_documento(request: Request):
     p = _ocr_payload(request)

@@ -14,6 +14,11 @@ RevisionDocumento en clave10/src/types/contratistas/contratos.ts.
 - Estatus: Rechazado si algún cliente rechazó; Aceptado si todos aprobaron;
   si no, Por revisar. Vencido gana sobre Aceptado con vigencia_fin < hoy.
 - Sin compartido_con explícito se comparte con todos los clientes activos de E.
+- MX-02: todo cliente de compartido_con debe aprobar (una fila en aprobaciones
+  por cliente). Cualquiera que vea el documento ve todas las decisiones, el
+  resumen "N de M" y, si es cliente, su propia decisión (mi_decision). El
+  dueño cambia compartido_con con update_compartido_documento: cliente nuevo
+  entra Pendiente, el que sale pierde su decisión.
 - Cada alta, reemplazo y revisión recalcula el cumplimiento (motor ME-15) de
   las relaciones afectadas.
 """
@@ -72,7 +77,7 @@ class DocumentosMixin:
 
     # -------------------------------------------------------------- salida
 
-    def doc_out(self, rec):
+    def doc_out(self, rec, mi_empresa=None):
         f = self.ctr_f["documentos_de_cumplimiento"]
         a = rec.get("answers") or {}
 
@@ -126,6 +131,13 @@ class DocumentosMixin:
                 **({"motivo": x[f["aprobacion_motivo"]]} if x.get(f["aprobacion_motivo"]) else {}),
             } for x in a.get(f["aprobaciones"]) or []],
         }
+        decs = [x["decision"] for x in out["aprobaciones"]]
+        out["resumen_aprobacion"] = {"aprobados": decs.count("Aprobado"), "rechazados": decs.count("Rechazado"),
+                                     "pendientes": decs.count("Pendiente"), "total": len(decs)}
+        if mi_empresa:
+            mia = [x["decision"] for x in out["aprobaciones"] if x["cliente"]["id"] == mi_empresa]
+            if mia:
+                out["mi_decision"] = mia[0]
         if a.get(f["periodo_clave"]):
             out["periodo"] = {"clave": a[f["periodo_clave"]], "inicio": a.get(f["periodo_inicio"]) or "",
                               "fin": a.get(f["periodo_fin"]) or ""}
@@ -192,7 +204,7 @@ class DocumentosMixin:
             match["$and"].append({"$or": [{f"answers.{f[k]}": rx} for k in
                                           ("nombre", "folio", "requerimiento", "dueno_empleado")]})
         rows = self._ctr_find(self.DOCUMENTOS_FORM, match, sort=[("updated_at", -1)])
-        items = [self.doc_out(r) for r in rows]
+        items = [self.doc_out(r, mi_empresa) for r in rows]
         if estatus:  # se filtra después: Vencido se calcula al leer
             estatus = [estatus] if isinstance(estatus, str) else estatus
             items = [d for d in items if d["estatus"] in estatus]
@@ -201,7 +213,8 @@ class DocumentosMixin:
 
     def get_documento(self, documento_id):
         self._doc_requiere_forma()
-        return self.doc_out(self._doc_visible(documento_id, self.ctr_empresa_activa_id()))
+        mi_empresa = self.ctr_empresa_activa_id()
+        return self.doc_out(self._doc_visible(documento_id, mi_empresa), mi_empresa)
 
     def _doc_siguiente_folio(self):
         f = self.ctr_f["documentos_de_cumplimiento"]
@@ -380,6 +393,43 @@ class DocumentosMixin:
             a[f["versiones"]] = versiones[:-1] + [ultima]
         self._ctr_patch(self.DOCUMENTOS_FORM, str(documento_id), a, "review_documento")
         self._doc_recalcular(str(a.get(f["dueno_empresa_id"]) or ""), {mi_empresa})
+        return self.get_documento(documento_id)
+
+    def update_compartido_documento(self, documento_id, compartido_con):
+        """MX-02: el dueño cambia con qué clientes comparte (y quién aprueba)."""
+        self._doc_requiere_forma()
+        if not isinstance(compartido_con, list):
+            self._doc_error("compartido_con debe ser una lista de ids de empresa.")
+        mi_empresa = self.ctr_empresa_activa_id()
+        rec = self._doc_visible(documento_id, mi_empresa)
+        f = self.ctr_f["documentos_de_cumplimiento"]
+        a = dict(rec.get("answers") or {})
+        if str(a.get(f["dueno_empresa_id"]) or "") != mi_empresa:
+            self._doc_error("Solo el dueño del documento puede cambiar con quién se comparte.", 403)
+        antes = {str(x.get(f["compartido_con_id"]) or ""): x.get(f["compartido_con_nombre"]) or ""
+                 for x in a.get(f["compartido_con"]) or []}
+        activos = self._doc_clientes(mi_empresa)
+        pedidos = list(dict.fromkeys(str(i) for i in compartido_con if str(i).strip()))
+        # Un cliente que ya estaba puede quedarse aunque la relación ya no esté activa.
+        ajenos = [i for i in pedidos if i not in activos and i not in antes]
+        if ajenos:
+            self._doc_error("Solo puedes compartir con tus clientes activos.", 403)
+        nuevos = {i: activos.get(i) or antes.get(i) or "" for i in pedidos}
+        previas = {str(x.get(f["aprobacion_cliente_id"]) or ""): x for x in a.get(f["aprobaciones"]) or []}
+        a[f["compartido_con"]] = [{f["compartido_con_id"]: i, f["compartido_con_nombre"]: n} for i, n in nuevos.items()]
+        a[f["aprobaciones"]] = [previas.get(i) or {f["aprobacion_cliente_id"]: i, f["aprobacion_cliente"]: n,
+                                                   f["aprobacion_decision"]: opt("Pendiente")}
+                                for i, n in nuevos.items()]
+        estatus = self._doc_estatus(a)
+        a[f["estatus"]] = opt(estatus)
+        versiones = list(a.get(f["versiones"]) or [])
+        if versiones:
+            ultima = dict(versiones[-1])
+            ultima[f["version_estatus"]] = opt(estatus)
+            a[f["versiones"]] = versiones[:-1] + [ultima]
+        self._ctr_patch(self.DOCUMENTOS_FORM, str(documento_id), a, "update_compartido_documento")
+        afectados = set(antes) ^ set(nuevos)
+        self._doc_recalcular(mi_empresa, afectados)
         return self.get_documento(documento_id)
 
     def comment_documento(self, documento_id, texto):
