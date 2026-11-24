@@ -2739,6 +2739,40 @@ async def post_get_resumen_cumplimiento(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Contratistas · Activos y mantenimientos (ME-08-B). Script puente: activos_sdk.py
+# ---------------------------------------------------------------------------
+
+def _act_ruta(nombre, *claves, defaults=None):
+    """Ruta /activos/<nombre> que pasa al servicio las claves del payload en orden."""
+    defaults = defaults or {}
+
+    async def handler(request: Request):
+        p = _ocr_payload(request)
+        args = [p.get(k, defaults.get(k)) for k in claves]
+        response = await asyncio.to_thread(getattr(service, nombre), *args)
+        return json({"data": response}, status=200)
+    handler.__name__ = f"post_{nombre}"
+    accesos_bp.add_route(handler, f"/activos/{nombre}", methods=["POST"], name=f"activos_{nombre}")
+
+
+_act_ruta("get_opciones_activo")
+_act_ruta("list_activos", "clase", "disponible", "estado", "inventario", "ubicacion", "mantenimiento_desde",
+          "mantenimiento_hasta", "search", "limit", "offset", defaults={"limit": 25, "offset": 0})
+_act_ruta("get_activo", "activo_id")
+_act_ruta("create_activo", "activo")
+_act_ruta("update_activo", "activo_id", "cambios")
+_act_ruta("change_estado_activo", "activo_id", "estado")
+_act_ruta("delete_activo", "activo_id")
+_act_ruta("list_concesiones_activo", "activo_id")
+_act_ruta("analizar_foto_activo", "archivo")
+_act_ruta("list_mantenimientos", "activo_id")
+_act_ruta("save_mantenimiento", "mantenimiento", "mantenimiento_id")
+_act_ruta("change_status_mantenimiento", "mantenimiento_id", "estatus", "comentario", "evidencias",
+          defaults={"comentario": ""})
+_act_ruta("delete_mantenimiento", "mantenimiento_id")
+
+
+# ---------------------------------------------------------------------------
 # Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
 # ---------------------------------------------------------------------------
 
