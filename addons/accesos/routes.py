@@ -2694,6 +2694,50 @@ async def post_recalcular_cumplimiento(request: Request):
     return json({"data": response}, status=200)
 
 
+# Cumplimiento documental de Mi Empresa (ME-07-B), mismo script puente.
+@accesos_bp.post("/cumplimiento/get_cumplimiento_documental")
+async def post_get_cumplimiento_documental(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_cumplimiento_documental, p.get("anio"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/get_periodo_cumplimiento")
+async def post_get_periodo_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.get_periodo_cumplimiento, p.get("requerimiento_id"), p.get("periodo_clave"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/subir_acuse")
+async def post_subir_acuse(request: Request):
+    response = await asyncio.to_thread(service.subir_acuse, _ocr_payload(request).get("acuse"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/generar_cumplimiento")
+async def post_generar_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.generar_cumplimiento, p.get("requerimiento_id"), p.get("periodo_clave"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/descargar_cumplimiento")
+async def post_descargar_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.descargar_cumplimiento, p.get("anio"), p.get("pestanas"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/get_resumen_cumplimiento")
+async def post_get_resumen_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_resumen_cumplimiento, p.get("limit", 50))
+    return json({"data": response}, status=200)
+
+
 # ---------------------------------------------------------------------------
 # Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
 # ---------------------------------------------------------------------------
@@ -2793,6 +2837,12 @@ async def post_update_compartido_documento(request: Request):
     p = _ocr_payload(request)
     response = await asyncio.to_thread(
         service.update_compartido_documento, p.get("documento_id"), p.get("compartido_con"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/delete_documento")
+async def post_delete_documento(request: Request):
+    response = await asyncio.to_thread(service.delete_documento, _ocr_payload(request).get("documento_id"))
     return json({"data": response}, status=200)
 
 
