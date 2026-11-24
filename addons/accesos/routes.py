@@ -2801,3 +2801,60 @@ async def post_leer_documento_registro(request: Request):
     return json({"data": response}, status=200)
 
 print('fin de rutas...')
+
+# ---------------------------------------------------------------------------
+# Contratistas · Empleados (ME-03-B). Script puente: empleados_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/empleados/list_empleados")
+async def post_list_empleados(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_empleados(
+        empresa_id=p.get("empresa_id"), estatus=p.get("estatus"), usuario=p.get("usuario"),
+        cumplimiento=p.get("cumplimiento"), perfil_id=p.get("perfil_id"), contrato_id=p.get("contrato_id"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/get_empleado")
+async def post_get_empleado(request: Request):
+    response = service.get_empleado(_ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/create_empleado")
+async def post_create_empleado(request: Request):
+    response = await asyncio.to_thread(service.create_empleado, _ocr_payload(request).get("empleado"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/update_empleado")
+async def post_update_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_empleado, p.get("empleado_id"), p.get("empleado"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/change_status_empleado")
+async def post_change_status_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.change_status_empleado, p.get("empleado_id"), p.get("estatus"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/analizar_documentos_empleado")
+async def post_analizar_documentos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.analizar_documentos_empleado, p.get("archivos"), p.get("model"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/validar_carga_empleados")
+async def post_validar_carga_empleados(request: Request):
+    response = await asyncio.to_thread(service.validar_carga_empleados, _ocr_payload(request).get("archivo"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/cargar_empleados")
+async def post_cargar_empleados(request: Request):
+    response = await asyncio.to_thread(service.cargar_empleados, _ocr_payload(request).get("archivo"))
+    return json({"data": response}, status=200)
