@@ -2982,3 +2982,35 @@ async def post_remover_contrato_empleado(request: Request):
     response = await asyncio.to_thread(service.remover_contrato_empleado, p.get("empleado_id"),
                                        p.get("contrato_id"))
     return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Sesiones (CF-03-B). Script puente: configuracion_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/configuracion/list_sesiones")
+async def post_list_sesiones(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_sesiones(
+        tipo=p.get("tipo"), modalidad=p.get("modalidad"), estatus=p.get("estatus"), desde=p.get("desde"),
+        hasta=p.get("hasta"), search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_sesion")
+async def post_get_sesion(request: Request):
+    response = service.get_sesion(_ocr_payload(request).get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_sesion")
+async def post_save_sesion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_sesion, p.get("sesion"), p.get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/cancel_sesion")
+async def post_cancel_sesion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.cancel_sesion, p.get("sesion_id"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
