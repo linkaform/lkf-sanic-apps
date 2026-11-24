@@ -3014,3 +3014,38 @@ async def post_cancel_sesion(request: Request):
     p = _ocr_payload(request)
     response = await asyncio.to_thread(service.cancel_sesion, p.get("sesion_id"), p.get("motivo", ""))
     return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_participantes")
+async def post_get_participantes(request: Request):
+    response = service.get_participantes(_ocr_payload(request).get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/inscribir_participantes")
+async def post_inscribir_participantes(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.inscribir_participantes, p.get("sesion_id"), p.get("empleado_ids"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/quitar_participante")
+async def post_quitar_participante(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.quitar_participante, p.get("sesion_id"), p.get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/registrar_asistencia")
+async def post_registrar_asistencia(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.registrar_asistencia, p.get("sesion_id"), p.get("asistencias"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/calificar_participante")
+async def post_calificar_participante(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.calificar_participante, p.get("sesion_id"), p.get("empleado_id"),
+                                       p.get("calificaciones"))
+    return json({"data": response}, status=200)

@@ -18,8 +18,23 @@ Decisiones de Paco (2026-11-24), distintas de la spec original:
   repetir_hasta) y En curso entre ambas.
 - Modalidad se deduce: lugar = Presencial, enlace = Virtual, ambos = Híbrida.
 - Participantes, asistencia y resultados son de CF-04-B: aquí se conservan.
+
+Participantes (CF-04-B):
+- Inscribir en Programada o En curso, respetando cupo; quitar solo en Programada.
+- Asistencia por fecha (Asistió | Faltó) en días de la sesión ya transcurridos.
+  Días: cada fecha de inicio a fin; con recurrencia Semanal los días de la
+  semana marcados hasta repetir_hasta; Por día, todos; otras recurrencias,
+  inicio + fechas ya registradas.
+- Calificación por examen (0–100) en participante_calificaciones (JSON);
+  `calificacion` guarda la menor. Requiere haber asistido.
+- Resultado: con exámenes, Aprobado si todas las calificaciones >= la mínima
+  de cada examen (80 por defecto); sin exámenes, Aprobado con asistencia
+  completa. Al quedar Aprobado se crea, una sola vez, un Documento por cada
+  requerimiento otorgado (origen Sesión, ya Aceptado, con una constancia PDF
+  simple como archivo). Si después cambia a No aprobado, no se revoca.
 """
 import re
+from datetime import timedelta
 
 from .contratistas_contratos import _fecha, _int, label, opt
 
@@ -28,6 +43,8 @@ ESTATUS = ["Programada", "En curso", "Finalizada", "Cancelada"]
 ORDEN_ESTATUS = ["En curso", "Programada", "Finalizada", "Cancelada"]
 MATERIALES = ["Video", "Lectura", "Presentación", "Cuestionario", "Clase en vivo"]
 ORIGENES = ["Archivo", "Enlace"]
+CALIFICACION_MINIMA = 80
+DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 HORA_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 REQ_TIPOS = ["Documento", "Examen", "Inspección"]
 REQ_AMBITOS = ["Empresa", "Persona", "Equipo"]
@@ -117,6 +134,8 @@ class SesionesMixin:
                    if p.get(f["participante_calificacion"]) not in (None, "") else {}),
                 **({"resultado": label(["Aprobado", "No aprobado"], p[f["participante_resultado"]])}
                    if p.get(f["participante_resultado"]) else {}),
+                **({"calificaciones": self._ses_json(p.get(f["participante_calificaciones"]))}
+                   if p.get(f["participante_calificaciones"]) else {}),
             } for p in participantes],
             "inscritos": len(participantes),
             "motivo_cancelacion": a.get(f["motivo_cancelacion"]) or None,
@@ -342,3 +361,324 @@ class SesionesMixin:
         a.update({f["cancelada"]: opt("Sí"), f["motivo_cancelacion"]: motivo, f["estatus"]: opt("Cancelada")})
         self._ctr_patch(self.SESIONES_FORM, str(sesion_id), a, "cancel_sesion")
         return self.get_sesion(str(sesion_id))
+
+    # ------------------------------------------------- participantes (CF-04-B)
+
+    def _ses_get(self, sesion_id):
+        self._ses_requiere_forma()
+        rec = self._ctr_get(self.SESIONES_FORM, sesion_id)
+        if not rec:
+            self._ses_error("La sesión no existe.", 404)
+        return rec
+
+    def _ses_dias(self, a):
+        """Fechas (date) de la sesión, sin pasar de hoy."""
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        ini = _fecha(a.get(f["fecha_inicio"]))
+        if not ini:
+            return []
+        tipo = label(["Por día", "Semanal", "Mensual", "Configurable"], a.get(f["recurrencia_tipo"]))
+        fin = (_fecha(a.get(f["recurrencia_repetir_hasta"])) if tipo else None) or _fecha(a.get(f["fecha_fin"])) or ini
+        hoy = self._ctr_hoy()
+        fin = min(fin, hoy)
+        if fin < ini:
+            return []
+        todos = [ini + timedelta(days=i) for i in range((fin - ini).days + 1)]
+        if tipo == "Semanal":
+            dias = {DIAS_SEMANA.index(x) for x in (label(DIAS_SEMANA, v) for v in a.get(f["recurrencia_dias_semana"]) or []) if x}
+            return [d for d in todos if d.weekday() in dias] if dias else todos
+        if tipo in (None, "Por día"):
+            return todos
+        registrados = set()
+        for p in a.get(f["participantes"]) or []:
+            registrados |= {_fecha(k) for k in self._ses_json(p.get(f["participante_asistencia"]))}
+        return sorted({ini} | {d for d in registrados if d and ini <= d <= fin})
+
+    def _ses_minimas(self, a):
+        """{examen_id: calificación mínima} de los exámenes de la sesión."""
+        f, fq = self.ctr_f["sesiones_de_capacitacion"], self.ctr_f["requerimientos_de_cumplimiento"]
+        out = {}
+        for g in a.get(f["examenes"]) or []:
+            eid = str(g.get(f["examenes_id"]) or "")
+            q = (self._ctr_get(self.REQUERIMIENTOS_FORM, eid) or {}).get("answers") or {}
+            out[eid] = _int(q.get(fq["examen_calificacion_minima"]), 0) or CALIFICACION_MINIMA
+        return out
+
+    def _ses_resultado(self, p, dias, minimas):
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        asis = self._ses_json(p.get(f["participante_asistencia"]))
+        if minimas:
+            cal = self._ses_json(p.get(f["participante_calificaciones"]))
+            if not all(k in cal for k in minimas):
+                return None
+            return "Aprobado" if all(float(cal[k]) >= m for k, m in minimas.items()) else "No aprobado"
+        if not dias or any(asis.get(d.isoformat()) not in ("Asistió", "Faltó") for d in dias):
+            return None  # falta registrar días
+        return "Aprobado" if all(asis.get(d.isoformat()) == "Asistió" for d in dias) else "No aprobado"
+
+    def _ses_constancia(self, sesion, empleado, requerimiento, fecha):
+        """PDF simple de constancia (el formato oficial no está en el diseño),
+        subido al campo archivo de Documentos. Regresa el valor del campo."""
+        import io
+        import os
+        import tempfile
+
+        from PIL import Image, ImageDraw, ImageFont
+        im = Image.new("RGB", (1240, 1754), "white")
+        d = ImageDraw.Draw(im)
+        titulo, texto = ImageFont.load_default(size=44), ImageFont.load_default(size=30)
+        y = 160
+        d.text((120, y), "Constancia de capacitación", fill="black", font=titulo)
+        for linea in ("", f"Se hace constar que {empleado}", f"acreditó la sesión «{sesion}»",
+                      f"y cumple el requerimiento «{requerimiento}».", "", f"Fecha: {fecha}", "",
+                      "Emitida por Clave 10 al aprobar la sesión."):
+            y += 70
+            d.text((120, y), linea, fill="black", font=texto)
+        nombre = re.sub(r"[^A-Za-z0-9_-]+", "_", f"constancia_{empleado}")[:80] + ".pdf"
+        ruta = os.path.join(tempfile.gettempdir(), nombre)
+        buf = io.BytesIO()
+        im.save(buf, "PDF")
+        with open(ruta, "wb") as fh:
+            fh.write(buf.getvalue())
+        try:
+            with open(ruta, "rb") as fh:
+                res = self.lkf_api.post_upload_file(
+                    data={"form_id": self.DOCUMENTOS_FORM,
+                          "field_id": self.ctr_f["documentos_de_cumplimiento"]["archivo"]},
+                    up_file={"File": fh})
+            url = ((res or {}).get("data") or {}).get("file")
+        finally:
+            os.remove(ruta)
+        if not url:
+            self._ses_error(f"No se pudo subir la constancia: {str(res)[:200]}", 502)
+        return [{"file_name": nombre, "file_url": url}]
+
+    def _ses_otorgar(self, a, p):
+        """Documento ya Aceptado por cada requerimiento otorgado (una sola vez)."""
+        if not self.DOCUMENTOS_FORM:
+            return []
+        f, fd = self.ctr_f["sesiones_de_capacitacion"], self.ctr_f["documentos_de_cumplimiento"]
+        emp = self.Employee
+        eid = str(p.get(f["participante_id"]) or "")
+        e = self._ctr_get(emp.EMPLEADOS, eid)
+        if not e:
+            return []
+        ea = e.get("answers") or {}
+        propia = self.ctr_empresa_propia()
+        empresa_id = str(ea.get(self.ctr_f["empleados"]["empresa_id"]) or "") or (str(propia["_id"]) if propia else "")
+        empresa = self._ctr_empresa_ref(empresa_id, {}) or {"razon_social": ""}
+        clientes = self._doc_clientes(empresa_id) or ({empresa_id: empresa["razon_social"]} if empresa_id else {})
+        nombre_emp = ea.get(emp.employee_fields["worker_name"]) or p.get(f["participante"]) or ""
+        creados = []
+        for g in a.get(f["otorgados"]) or []:
+            rid = str(g.get(f["otorgados_id"]) or "")
+            ya = self._ctr_find(self.DOCUMENTOS_FORM, {f"answers.{fd['requerimiento_id']}": rid,
+                                                       f"answers.{fd['dueno_empleado_id']}": eid,
+                                                       f"answers.{fd['origen']}": opt("Sesión")}, one=True)
+            if ya:
+                continue
+            ahora = self._doc_ahora()
+            archivo = self._ses_constancia(a.get(f["nombre"]) or "", nombre_emp, g.get(f["otorgados_nombre"]) or "",
+                                           self._ctr_hoy().isoformat())
+            doc = {
+                fd["folio"]: self._doc_siguiente_folio(),
+                fd["nombre"]: f"{a.get(f['nombre']) or 'Sesión'} · {nombre_emp}",
+                fd["requerimiento_id"]: rid, fd["requerimiento"]: g.get(f["otorgados_nombre"]) or "",
+                fd["dueno_tipo"]: opt("Persona"), fd["dueno_empresa_id"]: empresa_id,
+                fd["dueno_empresa"]: empresa["razon_social"], fd["dueno_empleado_id"]: eid, fd["dueno_empleado"]: nombre_emp,
+                fd["origen"]: opt("Sesión"), fd["en_ceros"]: opt("No"), fd["estatus"]: opt("Aceptado"),
+                fd["vigencia_inicio"]: self._ctr_hoy().isoformat(),
+                fd["compartido_con"]: [{fd["compartido_con_id"]: i, fd["compartido_con_nombre"]: n} for i, n in clientes.items()],
+                fd["aprobaciones"]: [{fd["aprobacion_cliente_id"]: i, fd["aprobacion_cliente"]: n,
+                                      fd["aprobacion_decision"]: opt("Aprobado"), fd["aprobacion_revisor"]: "Sesión",
+                                      fd["aprobacion_fecha"]: ahora} for i, n in clientes.items()],
+                fd["archivo"]: archivo,
+                fd["versiones"]: [{fd["version_numero"]: 1, fd["version_archivo"]: archivo,
+                                   fd["version_estatus"]: opt("Aceptado"), fd["version_subido_por"]: "Sesión",
+                                   fd["version_fecha"]: ahora}],
+                fd["comentarios"]: [{fd["comentario_autor"]: self._ctr_autor(), fd["comentario_fecha"]: ahora,
+                                                          fd["comentario_texto"]: f"Otorgado al aprobar la sesión {a.get(f['nombre']) or ''}."}],
+                fd["contratos"]: [],
+            }
+            doc_id = self._ctr_post(self.DOCUMENTOS_FORM, doc, "otorgar_por_sesion")
+            if doc_id:
+                creados.append({"id": doc_id, "requerimiento": g.get(f["otorgados_nombre"]) or "", "empleado": nombre_emp})
+        if creados:
+            self._doc_recalcular(empresa_id, set(clientes))
+        return creados
+
+    def _ses_guardar_participantes(self, rec, participantes, accion):
+        """Recalcula resultados, guarda y otorga a los nuevos Aprobados."""
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        a = dict(rec.get("answers") or {})
+        a[f["participantes"]] = participantes
+        dias, minimas = self._ses_dias(a), self._ses_minimas(a)
+        aprobados = []
+        for p in participantes:
+            res = self._ses_resultado(p, dias, minimas)
+            if res:
+                p[f["participante_resultado"]] = opt(res)
+            else:
+                p.pop(f["participante_resultado"], None)
+            if res == "Aprobado":  # _ses_otorgar no duplica: reintenta si antes falló
+                aprobados.append(p)
+        a[f["estatus"]] = opt(self._ses_estatus(a))
+        self._ctr_patch(self.SESIONES_FORM, str(rec["_id"]), a, accion)
+        otorgados = [d for p in aprobados for d in self._ses_otorgar(a, p)]
+        out = self.get_participantes(str(rec["_id"]))
+        if otorgados:
+            out["documentos_otorgados"] = otorgados
+        return out
+
+    def get_participantes(self, sesion_id):
+        """Pestaña Participantes: KPIs, días de la sesión y por empleado puesto,
+        centro, asistencia (N de M días, %) y exámenes."""
+        rec = self._ses_get(sesion_id)
+        s = self.ses_out(rec)
+        a = rec.get("answers") or {}
+        dias = [d.isoformat() for d in self._ses_dias(a)]
+        minimas = self._ses_minimas(a)
+        emp = self.Employee
+        fe = self.ctr_f["empleados"]
+        filas = []
+        for p in s["participantes"]:
+            e = (self._ctr_get(emp.EMPLEADOS, p["empleado"]["id"]) or {}).get("answers") or {}
+            asistio = sum(1 for d in dias if p["asistencia"].get(d) == "Asistió")
+            filas.append({**p, "puesto": self._emp_cat(e, emp.employee_fields["worker_position"]) if e else None,
+                          "centro_trabajo": e.get(fe["centro_trabajo"]) or None,
+                          "asistencia_resumen": {"asistio": asistio, "dias": len(dias),
+                                                 "pct": round(asistio * 100 / len(dias)) if dias else None}})
+        asistieron = sum(1 for x in filas if x["asistencia_resumen"]["asistio"])
+        return {"sesion": {k: s[k] for k in ("id", "nombre", "estatus", "cupo", "inscritos", "examenes", "otorgados")},
+                "dias": dias, "examenes_minimas": minimas,
+                "kpi": {"inscritos": len(filas), "cupo": s["cupo"], "asistieron": asistieron,
+                        "asistencia_pct": round(sum(x["asistencia_resumen"]["asistio"] for x in filas) * 100
+                                                / (len(filas) * len(dias))) if filas and dias else None},
+                "participantes": filas}
+
+    def inscribir_participantes(self, sesion_id, empleado_ids):
+        rec = self._ses_get(sesion_id)
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        a = rec.get("answers") or {}
+        estatus = self._ses_estatus(a)
+        if estatus not in ("Programada", "En curso"):
+            self._ses_error(f"Solo se inscribe en una sesión Programada o En curso (esta está {estatus}).", 409)
+        actuales = list(a.get(f["participantes"]) or [])
+        ya = {str(p.get(f["participante_id"])) for p in actuales}
+        nuevos = [str(i) for i in dict.fromkeys(empleado_ids or []) if str(i) not in ya]
+        if not nuevos:
+            self._ses_error("Elige al menos un empleado que no esté inscrito.")
+        cupo = _int(a.get(f["cupo"]), 0)
+        if cupo and len(actuales) + len(nuevos) > cupo:
+            self._ses_error(f"Se alcanzó el cupo de la sesión: quedan {max(cupo - len(actuales), 0)} lugares.", 409)
+        emp = self.Employee
+        errores = []
+        for i in nuevos:
+            e = self._ctr_get(emp.EMPLEADOS, i)
+            ea = (e or {}).get("answers") or {}
+            nombre = ea.get(emp.employee_fields["worker_name"]) or i
+            if not e:
+                errores.append(f"El empleado {i} no existe.")
+            elif ea.get(emp.employee_fields["estatus_dentro_empresa"]) == "inactivo":
+                errores.append(f"{nombre} está desactivado.")
+            elif ea.get(self.ctr_f["empleados"]["vetado_fecha"]):
+                errores.append(f"{nombre} está vetado.")
+            else:
+                actuales.append({f["participante_id"]: i, f["participante"]: nombre,
+                                 f["participante_asistencia"]: "{}"})
+        if errores:
+            self._ses_error("\n".join(errores))
+        return self._ses_guardar_participantes(rec, actuales, "inscribir_participantes")
+
+    def quitar_participante(self, sesion_id, empleado_id):
+        rec = self._ses_get(sesion_id)
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        a = rec.get("answers") or {}
+        if self._ses_estatus(a) != "Programada":
+            self._ses_error("Solo se quita a un participante de una sesión Programada.", 409)
+        actuales = list(a.get(f["participantes"]) or [])
+        quedan = [p for p in actuales if str(p.get(f["participante_id"])) != str(empleado_id)]
+        if len(quedan) == len(actuales):
+            self._ses_error("El empleado no está inscrito.", 404)
+        return self._ses_guardar_participantes(rec, quedan, "quitar_participante")
+
+    def registrar_asistencia(self, sesion_id, asistencias):
+        """asistencias: [{empleado_id, fecha, estado: Asistió | Faltó | null}]."""
+        import simplejson
+        rec = self._ses_get(sesion_id)
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        a = rec.get("answers") or {}
+        estatus = self._ses_estatus(a)
+        if estatus not in ("En curso", "Finalizada"):
+            self._ses_error(f"La asistencia se registra en una sesión En curso o Finalizada (esta está {estatus}).", 409)
+        dias = {d.isoformat() for d in self._ses_dias(a)}
+        if not label(["Por día", "Semanal"], a.get(f["recurrencia_tipo"])) and a.get(f["recurrencia_tipo"]):
+            ini = _fecha(a.get(f["fecha_inicio"]))
+            fin = min(_fecha(a.get(f["recurrencia_repetir_hasta"])) or self._ctr_hoy(), self._ctr_hoy())
+            dias |= {(ini + timedelta(days=i)).isoformat() for i in range((fin - ini).days + 1)} if ini else set()
+        actuales = list(a.get(f["participantes"]) or [])
+        por_id = {str(p.get(f["participante_id"])): p for p in actuales}
+        errores = []
+        for x in asistencias or []:
+            x = x if isinstance(x, dict) else {}
+            p = por_id.get(str(x.get("empleado_id") or ""))
+            fecha = _fecha(x.get("fecha"))
+            estado = x.get("estado")
+            if not p:
+                errores.append(f"El empleado {x.get('empleado_id')} no está inscrito.")
+            elif not fecha or fecha.isoformat() not in dias:
+                errores.append(f"{x.get('fecha')} no es un día transcurrido de la sesión.")
+            elif estado not in ("Asistió", "Faltó", None):
+                errores.append(f"Estado no válido: {estado}.")
+            else:
+                asis = self._ses_json(p.get(f["participante_asistencia"]))
+                if estado:
+                    asis[fecha.isoformat()] = estado
+                else:
+                    asis.pop(fecha.isoformat(), None)
+                p[f["participante_asistencia"]] = simplejson.dumps(asis, sort_keys=True)
+        if errores:
+            self._ses_error("\n".join(errores))
+        return self._ses_guardar_participantes(rec, actuales, "registrar_asistencia")
+
+    def calificar_participante(self, sesion_id, empleado_id, calificaciones):
+        """calificaciones: {examen_id: 0–100}; null borra la de ese examen."""
+        import simplejson
+        rec = self._ses_get(sesion_id)
+        f = self.ctr_f["sesiones_de_capacitacion"]
+        a = rec.get("answers") or {}
+        minimas = self._ses_minimas(a)
+        if not minimas:
+            self._ses_error("La sesión no tiene exámenes.", 409)
+        if self._ses_estatus(a) not in ("En curso", "Finalizada"):
+            self._ses_error("Se califica en una sesión En curso o Finalizada.", 409)
+        actuales = list(a.get(f["participantes"]) or [])
+        p = next((x for x in actuales if str(x.get(f["participante_id"])) == str(empleado_id)), None)
+        if not p:
+            self._ses_error("El empleado no está inscrito.", 404)
+        if "Asistió" not in self._ses_json(p.get(f["participante_asistencia"])).values():
+            self._ses_error("Registra primero su asistencia: solo se califica a quien asistió.", 409)
+        cal = self._ses_json(p.get(f["participante_calificaciones"]))
+        errores = []
+        for k, v in (calificaciones or {}).items():
+            if k not in minimas:
+                errores.append(f"El examen {k} no es de esta sesión.")
+            elif v is None or v == "":
+                cal.pop(k, None)
+            else:
+                try:
+                    n = float(v)
+                except (TypeError, ValueError):
+                    n = -1
+                if not 0 <= n <= 100:
+                    errores.append("La calificación va de 0 a 100.")
+                else:
+                    cal[k] = n
+        if errores:
+            self._ses_error("\n".join(errores))
+        p[f["participante_calificaciones"]] = simplejson.dumps(cal, sort_keys=True) if cal else ""
+        if cal:
+            p[f["participante_calificacion"]] = min(cal.values())
+        else:
+            p.pop(f["participante_calificacion"], None)
+        return self._ses_guardar_participantes(rec, actuales, "calificar_participante")
