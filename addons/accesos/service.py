@@ -19851,6 +19851,11 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         except ValueError as e:
             return {'status_code': 500, 'msg': f'Error al parsear respuesta del modelo: {e}'}
         except RuntimeError as e:
+            print('>>> ocr_acceso_transportista error OpenRouter:', e)
+            if str(e).startswith(('OpenRouter [429]', 'OpenRouter [502]', 'OpenRouter [503]')):
+                return {'status_code': 500, 'msg': (
+                    'El servicio de IA está saturado en este momento; espera unos segundos.'
+                )}
             return {'status_code': 500, 'msg': f'Error al llamar a OpenRouter: {e}'}
 
         datos = {}
