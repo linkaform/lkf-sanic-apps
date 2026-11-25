@@ -91,6 +91,8 @@ class AccesosModel(Base):
         self.DOCUMENTOS_FORM = self.lkm.form_id('documentos_de_cumplimiento', 'id')
         self.CUMPLIMIENTO_FORM = self.lkm.form_id('cumplimiento_de_requerimientos', 'id')
         self.SESIONES_FORM = self.lkm.form_id('sesiones_de_capacitacion', 'id')
+        self.MANTENIMIENTOS_FORM = self.lkm.form_id('mantenimientos_de_activos', 'id')
+        self.SANCIONES_FORM = self.lkm.form_id('sanciones', 'id')
         self.ctr_f = CONTRATISTAS_FIELDS
 
         self.last_check_in = []

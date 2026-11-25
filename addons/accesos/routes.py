@@ -2556,4 +2556,671 @@ async def post_fix_rondines(request: Request):
     service.fix_rondines()
     return json({"data": {"status_code": 200, "msg": "OK"}}, status=200)
 
+# ============================================
+# Contratistas · Contratos (ME-14). Script puente: contratos_sdk.py
+# Las escrituras van en un hilo: hacen requests síncronos a LinkaForm.
+# ============================================
+
+# ME-13: mapeo y homologación de requerimientos del contrato (contratos_sdk.py).
+@accesos_bp.post("/contratos/get_mapeo_contrato")
+async def post_get_mapeo_contrato(request: Request):
+    response = await asyncio.to_thread(service.get_mapeo_contrato, _ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/sugerir_mapeo")
+async def post_sugerir_mapeo(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.sugerir_mapeo, p.get("filas"), bool(p.get("solo_sin_match")))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/save_mapeo_contrato")
+async def post_save_mapeo_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_mapeo_contrato, p.get("contrato_id"), p.get("filas"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/crear_en_catalogo")
+async def post_crear_en_catalogo(request: Request):
+    response = await asyncio.to_thread(service.crear_en_catalogo, _ocr_payload(request).get("requerimiento"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/list_contratos")
+async def post_list_contratos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos(
+        relacion_id=p.get("relacion_id"), estatus=p.get("estatus"),
+        fin_desde=p.get("fin_desde"), fin_hasta=p.get("fin_hasta"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/get_contrato")
+async def post_get_contrato(request: Request):
+    response = service.get_contrato(_ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/create_contrato")
+async def post_create_contrato(request: Request):
+    response = await asyncio.to_thread(service.create_contrato, _ocr_payload(request).get("contrato"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/update_contrato")
+async def post_update_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_contrato, p.get("contrato_id"), p.get("contrato"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/change_status_contrato")
+async def post_change_status_contrato(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.change_status_contrato, p.get("contrato_id"), p.get("estatus_manual"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/contratos/get_historial_contrato")
+async def post_get_historial_contrato(request: Request):
+    response = service.get_historial_contrato(_ocr_payload(request).get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Relaciones (R-01). Script puente: relaciones_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/relaciones/list_relaciones")
+async def post_list_relaciones(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_relaciones(
+        p.get("direccion"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/get_relacion")
+async def post_get_relacion(request: Request):
+    response = service.get_relacion(_ocr_payload(request).get("relacion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/create_relacion")
+async def post_create_relacion(request: Request):
+    response = await asyncio.to_thread(service.create_relacion, _ocr_payload(request).get("relacion"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/get_asignacion_requerimientos")
+async def post_get_asignacion_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.get_asignacion_requerimientos, p.get("search"), p.get("estatus"), p.get("requerimiento_ids"),
+        p.get("limit", 25), p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/save_asignacion_requerimientos")
+async def post_save_asignacion_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_asignacion_requerimientos, p.get("asignaciones"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/get_incumplimientos")
+async def post_get_incumplimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_incumplimientos, p.get("relacion_ids"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/notificar_incumplimientos")
+async def post_notificar_incumplimientos(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.notificar_incumplimientos, p.get("relacion_ids"), p.get("motivo"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/update_relacion")
+async def post_update_relacion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_relacion, p.get("relacion_id"), p.get("cambios"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/get_arbol_relacion")
+async def post_get_arbol_relacion(request: Request):
+    response = service.get_arbol_relacion(_ocr_payload(request).get("relacion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/relaciones/change_status_relacion")
+async def post_change_status_relacion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.change_status_relacion, p.get("relacion_id"), p.get("estatus"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Cumplimiento (ME-15). Script puente: cumplimiento_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/cumplimiento/list_cumplimiento")
+async def post_list_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_cumplimiento(
+        relacion_id=p.get("relacion_id"), contrato_id=p.get("contrato_id"), sujeto_tipo=p.get("sujeto_tipo"),
+        empleado_id=p.get("empleado_id"), anio=p.get("anio"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/set_estado_cumplimiento")
+async def post_set_estado_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.set_estado_cumplimiento, p.get("cumplimiento_id"), p.get("estado"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/recalcular_cumplimiento")
+async def post_recalcular_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.recalcular_cumplimiento, p.get("contrato_id"), p.get("relacion_id"))
+    return json({"data": response}, status=200)
+
+
+# Cumplimiento documental de Mi Empresa (ME-07-B), mismo script puente.
+@accesos_bp.post("/cumplimiento/get_cumplimiento_documental")
+async def post_get_cumplimiento_documental(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_cumplimiento_documental, p.get("anio"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/get_periodo_cumplimiento")
+async def post_get_periodo_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.get_periodo_cumplimiento, p.get("requerimiento_id"), p.get("periodo_clave"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/subir_acuse")
+async def post_subir_acuse(request: Request):
+    response = await asyncio.to_thread(service.subir_acuse, _ocr_payload(request).get("acuse"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/generar_cumplimiento")
+async def post_generar_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.generar_cumplimiento, p.get("requerimiento_id"), p.get("periodo_clave"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/descargar_cumplimiento")
+async def post_descargar_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.descargar_cumplimiento, p.get("anio"), p.get("pestanas"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/cumplimiento/get_resumen_cumplimiento")
+async def post_get_resumen_cumplimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.get_resumen_cumplimiento, p.get("limit", 50))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Activos y mantenimientos (ME-08-B). Script puente: activos_sdk.py
+# ---------------------------------------------------------------------------
+
+def _act_ruta(nombre, *claves, defaults=None):
+    """Ruta /activos/<nombre> que pasa al servicio las claves del payload en orden."""
+    defaults = defaults or {}
+
+    async def handler(request: Request):
+        p = _ocr_payload(request)
+        args = [p.get(k, defaults.get(k)) for k in claves]
+        response = await asyncio.to_thread(getattr(service, nombre), *args)
+        return json({"data": response}, status=200)
+    handler.__name__ = f"post_{nombre}"
+    accesos_bp.add_route(handler, f"/activos/{nombre}", methods=["POST"], name=f"activos_{nombre}")
+
+
+_act_ruta("get_opciones_activo")
+_act_ruta("list_activos", "clase", "disponible", "estado", "inventario", "ubicacion", "mantenimiento_desde",
+          "mantenimiento_hasta", "search", "limit", "offset", defaults={"limit": 25, "offset": 0})
+_act_ruta("get_activo", "activo_id")
+_act_ruta("create_activo", "activo")
+_act_ruta("update_activo", "activo_id", "cambios")
+_act_ruta("change_estado_activo", "activo_id", "estado")
+_act_ruta("delete_activo", "activo_id")
+_act_ruta("list_concesiones_activo", "activo_id")
+_act_ruta("analizar_foto_activo", "archivo")
+_act_ruta("list_mantenimientos", "activo_id")
+_act_ruta("save_mantenimiento", "mantenimiento", "mantenimiento_id")
+_act_ruta("change_status_mantenimiento", "mantenimiento_id", "estatus", "comentario", "evidencias",
+          defaults={"comentario": ""})
+_act_ruta("delete_mantenimiento", "mantenimiento_id")
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Sanciones (R-07 y ME-05). Script puente: sanciones_sdk.py
+# ---------------------------------------------------------------------------
+
+def _san_ruta(nombre, *claves, defaults=None):
+    defaults = defaults or {}
+
+    async def handler(request: Request):
+        p = _ocr_payload(request)
+        response = await asyncio.to_thread(getattr(service, nombre), *[p.get(k, defaults.get(k)) for k in claves])
+        return json({"data": response}, status=200)
+    handler.__name__ = f"post_{nombre}"
+    accesos_bp.add_route(handler, f"/sanciones/{nombre}", methods=["POST"], name=f"sanciones_{nombre}")
+
+
+_san_ruta("get_opciones_sancion")
+_san_ruta("list_sanciones", "empleado_id", "relacion_id", "sujeto_tipo", "estatus", "search", "limit", "offset",
+          defaults={"limit": 25, "offset": 0})
+_san_ruta("get_sancion", "sancion_id")
+_san_ruta("save_sancion", "sancion", "sancion_id")
+_san_ruta("comment_sancion", "sancion_id", "texto", "evidencias", defaults={"texto": ""})
+_san_ruta("delete_sancion", "sancion_id")
+_san_ruta("imprimir_acta", "sancion_id")
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Requerimientos (CF-01-B). Script puente: configuracion_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/configuracion/list_recursos")
+async def post_list_recursos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_recursos(
+        p.get("tipo"), categoria=p.get("categoria"), clase=p.get("clase"), estatus=p.get("estatus"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_recurso")
+async def post_get_recurso(request: Request):
+    response = service.get_recurso(_ocr_payload(request).get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_recurso")
+async def post_save_recurso(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_recurso, p.get("recurso"), p.get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_aplicacion_recurso")
+async def post_get_aplicacion_recurso(request: Request):
+    response = service.get_aplicacion_recurso(_ocr_payload(request).get("recurso_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/list_requerimientos")
+async def post_list_requerimientos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_requerimientos(
+        tipo=p.get("tipo"), ambito=p.get("ambito"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_requerimiento")
+async def post_get_requerimiento(request: Request):
+    response = service.get_requerimiento(_ocr_payload(request).get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_requerimiento")
+async def post_save_requerimiento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_requerimiento, p.get("requerimiento"), p.get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_aplicacion_requerimiento")
+async def post_get_aplicacion_requerimiento(request: Request):
+    response = service.get_aplicacion_requerimiento(_ocr_payload(request).get("requerimiento_id"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Documentos (F0-11 lectura con IA). Script puente: documentos_sdk.py
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/documentos/list_documentos")
+async def post_list_documentos(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_documentos(
+        dueno_tipo=p.get("dueno_tipo"), empresa_id=p.get("empresa_id"), empleado_id=p.get("empleado_id"),
+        contrato_id=p.get("contrato_id"), requerimiento_id=p.get("requerimiento_id"), estatus=p.get("estatus"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/get_documento")
+async def post_get_documento(request: Request):
+    response = service.get_documento(_ocr_payload(request).get("documento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/upload_documento")
+async def post_upload_documento(request: Request):
+    response = await asyncio.to_thread(service.upload_documento, _ocr_payload(request).get("documento"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/review_documento")
+async def post_review_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.review_documento, p.get("documento_id"), p.get("decision"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/update_compartido_documento")
+async def post_update_compartido_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.update_compartido_documento, p.get("documento_id"), p.get("compartido_con"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/delete_documento")
+async def post_delete_documento(request: Request):
+    response = await asyncio.to_thread(service.delete_documento, _ocr_payload(request).get("documento_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/comment_documento")
+async def post_comment_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.comment_documento, p.get("documento_id"), p.get("texto", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/documentos/analizar_documento")
+async def post_analizar_documento(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.analizar_documento, p.get("archivo"), p.get("requerimiento_id"), p.get("propietario_id"),
+        p.get("model"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Registro (RG-01). Script puente PÚBLICO: registro_sdk.py
+# (corre con el API key de la cuenta del account_id de la página, sin sesión).
+# ---------------------------------------------------------------------------
+
+@accesos_bp.post("/registro/registrar_empresa")
+async def post_registrar_empresa(request: Request):
+    response = await asyncio.to_thread(service.registrar_empresa, _ocr_payload(request).get("registro"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/registro/leer_documento_registro")
+async def post_leer_documento_registro(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(
+        service.leer_documento_registro, p.get("archivo"), p.get("tipo"), p.get("rfc"))
+    return json({"data": response}, status=200)
+
 print('fin de rutas...')
+
+# ---------------------------------------------------------------------------
+# Contratistas · Empleados (ME-03-B). Script puente: empleados_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/empleados/list_empleados")
+async def post_list_empleados(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_empleados(
+        empresa_id=p.get("empresa_id"), estatus=p.get("estatus"), usuario=p.get("usuario"),
+        cumplimiento=p.get("cumplimiento"), perfil_id=p.get("perfil_id"), contrato_id=p.get("contrato_id"),
+        search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/get_empleado")
+async def post_get_empleado(request: Request):
+    response = service.get_empleado(_ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/create_empleado")
+async def post_create_empleado(request: Request):
+    response = await asyncio.to_thread(service.create_empleado, _ocr_payload(request).get("empleado"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/update_empleado")
+async def post_update_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_empleado, p.get("empleado_id"), p.get("empleado"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/change_status_empleado")
+async def post_change_status_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.change_status_empleado, p.get("empleado_id"), p.get("estatus"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/analizar_documentos_empleado")
+async def post_analizar_documentos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.analizar_documentos_empleado, p.get("archivos"), p.get("model"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/validar_carga_empleados")
+async def post_validar_carga_empleados(request: Request):
+    response = await asyncio.to_thread(service.validar_carga_empleados, _ocr_payload(request).get("archivo"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/cargar_empleados")
+async def post_cargar_empleados(request: Request):
+    response = await asyncio.to_thread(service.cargar_empleados, _ocr_payload(request).get("archivo"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_documentos_empleado")
+async def post_list_documentos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_documentos_empleado(
+        p.get("empleado_id"), estatus=p.get("estatus"), origen=p.get("origen"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/get_qr_empleado")
+async def post_get_qr_empleado(request: Request):
+    response = service.get_qr_empleado(_ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/vetar_empleado")
+async def post_vetar_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.vetar_empleado, p.get("empleado_id"), p.get("motivo"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/levantar_veto_empleado")
+async def post_levantar_veto_empleado(request: Request):
+    response = await asyncio.to_thread(service.levantar_veto_empleado, _ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/update_preferencias_empleado")
+async def post_update_preferencias_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.update_preferencias_empleado, p.get("empleado_id"),
+                                       p.get("preferencias"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/restaurar_password_empleado")
+async def post_restaurar_password_empleado(request: Request):
+    response = await asyncio.to_thread(service.restaurar_password_empleado,
+                                       _ocr_payload(request).get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Mi Empresa (ME-01-B). Script puente: empresa_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/empresa/get_mi_empresa")
+async def post_get_mi_empresa(request: Request):
+    response = service.get_mi_empresa()
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/get_empresa")
+async def post_get_empresa(request: Request):
+    response = service.get_empresa(_ocr_payload(request).get("empresa_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/update_mi_empresa")
+async def post_update_mi_empresa(request: Request):
+    response = await asyncio.to_thread(service.update_mi_empresa, _ocr_payload(request).get("empresa"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/save_contacto")
+async def post_save_contacto(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_contacto, p.get("contacto"), p.get("indice"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empresa/delete_contacto")
+async def post_delete_contacto(request: Request):
+    response = await asyncio.to_thread(service.delete_contacto, _ocr_payload(request).get("indice"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_contratos_empleado")
+async def post_list_contratos_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos_empleado(
+        p.get("empleado_id"), estatus=p.get("estatus"), search=p.get("search"),
+        limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/list_contratos_para_ligar")
+async def post_list_contratos_para_ligar(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_contratos_para_ligar(
+        p.get("empleado_id"), cliente_id=p.get("cliente_id"), perfil_id=p.get("perfil_id"), search=p.get("search"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/ligar_contrato_empleado")
+async def post_ligar_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.ligar_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"), p.get("perfiles"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/editar_perfiles_contrato_empleado")
+async def post_editar_perfiles_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.editar_perfiles_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"), p.get("perfiles"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/empleados/remover_contrato_empleado")
+async def post_remover_contrato_empleado(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.remover_contrato_empleado, p.get("empleado_id"),
+                                       p.get("contrato_id"))
+    return json({"data": response}, status=200)
+
+
+# ---------------------------------------------------------------------------
+# Contratistas · Sesiones (CF-03-B). Script puente: configuracion_sdk.py
+# ---------------------------------------------------------------------------
+@accesos_bp.post("/configuracion/list_sesiones")
+async def post_list_sesiones(request: Request):
+    p = _ocr_payload(request)
+    response = service.list_sesiones(
+        tipo=p.get("tipo"), modalidad=p.get("modalidad"), estatus=p.get("estatus"), desde=p.get("desde"),
+        hasta=p.get("hasta"), search=p.get("search"), limit=p.get("limit", 25), offset=p.get("offset", 0))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_sesion")
+async def post_get_sesion(request: Request):
+    response = service.get_sesion(_ocr_payload(request).get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/save_sesion")
+async def post_save_sesion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.save_sesion, p.get("sesion"), p.get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/cancel_sesion")
+async def post_cancel_sesion(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.cancel_sesion, p.get("sesion_id"), p.get("motivo", ""))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/get_participantes")
+async def post_get_participantes(request: Request):
+    response = service.get_participantes(_ocr_payload(request).get("sesion_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/inscribir_participantes")
+async def post_inscribir_participantes(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.inscribir_participantes, p.get("sesion_id"), p.get("empleado_ids"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/quitar_participante")
+async def post_quitar_participante(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.quitar_participante, p.get("sesion_id"), p.get("empleado_id"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/registrar_asistencia")
+async def post_registrar_asistencia(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.registrar_asistencia, p.get("sesion_id"), p.get("asistencias"))
+    return json({"data": response}, status=200)
+
+
+@accesos_bp.post("/configuracion/calificar_participante")
+async def post_calificar_participante(request: Request):
+    p = _ocr_payload(request)
+    response = await asyncio.to_thread(service.calificar_participante, p.get("sesion_id"), p.get("empleado_id"),
+                                       p.get("calificaciones"))
+    return json({"data": response}, status=200)

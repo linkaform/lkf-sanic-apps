@@ -47,10 +47,26 @@ print('--------------- ACCESOS APP --------------------')
 from .models import AccesosModel
 from lkf_addons.tools.OcrMixin import OcrMixin
 from lkf_addons.tools.FacetSearchMixin import FacetSearchMixin
+from .contratistas_contratos import ContratosMixin
+from .contratistas_relaciones import RelacionesMixin
+from .contratistas_cumplimiento import CumplimientoMixin
+from .contratistas_documentos_ia import DocumentosIAMixin
+from .contratistas_registro import RegistroMixin
+from .contratistas_documentos import DocumentosMixin
+from .contratistas_requerimientos import RequerimientosMixin
+from .contratistas_recursos import RecursosMixin
+from .contratistas_empleados import EmpleadosMixin
+from .contratistas_empresa import EmpresaMixin
+from .contratistas_sesiones import SesionesMixin
+from .contratistas_cumplimiento_documental import CumplimientoDocumentalMixin
+from .contratistas_activos import ActivosMixin
+from .contratistas_notificaciones import NotificacionesMixin
+from .contratistas_sanciones import SancionesMixin
+from .contratistas_mapeo import MapeoMixin
 
 
 # class Accesos(Employee, Location, Vehiculo, base.LKF_Base):
-class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
+class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, CumplimientoDocumentalMixin, SesionesMixin, EmpresaMixin, EmpleadosMixin, RecursosMixin, RequerimientosMixin, DocumentosMixin, RegistroMixin, DocumentosIAMixin, CumplimientoMixin, RelacionesMixin, ContratosMixin, FacetSearchMixin, OcrMixin, AccesosModel):
 
     def __init__(self, settings, folio_solicitud=None, sys_argv=None, use_api=False, **kwargs):
         #--Variables

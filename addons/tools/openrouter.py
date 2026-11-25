@@ -291,7 +291,7 @@ class OpenRouter:
 
     def post(self, messages: list, model: str = None,
                    max_tokens: int = 1000, temperature: float = 0,
-                   tools: list = None) -> dict:
+                   tools: list = None, extra: dict = None) -> dict:
         """
         Llamada directa a la API de OpenRouter.
         Útil para casos avanzados donde necesitas controlar
@@ -311,6 +311,9 @@ class OpenRouter:
         }
         if tools:
             payload['tools'] = tools
+        if extra:
+            # Campos extra del payload, p. ej. {"reasoning": {"effort": "minimal"}}.
+            payload.update(extra)
         resp = requests.post(
             OPENROUTER_URL,
             headers=self.headers,
