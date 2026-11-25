@@ -21,6 +21,7 @@ Uso básico desde cualquier módulo de lkf_addons:
 
 import json, simplejson
 import base64
+import time
 import requests
 from pathlib import Path
 
@@ -29,6 +30,16 @@ from pathlib import Path
 DEFAULT_MODEL = 'google/gemini-3.5-flash'
 
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+
+# Modelo de respaldo: si el principal falla (p. ej. 429 "rate-limited upstream"
+# de Google), OpenRouter reintenta solo con el siguiente de `models`.
+FALLBACK_MODELS = {
+    'google/gemini-3.5-flash': ['google/gemini-3.5-flash-lite'],
+}
+
+# Errores transitorios que vale la pena reintentar, y espera antes de cada reintento.
+RETRY_STATUS = (429, 502, 503)
+RETRY_WAITS = (2, 5)
 
 
 class OpenRouter:
@@ -314,12 +325,11 @@ class OpenRouter:
         if extra:
             # Campos extra del payload, p. ej. {"reasoning": {"effort": "minimal"}}.
             payload.update(extra)
-        resp = requests.post(
-            OPENROUTER_URL,
-            headers=self.headers,
-            json=payload,
-            timeout=60,
-        )
+        fallbacks = FALLBACK_MODELS.get(payload['model'])
+        if fallbacks and 'models' not in payload:
+            payload['models'] = [payload['model']] + fallbacks
+
+        resp = self._post_con_reintentos(payload)
 
         if resp.status_code != 200:
             raise RuntimeError(
@@ -331,6 +341,28 @@ class OpenRouter:
     # ──────────────────────────────────────────────────────────
     # HELPERS PRIVADOS
     # ──────────────────────────────────────────────────────────
+
+    def _post_con_reintentos(self, payload: dict):
+        """
+        POST a OpenRouter reintentando los errores transitorios (429/502/503).
+        Respeta Retry-After si viene y no pasa de 10 s por espera.
+        """
+        for intento, espera in enumerate(RETRY_WAITS + (None,)):
+            resp = requests.post(
+                OPENROUTER_URL,
+                headers=self.headers,
+                json=payload,
+                timeout=60,
+            )
+            if resp.status_code not in RETRY_STATUS or espera is None:
+                return resp
+            try:
+                espera = min(float(resp.headers.get('Retry-After', espera)), 10)
+            except ValueError:
+                pass
+            print(f'>>> OpenRouter {resp.status_code}, reintento {intento + 1} en {espera}s')
+            time.sleep(espera)
+        return resp
 
     def _build_image_url(self, image_source: str) -> str:
         """
