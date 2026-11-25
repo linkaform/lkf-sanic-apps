@@ -2652,6 +2652,43 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
         res = self.net.patch_forms_answers(metadata)
         return res
 
+    def refresh_areas_geolocation(self, areas, ubicacion):
+        """Pone en cada area del recorrido la geolocalizacion que tiene hoy su
+        registro en Areas de las Ubicaciones (campo Geolocalizacion de Area).
+
+        El recorrido guarda una copia de nombre/foto/geo de cada area al
+        armarse; si despues se corrige la geolocalizacion del area, la copia
+        queda vieja y el mapa mostraba el punto anterior. Si el area ya no
+        existe o no tiene coordenadas se conserva la copia del recorrido.
+        """
+        names = [a.get('rondin_area') for a in areas if a.get('rondin_area')]
+        if not names:
+            return areas
+        try:
+            current = self.get_areas_details(names)
+        except Exception as e:
+            print(f"refresh_areas_geolocation: no se pudieron leer las areas: {e}")
+            return areas
+        by_tag, by_name = {}, {}
+        for r in current:
+            if ubicacion and r.get('ubicacion') and r.get('ubicacion') != ubicacion:
+                continue
+            lat, lng = r.get('latitude'), r.get('longitude')
+            if not lat or not lng:
+                continue
+            geo = {'latitude': lat, 'longitude': lng}
+            tag = self.unlist(r.get('tag_id') or '')
+            if tag:
+                by_tag[str(tag)] = geo
+            by_name[r.get('area', '')] = geo
+        for a in areas:
+            tags = a.get('area_tag_id') or a.get('tag_id_area_ubicacion') or []
+            tag = str(tags[0]) if tags else ''
+            geo = by_tag.get(tag) or by_name.get(a.get('rondin_area', ''))
+            if geo:
+                a['geolocalizacion_area_ubicacion'] = [geo]
+        return areas
+
     def format_rondin_by_id(self, data):
         fotos_de_areas = []
         puntos_de_control = []
@@ -2668,6 +2705,8 @@ class Accesos(FacetSearchMixin, OcrMixin, AccesosModel):
                 item.setdefault('rondin_area', item.pop('incidente_area'))
             if 'tag_id_area_ubicacion' in item:
                 item.setdefault('area_tag_id', item.pop('tag_id_area_ubicacion'))
+
+        self.refresh_areas_geolocation(data.get('areas', []), data.get('ubicacion', ''))
 
         for item in data.get('areas', []):
             foto_area_data = item.get('foto_area', [])
