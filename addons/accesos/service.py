@@ -12074,16 +12074,6 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
     # devoluciones por Id Movimiento. Los agrupados y gráficas los calcula el front.
     # Formato de cada fila: PrestamoRaw en clave10 reporte_concesionados/lib/core.ts.
 
-    # Ids que no están (o están con otra ruta) en cons_f
-    _RC_SE_FORZO = '6aa7b40e6a6d4e42a9d7725e'      # radio Sí/No, en Devoluciones de Equipo
-    _RC_FORZADA_POR = '6ae439ff64fea7194190dc33'   # texto, en Devoluciones de Equipo
-    _RC_EVIDENCIA_PRESTAMO = '6ab5a7ffcd0d2b2a515bca05'  # imágenes, en Equipos en Préstamo
-    # Campos agregados para el reporte (2026-11). Los registros anteriores los traen vacíos.
-    _RC_PLAZO = '6afeb86f7ac0963b3cc0a414'         # horas; detalle del catálogo Equipo (y campo del catálogo)
-    _RC_FECHA_LIMITE = '6afec078bd8d0a8795b09bec'  # fecha y hora, en Equipos en Préstamo
-    _RC_EMPRESA = '6afebfb2212240c549ff9872'       # texto, primer nivel
-    _RC_GUARDIA_ENTREGA = '6afebfb2212240c549ff9873'  # texto, primer nivel
-    _RC_RECIBIO = '6afec2f16b7ce990218fe1e3'       # texto, en Devoluciones de Equipo
     # Estado de devolución de la forma → condición que usa el diseño del reporte
     _RC_ESTADO = {'completo': 'Bien', 'danado': 'Dañado', 'perdido': 'No regresó'}
 
@@ -12110,6 +12100,13 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         if isinstance(value, dict):
             return value.get('file_url') or ''
         return value or ''
+
+    def _rc_evidencia(self, devolucion):
+        """¿La devolución trae foto e identificación? El reporte no muestra las imágenes, solo
+        cuenta las devoluciones sin evidencia; mandar las ligas hacía la respuesta casi el doble
+        de pesada (17 MB en gfh). None = no hay devolución capturada (no se sabe)."""
+        cf = self.cons_f
+        return bool(self._rc_url(devolucion.get(cf['evidencia_entrega']))) and bool(self._rc_url(devolucion.get(cf['identificacion_entrega'])))
 
     def get_reporte_concesionados(self, locations=None, date_from=None, date_to=None):
         """Préstamos para el reporte. Incluye los que salieron antes de `date_from` si seguían
@@ -12140,40 +12137,50 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
             {"$sort": {f_fecha: 1}},
         ]
         filas = []
-        plazos = self._rc_plazos_catalogo()
+        catalogo = self._rc_catalogo()
         for rec in self.cr.aggregate(query):
-            filas.extend(self._rc_filas(rec, plazos))
+            filas.extend(self._rc_filas(rec, catalogo))
         return filas
 
-    def _rc_plazos_catalogo(self):
-        """Plazo actual de cada equipo en el catálogo, por nombre. Es el respaldo de los
-        préstamos que se crearon antes de que la concesión guardara su plazo."""
+    def _rc_catalogo(self):
+        """Plazo y costo actuales de cada equipo en el catálogo, por nombre:
+        {'plazo': {nombre: horas}, 'costo': {nombre: costo}}. Son el respaldo de los préstamos
+        que no guardaron el suyo: los creados antes de que la concesión guardara el plazo, y los
+        que se guardaron con costo vacío o 0 (p. ej. la app toma el costo de su copia local del
+        catálogo, y si esa copia no lo trae manda 0; en gfh casi todos)."""
+        vacio = {'plazo': {}, 'costo': {}}
         try:
             rows = self.lkf_api.search_catalog(self.ACTIVOS_FIJOS_CAT_ID, {'selector': {}, 'limit': 5000}) or []
         except Exception:
-            return {}
+            return vacio
         if not isinstance(rows, list):  # si falla, LinkaForm regresa {'error': ..., 'status_code': ...}
             print('reporte concesionados: no se pudo leer el catálogo de equipos', rows)
-            return {}
-        plazos = {}
+            return vacio
+        catalogo = {'plazo': {}, 'costo': {}}
         for r in rows:
             if not isinstance(r, dict):
                 continue
             nombre = self._rc_uno(r.get(self.cons_f['_nombre_equipo']))
-            plazo = self._rc_horas(r.get(self._RC_PLAZO))
-            if nombre and plazo and nombre not in plazos:
-                plazos[nombre] = plazo
-        return plazos
+            if not nombre:
+                continue
+            # El mismo nombre puede estar en varias ubicaciones: se queda el primero que tenga dato
+            plazo = self._rc_horas(r.get(self.cons_f['_plazo_equipo']))
+            costo = self._rc_horas(r.get(self.cons_f['_costo_equipo_concesion']))
+            if plazo and nombre not in catalogo['plazo']:
+                catalogo['plazo'][nombre] = plazo
+            if costo and nombre not in catalogo['costo']:
+                catalogo['costo'][nombre] = costo
+        return catalogo
 
     def _rc_horas(self, value):
-        """Plazo en horas (> 0) o None."""
+        """Número > 0 (plazo en horas o costo) o None."""
         try:
             h = float(self._rc_uno(value))
         except (TypeError, ValueError):
             return None
         return h if h > 0 else None
 
-    def _rc_filas(self, rec, plazos=None):
+    def _rc_filas(self, rec, catalogo=None):
         cf = self.cons_f
         a = rec.get('answers', {})
         cat_act = self.ACTIVOS_FIJOS_CAT_OBJ_ID
@@ -12190,11 +12197,10 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
             'folio': rec.get('folio') or '',
             'solicitante': solicitante or '',
             'tipo_solicitante': 'Empleado' if es_empleado else 'Visitante',
-            'empresa': a.get(self._RC_EMPRESA) or '',
+            'empresa': a.get(cf['empresa_concesion']) or '',
             # Registros viejos sin "Guardia que entrega": quien capturó la concesión
-            'guardia_presto': a.get(self._RC_GUARDIA_ENTREGA) or rec.get('created_by_name') or '',
+            'guardia_presto': a.get(cf['guardia_entrega']) or rec.get('created_by_name') or '',
             'fecha_prestamo': self._rc_fecha(a.get(cf['fecha_concesion'])),
-            'identificacion': self._rc_url(a.get(cf['persona_identificacion_otro'])),
             'ubicacion': self._rc_uno((a.get(cat_ubi) or {}).get(cf['_ubicacion_concesion'])) or '',
         }
         cierre_registro = self._rc_fecha(a.get(cf['fecha_cierre_concesion']))
@@ -12213,16 +12219,19 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
             except (TypeError, ValueError):
                 precio = 0
             articulo = self._rc_uno(equipo.get(cf['_nombre_equipo'])) or ''
+            catalogo = catalogo or {}
+            # El costo que se guardó al prestar; si vino vacío o en 0, el actual del catálogo
+            if not precio:
+                precio = (catalogo.get('costo') or {}).get(articulo) or 0
             base = dict(
                 comun,
                 articulo=articulo,
                 categoria=self._rc_uno(equipo.get(cf['_categoria_equipo_concesion'])) or '',
                 precio=precio,
-                foto=self._rc_url(linea.get(self._RC_EVIDENCIA_PRESTAMO)),
                 # El que se guardó al prestar; si no hay, el actual del catálogo. Sin ninguno,
                 # el front usa 24 h. La fecha límite, si viene, manda sobre el plazo.
-                plazo=self._rc_horas(equipo.get(self._RC_PLAZO)) or (plazos or {}).get(articulo),
-                fecha_limite=self._rc_fecha(linea.get(self._RC_FECHA_LIMITE)),
+                plazo=self._rc_horas(equipo.get(cf['_plazo_equipo'])) or (catalogo.get('plazo') or {}).get(articulo),
+                fecha_limite=self._rc_fecha(linea.get(cf['fecha_limite_concesion'])),
             )
 
             # Cuántas unidades de la línea están cerradas: mandan los totales de la línea
@@ -12246,16 +12255,15 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
             cierres = []
             devs = [d for d in devoluciones if id_mov and d.get(cf['id_movimiento_devolucion']) == id_mov]
             for d in sorted(devs, key=lambda d: str(d.get(cf['fecha_devolucion_concesion']) or '')):
-                forzada = self._rc_clave(d.get(self._RC_SE_FORZO)) in ('si', 'yes')
+                forzada = self._rc_clave(d.get(cf['_se_forzo_devolucion'])) in ('si', 'yes')
                 cierre = {
                     'tipo_cierre': 'Forzada' if forzada else 'Normal',
                     'fecha_cierre': self._rc_fecha(d.get(cf['fecha_devolucion_concesion'])) or cierre_registro,
                     'estado': self._RC_ESTADO.get(self._rc_clave(d.get(cf['estatus_equipo'])), 'Bien'),
                     # "Recibió"; en registros viejos solo el cierre forzado guarda quién lo hizo
-                    'guardia_cierre': d.get(self._RC_RECIBIO) or ((d.get(self._RC_FORZADA_POR) or '') if forzada else ''),
-                    # Evidencia de la devolución ('' = la devolución no la trae)
-                    'foto_cierre': self._rc_url(d.get(cf['evidencia_entrega'])),
-                    'identificacion_cierre': self._rc_url(d.get(cf['identificacion_entrega'])),
+                    'guardia_cierre': d.get(cf['recibio_devolucion']) or ((d.get(cf['forzada_por']) or '') if forzada else ''),
+                    # True/False: la devolución trae (o no) foto e identificación
+                    'evidencia_cierre': self._rc_evidencia(d),
                 }
                 n = int(_num(d.get(cf['cantidad_devolucion'])) or 0)
                 if n <= 0:
@@ -12267,14 +12275,14 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
                     # devolución que haya, o con la fecha de cierre del registro
                     resto = dict(cierres[-1]) if cierres else {
                         'tipo_cierre': 'Normal', 'fecha_cierre': cierre_registro, 'estado': 'Bien', 'guardia_cierre': '',
-                        'foto_cierre': None, 'identificacion_cierre': None}  # sin devolución: no se sabe
+                        'evidencia_cierre': None}  # sin devolución: no se sabe
                     cierres.extend([resto] * (cerradas - len(cierres)))
                 cierres = cierres[:cerradas]
 
             for i in range(cantidad):
                 cierre = cierres[i] if i < len(cierres) else {
                     'tipo_cierre': 'Abierto', 'fecha_cierre': None, 'estado': '', 'guardia_cierre': '',
-                    'foto_cierre': None, 'identificacion_cierre': None}
+                    'evidencia_cierre': None}
                 filas.append(dict(
                     base,
                     unidad=f"{i + 1} de {cantidad}" if cantidad > 1 else '',
