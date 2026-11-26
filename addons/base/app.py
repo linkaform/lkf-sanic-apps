@@ -2838,6 +2838,7 @@ class UsersAdmin(Base):
             'timezones': self._timezones(),
             'languages': [{'value': code, 'label': name} for code, name in self.LANGUAGES.items()],
             'defaults': {'timezone': self.TIMEZONE_DEFAULT, 'language': self.LANGUAGE_DEFAULT},
+            'roles': self._roles_catalog(),
         }
 
     def _valid_language(self, language):
@@ -2962,7 +2963,15 @@ class UsersAdmin(Base):
         if not record:
             raise self.LKFException({'msg': 'No se encontró el usuario.', 'status_code': 404})
         user = self._user_row(record)
-        return {'user': user, 'employees': self._linked_employees(user['user_id'])}
+        employees = self._linked_employees(user['user_id'])
+        return {
+            'user': user,
+            'employees': employees,
+            # Roles del catálogo `rol` (Configuración de Áreas y Empleados). Solo
+            # se editan si el usuario tiene empleado ligado (2611-1649).
+            'roles': self._user_roles(user['user_id']),
+            'roles_editable': bool(employees),
+        }
 
     def _fail(self, msg, status_code=400):
         raise self.LKFException({'msg': msg, 'status_code': status_code})
@@ -3043,7 +3052,7 @@ class UsersAdmin(Base):
         return {'created': True}
 
     def update_user(self, record_id='', name=None, phone=None, role=None, email=None,
-                    timezone=None, language=None):
+                    timezone=None, language=None, roles=None):
         """ Edicion de nombre, telefono, rol, email, zona horaria e idioma. Primero se actualiza el
         usuario de LinkaForm y solo si responde bien se guarda el registro, para
         que no queden desalineados. username e Id de Usuario no se editan. """
@@ -3056,9 +3065,14 @@ class UsersAdmin(Base):
 
         values = {'name': name, 'phone': phone, 'role': role, 'email': email}
         values = {k: v.strip() for k, v in values.items() if isinstance(v, str) and v.strip()}
-        if not values and not (isinstance(timezone, str) and timezone.strip()) \
-                and not (isinstance(language, str) and language.strip()):
+        has_other = bool(values) or (isinstance(timezone, str) and timezone.strip()) \
+            or (isinstance(language, str) and language.strip())
+        if not has_other and roles is None:
             self._fail('No hay cambios que guardar.')
+        # Roles (2611-1649): van al empleado, no al usuario de LinkaForm.
+        saved_roles = self._save_user_roles(user_id, roles) if roles is not None else None
+        if not has_other:
+            return {'updated': ['roles'], 'roles': saved_roles}
         if 'email' in values and not self.EMAIL_RE.match(values['email']):
             self._fail('El email no es válido.')
         if isinstance(timezone, str) and timezone.strip():
@@ -3082,7 +3096,116 @@ class UsersAdmin(Base):
         if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
             self._fail('El usuario se actualizó en LinkaForm pero no se pudo guardar el registro: '
                        + self._detail(res), 500)
-        return {'updated': list(values.keys())}
+        updated = list(values.keys()) + (['roles'] if saved_roles is not None else [])
+        return {'updated': updated}
+
+    # ---- Roles del usuario (2611-1649) ----
+    # Viven en el grupo "Roles" de Configuración de Áreas y Empleados (los mismos
+    # que usan turnos, rondines y asistencias); de ahí salen los menús por rol.
+    ROLES_GROUP = '6a8e10938910e8a112fbbc21'
+    ROL_FIELD = '6a46f2730fc4d03a90da2209'
+    # Catálogo empleados dentro de Config. Áreas y Empleados (catalog-detail van en lista).
+    CONF_EMPLOYEE_FIELDS = {
+        'name': '62c5ff407febce07043024dd',
+        'user_id': '638a9a99616398d2e392a9f5',
+        'username': '6759e4a7a9a6e13c7b26da33',
+        'email': '638a9a7767c332f5d459fc82',
+        'phone': '67be0c43a31e5161c47f2bba',
+        'position': '663bc4c79b8046ce89e97cf4',
+        'department': '663bc4ed8a6b120eab4d7f1e',
+    }
+
+    @property
+    def conf_areas_form(self):
+        return self.lkm.form_id('configuracion_areas_y_empleados', 'id')
+
+    def _roles_catalog(self):
+        """ Nombres del catálogo `rol`, sin repetir. """
+        cat = self.lkm.catalog_id('rol') or {}
+        if not cat.get('id'):
+            return []
+        data = self.lkf_api.search_catalog(cat['id'], {'selector': {}, 'limit': 10000}) or []
+        names = {(item.get(self.ROL_FIELD) or '').strip() for item in data}
+        return sorted((n for n in names if n), key=str.lower)
+
+    def _conf_areas_record(self, user_id):
+        """ Registro más nuevo de Config. Áreas y Empleados del usuario (por Id de Usuario). """
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return None
+        emp_obj = (self.lkm.catalog_id('empleados') or {}).get('obj_id')
+        if not emp_obj or not self.conf_areas_form:
+            return None
+        return self.cr.find_one(
+            {'form_id': self.conf_areas_form, 'deleted_at': {'$exists': False},
+             f"answers.{emp_obj}.{self.CONF_EMPLOYEE_FIELDS['user_id']}": user_id},
+            {'answers': 1, 'folio': 1}, sort=[('_id', -1)])
+
+    def _roles_from_answers(self, answers):
+        """ Roles del grupo; el obj_id del catálogo que envuelve al rol cambia
+        entre cuentas, así que se busca el campo rol en cualquier valor. """
+        roles = []
+        for item in (answers or {}).get(self.ROLES_GROUP) or []:
+            for value in (item or {}).values():
+                rol = value.get(self.ROL_FIELD) if isinstance(value, dict) else None
+                if rol and rol not in roles:
+                    roles.append(rol)
+        return roles
+
+    def _user_roles(self, user_id):
+        record = self._conf_areas_record(user_id)
+        return self._roles_from_answers(record.get('answers')) if record else []
+
+    def _save_user_roles(self, user_id, roles):
+        """ Reemplaza los roles del usuario en Config. Áreas y Empleados. Si no
+        tiene registro se crea con los datos de su empleado ligado. Se manda el
+        registro completo (patch_record), porque el patch no mezcla campos. """
+        if not isinstance(roles, list):
+            self._fail('Los roles no son válidos.')
+        roles = list(dict.fromkeys(r.strip() for r in roles if isinstance(r, str) and r.strip()))
+        catalog = set(self._roles_catalog())
+        unknown = [r for r in roles if r not in catalog]
+        if unknown:
+            self._fail(f"Estos roles no están en el catálogo: {', '.join(unknown)}.")
+        employees = self._linked_employees(user_id)
+        if not employees:
+            self._fail('El usuario no tiene empleado ligado; no se le pueden asignar roles.')
+        rol_obj = (self.lkm.catalog_id('rol') or {}).get('obj_id')
+        emp_obj = (self.lkm.catalog_id('empleados') or {}).get('obj_id')
+        if not (rol_obj and emp_obj and self.conf_areas_form):
+            self._fail('Falta la forma Configuración de Áreas y Empleados o sus catálogos en la cuenta.', 500)
+        roles_group = [{rol_obj: {self.ROL_FIELD: r}} for r in roles]
+
+        metadata = self.lkf_api.get_metadata(form_id=self.conf_areas_form)
+        record = self._conf_areas_record(user_id)
+        if record:
+            answers = dict(record.get('answers') or {})
+            answers[self.ROLES_GROUP] = roles_group
+            metadata['answers'] = answers
+            res = self.lkf_api.patch_record(metadata, str(record['_id']))
+        else:
+            emp = self._employee_catalog_answers(employees[0]['id'], user_id)
+            metadata['answers'] = {emp_obj: emp, self.ROLES_GROUP: roles_group}
+            res = self.lkf_api.post_forms_answers(metadata)
+        if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
+            self._fail('No se pudieron guardar los roles: ' + self._detail(res), 500)
+        return roles
+
+    def _employee_catalog_answers(self, employee_id, user_id):
+        """ Bloque del catálogo empleados para un registro nuevo de Config. Áreas
+        y Empleados, con los datos del empleado ligado (catalog-detail en lista). """
+        c, e = self.CONF_EMPLOYEE_FIELDS, self.employee_fields
+        record = self.cr.find_one({'_id': ObjectId(employee_id)}, {'answers': 1}) or {}
+        a = record.get('answers') or {}
+        block = {c['name']: self._answer(a, e['name']), c['user_id']: [int(user_id)]}
+        for key, field in (('username', self.user_fields['username']),
+                           ('email', self.user_fields['email']),
+                           ('position', e['position']), ('department', e['department'])):
+            value = self._answer(a, field)
+            if value:
+                block[c[key]] = [value]
+        return block
 
     def reset_password(self, record_id=''):
         """ Restaura la contraseña de un usuario activado: token nuevo + liga y

@@ -136,6 +136,7 @@ async def post_update_user(request: Request):
         record_id=p.get('record_id', ''), name=p.get('name'), phone=p.get('phone'),
         role=p.get('role'), email=p.get('email'),
         timezone=p.get('timezone'), language=p.get('language'),
+        roles=p.get('roles'),
     )
     return json({"data": response}, status=200)
 
