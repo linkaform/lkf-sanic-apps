@@ -4,6 +4,7 @@
 import pytz
 import calendar
 import logging
+import unicodedata
 import tempfile
 import os
 import re
@@ -726,7 +727,9 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
             }},
         ]
         data = self.format_cr(self.cr.aggregate(query))
-        return [x['rol'] for x in data if x.get('rol')]
+        # A-Z sin importar mayusculas ni acentos
+        orden = lambda r: unicodedata.normalize('NFKD', r).encode('ascii', 'ignore').decode().lower()
+        return sorted([x['rol'] for x in data if x.get('rol')], key=orden)
 
     def require_active_employee(self, user_id, user_name=''):
         """
