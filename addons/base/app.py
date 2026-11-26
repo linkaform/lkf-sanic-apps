@@ -3069,16 +3069,17 @@ class UsersAdmin(Base):
             or (isinstance(language, str) and language.strip())
         if not has_other and roles is None:
             self._fail('No hay cambios que guardar.')
-        # Roles (2611-1649): van al empleado, no al usuario de LinkaForm.
-        saved_roles = self._save_user_roles(user_id, roles) if roles is not None else None
-        if not has_other:
-            return {'updated': ['roles'], 'roles': saved_roles}
         if 'email' in values and not self.EMAIL_RE.match(values['email']):
             self._fail('El email no es válido.')
         if isinstance(timezone, str) and timezone.strip():
             values['timezone'] = self._valid_timezone(timezone)
         if isinstance(language, str) and language.strip():
             values['language'] = self._valid_language(language)
+
+        # Roles (2611-1649): van al empleado, no al usuario de LinkaForm. Se
+        # escriben al final, ya validado todo lo demás.
+        if not has_other:
+            return {'updated': ['roles'], 'roles': self._save_user_roles(user_id, roles)}
 
         # Campos del usuario de LinkaForm (mismos nombres que en create_user).
         lkf_names = {'name': 'first_name', 'phone': 'phone', 'role': 'position', 'email': 'email',
@@ -3096,7 +3097,10 @@ class UsersAdmin(Base):
         if not isinstance(res, dict) or res.get('status_code') not in self.OK_CODES:
             self._fail('El usuario se actualizó en LinkaForm pero no se pudo guardar el registro: '
                        + self._detail(res), 500)
-        updated = list(values.keys()) + (['roles'] if saved_roles is not None else [])
+        updated = list(values.keys())
+        if roles is not None:
+            self._save_user_roles(user_id, roles)
+            updated.append('roles')
         return {'updated': updated}
 
     # ---- Roles del usuario (2611-1649) ----
