@@ -2671,6 +2671,43 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         res = self.net.patch_forms_answers(metadata)
         return res
 
+    def refresh_areas_geolocation(self, areas, ubicacion):
+        """Pone en cada area del recorrido la geolocalizacion que tiene hoy su
+        registro en Areas de las Ubicaciones (campo Geolocalizacion de Area).
+
+        El recorrido guarda una copia de nombre/foto/geo de cada area al
+        armarse; si despues se corrige la geolocalizacion del area, la copia
+        queda vieja y el mapa mostraba el punto anterior. Si el area ya no
+        existe o no tiene coordenadas se conserva la copia del recorrido.
+        """
+        names = [a.get('rondin_area') for a in areas if a.get('rondin_area')]
+        if not names:
+            return areas
+        try:
+            current = self.get_areas_details(names)
+        except Exception as e:
+            print(f"refresh_areas_geolocation: no se pudieron leer las areas: {e}")
+            return areas
+        by_tag, by_name = {}, {}
+        for r in current:
+            if ubicacion and r.get('ubicacion') and r.get('ubicacion') != ubicacion:
+                continue
+            lat, lng = r.get('latitude'), r.get('longitude')
+            if not lat or not lng:
+                continue
+            geo = {'latitude': lat, 'longitude': lng}
+            tag = self.unlist(r.get('tag_id') or '')
+            if tag:
+                by_tag[str(tag)] = geo
+            by_name[r.get('area', '')] = geo
+        for a in areas:
+            tags = a.get('area_tag_id') or a.get('tag_id_area_ubicacion') or []
+            tag = str(tags[0]) if tags else ''
+            geo = by_tag.get(tag) or by_name.get(a.get('rondin_area', ''))
+            if geo:
+                a['geolocalizacion_area_ubicacion'] = [geo]
+        return areas
+
     def format_rondin_by_id(self, data):
         fotos_de_areas = []
         puntos_de_control = []
@@ -2687,6 +2724,8 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
                 item.setdefault('rondin_area', item.pop('incidente_area'))
             if 'tag_id_area_ubicacion' in item:
                 item.setdefault('area_tag_id', item.pop('tag_id_area_ubicacion'))
+
+        self.refresh_areas_geolocation(data.get('areas', []), data.get('ubicacion', ''))
 
         for item in data.get('areas', []):
             foto_area_data = item.get('foto_area', [])
@@ -4251,7 +4290,12 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         }
         if inspeccion_id is not None:
             # campo "ID de la forma" dentro de cada fila del catalogo (acepta int o str)
-            match[f"answers.{self.rondin_keys['grupo_id']}"] = {"$in": [inspeccion_id, str(inspeccion_id)]}
+            # El id se guarda como numero pero el front lo manda como texto:
+            # se prueban ambas formas.
+            candidatos = [inspeccion_id, str(inspeccion_id)]
+            if str(inspeccion_id).strip().isdigit():
+                candidatos.append(int(str(inspeccion_id).strip()))
+            match[f"answers.{self.rondin_keys['grupo_id']}"] = {"$in": candidatos}
         query = [
             {"$match": match},
             {"$project": {
@@ -5387,6 +5431,14 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         return response
 
     def update_inspeccion(self, folio, rondin_data: dict = {}):
+        """Asigna una forma de inspeccion (y su prompt) a areas del recorrido.
+
+        rondin_data:
+          inspeccion_id: id de la forma (debe existir en catalogo_inspecciones).
+          areas: nombres de las areas destino; vacio o ["todas"] = todas.
+          prompt_inspeccion: observacion para el agente de IA.
+        `folio` es el record_id del recorrido (get_rondin_by_id lo resuelve).
+        """
         answers = {}
         existing_record = self.get_rondin_by_id(folio)
         folio = existing_record.get("folio", "")
@@ -5394,7 +5446,15 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
         if existing_areas and isinstance(existing_areas[0], list):
             existing_areas = existing_areas[0]
 
-        inspeccion = rondin_data.get('inspeccion', '')
+        inspeccion_id = str(rondin_data.get('inspeccion_id') or '').strip()
+        inspeccion = rondin_data.get('inspeccion', '')  # compat: nombre de la forma
+        if inspeccion_id:
+            # El catalogo guarda nombre + id de la forma: se resuelve el nombre
+            # por id (y se valida que sea una inspeccion del catalogo).
+            encontrada = self.catalogo_inspecciones(inspeccion_id=inspeccion_id)
+            if not encontrada:
+                raise self.LKFException({'msg': f'La inspeccion {inspeccion_id} no existe en el catalogo', 'status_code': 400})
+            inspeccion = self.unlist(encontrada[0].get('nombre', '')) or inspeccion
         prompt_inspeccion = rondin_data.get('prompt_inspeccion', '')
         areas_targets = rondin_data.get('areas', [])
 
@@ -5406,6 +5466,12 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
                 areas_targets == ["todas"] or
                 area_nombre in areas_targets
             )
+            # get_rondin_by_id regresa el catalogo de formas ya aplanado
+            # (form_name / form_id), no anidado bajo su obj_id.
+            forma_actual = area_item.get('form_name', '')
+            form_id_actual = area_item.get('form_id') or ['129870']
+            prompt_actual = area_item.get(self.rondin_keys['prompt_inspeccion'], area_item.get('prompt_inspeccion', ''))
+            aplica_forma = should_update and bool(inspeccion)
             area_dict = {
                 self.Location.AREAS_DE_LAS_UBICACIONES_CAT_OBJ_ID: {
                     self.Location.f['area']: area_nombre,
@@ -5414,10 +5480,10 @@ class Accesos(MapeoMixin, SancionesMixin, NotificacionesMixin, ActivosMixin, Cum
                     self.f['geolocalizacion_area_ubicacion']: area_item.get('geolocalizacion_area_ubicacion', []),
                 },
                 self.CATALOGO_FORMAS_OBJ_ID: {
-                    self.mf['nombre_forma']: inspeccion if should_update else area_item.get(self.CATALOGO_FORMAS_OBJ_ID, {}).get(self.mf['nombre_forma'], ''),
-                    self.rondin_keys['grupo_id']: area_item.get(self.CATALOGO_FORMAS_OBJ_ID, {}).get(self.rondin_keys['grupo_id'], ['129870'])
+                    self.mf['nombre_forma']: inspeccion if aplica_forma else forma_actual,
+                    self.rondin_keys['grupo_id']: [inspeccion_id] if (aplica_forma and inspeccion_id) else form_id_actual,
                 },
-                self.rondin_keys['prompt_inspeccion']: prompt_inspeccion if should_update else area_item.get(self.rondin_keys['prompt_inspeccion'], '')
+                self.rondin_keys['prompt_inspeccion']: prompt_inspeccion if should_update else prompt_actual,
             }
             updated_areas.append(area_dict)
 
